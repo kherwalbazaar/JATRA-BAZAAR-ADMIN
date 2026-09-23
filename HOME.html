@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Night Jatra Ticket System - Admin Panel</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Font Awesome 6.5.1 CDN -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <!-- Google Font: Plus Jakarta Sans & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+          },
+          colors: {
+            brandDark: '#0b0f24',
+            sidebarDark: '#0f1430',
+            activeNav: '#4f39f6',
+            cardBg: '#ffffff',
+            mainBg: '#f4f6fc'
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    /* Custom subtle scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f1f1;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #c7d2fe;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="bg-[#f4f6fc] text-slate-800 antialiased flex min-h-screen">
+
+  <!-- =========================================================================
+       SIDEBAR NAVIGATION
+       ========================================================================= -->
+  <aside class="w-64 bg-[#0f1430] text-slate-300 flex flex-col justify-between flex-shrink-0 z-30 select-none border-r border-indigo-950/60">
+    
+    <div>
+      <!-- Brand Logo Header -->
+      <div class="px-5 py-5 border-b border-indigo-900/40">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-full bg-gradient-to-tr from-amber-400 to-yellow-300 p-0.5 shadow-md flex items-center justify-center flex-shrink-0">
+            <div class="w-full h-full bg-[#181d45] rounded-full flex items-center justify-center text-amber-400 text-xl">
+              <i class="fa-solid fa-masks-theater"></i>
+            </div>
+          </div>
+          <div class="leading-tight">
+            <h1 class="text-base font-black text-white tracking-wider flex items-center gap-1">
+              <span>NIGHT</span>
+              <span class="text-amber-400">JATRA</span>
+            </h1>
+            <p class="text-[10px] text-indigo-300 font-bold uppercase tracking-wider">Ticket System</p>
+          </div>
+        </div>
+
+        <!-- Admin Badge Pill -->
+        <div class="mt-3.5 flex justify-center">
+          <span class="w-full text-center bg-[#292275] border border-indigo-500/30 text-indigo-200 text-[10px] font-black tracking-widest uppercase py-1 px-3 rounded-md shadow-xs">
+            Admin Panel
+          </span>
+        </div>
+      </div>
+
+      <!-- Navigation Menu List -->
+      <nav class="px-3 py-4 space-y-1 text-xs font-semibold">
+        <!-- Dashboard (Active) -->
+        <a href="#" class="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-[#4f39f6] text-white shadow-md shadow-indigo-600/30 font-bold transition-all">
+          <i class="fa-solid fa-house w-4 text-center"></i>
+          <span>Dashboard</span>
+        </a>
+
+        <!-- Events -->
+        <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition-colors">
+          <i class="fa-regular fa-calendar-days w-4 text-center"></i>
+          <span>Events</span>
+        </a>
+
+        <!-- Ticket Types -->
+        <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition-colors">
+          <i class="fa-solid fa-table-cells-large w-4 text-center"></i>
+          <span>Ticket Types</span>
+        </a>
+
+        <!-- Bookings -->
+        <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition-colors">
+          <i class="fa-regular fa-calendar-check w-4 text-center"></i>
+          <span>Bookings</span>
+        </a>
+
+        <!-- Tickets -->
+        <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition-colors">
+          <i class="fa-solid fa-ticket-simple w-4 text-center"></i>
+          <span>Tickets</span>
+        </a>
+
+        <!-- Payments -->
+        <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition-colors">
+          <i class="fa-solid fa-credit-card w-4 text-center"></i>
+          <span>Payments</span>
+        </a>
+
+        <!-- Customers -->
+        <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition-colors">
+          <i class="fa-solid fa-user-group w-4 text-center"></i>
+          <span>Customers</span>
+        </a>
+
+        <!-- Counter Management -->
+        <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition-colors">
+          <i class="fa-solid fa-store w-4 text-center"></i>
+          <span>Counter Management</span>
+        </a>
+
+        <!-- Gate Management -->
+        <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition-colors">
+          <i class="fa-solid fa-door-open w-4 text-center"></i>
+          <span>Gate Management</span>
+        </a>
+
+        <!-- Reports (Dropdown) -->
+        <a href="#" class="flex items-center justify-between px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition-colors">
+          <div class="flex items-center gap-3">
+            <i class="fa-solid fa-chart-line w-4 text-center"></i>
+            <span>Reports</span>
+          </div>
+          <i class="fa-solid fa-chevron-down text-[10px] text-slate-400"></i>
+        </a>
+
+        <!-- Marketing -->
+        <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition-colors">
+          <i class="fa-solid fa-bullhorn w-4 text-center"></i>
+          <span>Marketing</span>
+        </a>
+
+        <!-- Settings (Dropdown) -->
+        <a href="#" class="flex items-center justify-between px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition-colors">
+          <div class="flex items-center gap-3">
+            <i class="fa-solid fa-gear w-4 text-center"></i>
+            <span>Settings</span>
+          </div>
+          <i class="fa-solid fa-chevron-down text-[10px] text-slate-400"></i>
+        </a>
+
+        <!-- Users & Roles -->
+        <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition-colors">
+          <i class="fa-solid fa-user-shield w-4 text-center"></i>
+          <span>Users & Roles</span>
+        </a>
+
+        <!-- System Logs -->
+        <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition-colors">
+          <i class="fa-regular fa-file-lines w-4 text-center"></i>
+          <span>System Logs</span>
+        </a>
+
+        <!-- Support -->
+        <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/5 transition-colors">
+          <i class="fa-regular fa-circle-question w-4 text-center"></i>
+          <span>Support</span>
+        </a>
+      </nav>
+    </div>
+
+    <!-- Sidebar Bottom: Current Event Box -->
+    <div class="p-3">
+      <div class="bg-[#181e42] border border-indigo-800/50 rounded-2xl p-3 text-white space-y-2.5">
+        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Current Event</span>
+        <div class="flex items-center gap-2.5">
+          <img src="https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=120&auto=format&fit=crop&q=80" alt="Event Poster" class="w-11 h-11 rounded-xl object-cover ring-1 ring-white/10 flex-shrink-0">
+          <div class="min-w-0 flex-1">
+            <h4 class="text-xs font-black text-white uppercase tracking-tight truncate leading-tight">GRAND NIGHT JATRA 2026</h4>
+            <p class="text-[10px] text-slate-300 font-semibold mt-0.5 flex items-center gap-1">
+              <i class="fa-regular fa-calendar text-[9px] text-rose-400"></i>
+              <span>15 Aug 2026 (Fri)</span>
+            </p>
+            <p class="text-[10px] text-slate-400 truncate flex items-center gap-1">
+              <i class="fa-solid fa-location-dot text-[9px] text-amber-400"></i>
+              <span>Bahanada Stadium</span>
+            </p>
+          </div>
+        </div>
+
+        <button class="w-full py-2 bg-[#2d2282] hover:bg-[#392caa] text-white text-[11px] font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors">
+          <span>View Event Page</span>
+          <i class="fa-solid fa-arrow-right text-[10px]"></i>
+        </button>
+      </div>
+    </div>
+
+  </aside>
+
+
+  <!-- =========================================================================
+       MAIN CONTENT CONTAINER
+       ========================================================================= -->
+  <div class="flex-1 flex flex-col min-w-0 overflow-y-auto">
+
+    <!-- Top Header Bar -->
+    <header class="px-6 py-4.5 bg-white border-b border-slate-200/80 flex items-center justify-between sticky top-0 z-20 shadow-xs">
+      <div>
+        <h2 class="text-lg font-black text-slate-900 flex items-center gap-1.5">
+          <span>Welcome back, Admin!</span>
+          <span>👋</span>
+        </h2>
+        <p class="text-xs text-slate-400 font-semibold">Here's what's happening with your event today.</p>
+      </div>
+
+      <!-- Top Right Controls -->
+      <div class="flex items-center gap-3">
+        <!-- Date Selector Pill -->
+        <button class="flex items-center gap-2 bg-slate-100/90 hover:bg-slate-200/70 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 transition-colors">
+          <i class="fa-regular fa-calendar text-indigo-600 text-xs"></i>
+          <span>15 Aug 2026 (Fri)</span>
+          <i class="fa-solid fa-chevron-down text-[9px] text-slate-400 ml-1"></i>
+        </button>
+
+        <!-- Event Dropdown Pill -->
+        <button class="flex items-center gap-2.5 bg-slate-100/90 hover:bg-slate-200/70 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800 transition-colors">
+          <img src="https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=60&auto=format&fit=crop&q=80" alt="Icon" class="w-6 h-6 rounded-lg object-cover">
+          <span>Grand Night Jatra 2026</span>
+          <i class="fa-solid fa-chevron-down text-[9px] text-slate-400 ml-1"></i>
+        </button>
+
+        <!-- Admin Profile Pill -->
+        <div class="flex items-center gap-2.5 pl-2 border-l border-slate-200">
+          <div class="w-9 h-9 rounded-full bg-slate-900 text-white flex items-center justify-center text-sm ring-2 ring-indigo-500/40 relative">
+            <i class="fa-solid fa-user-tie"></i>
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white absolute bottom-0 right-0"></span>
+          </div>
+          <div class="leading-tight text-left">
+            <span class="text-xs font-black text-slate-900 block flex items-center gap-1">
+              Admin <i class="fa-solid fa-chevron-down text-[8px] text-slate-400"></i>
+            </span>
+            <span class="text-[10px] text-slate-400 font-bold">Super Admin</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Dashboard Body Padding -->
+    <main class="p-6 space-y-5">
+
+      <!-- =========================================================
+           1. TOP 5 KEY KPI STATS CARDS
+           ========================================================= -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+        
+        <!-- KPI 1: TOTAL TICKETS SOLD -->
+        <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex items-center gap-3.5">
+          <div class="w-12 h-12 rounded-2xl bg-[#6342ff] text-white flex items-center justify-center text-xl shadow-md shadow-indigo-500/20 flex-shrink-0">
+            <i class="fa-solid fa-ticket-simple -rotate-12"></i>
+          </div>
+          <div>
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Tickets Sold</span>
+            <h3 class="text-xl font-black text-slate-900 leading-tight">3,250</h3>
+            <p class="text-[10px] font-extrabold text-emerald-600 flex items-center gap-1 mt-0.5">
+              <i class="fa-solid fa-arrow-trend-up text-[9px]"></i>
+              <span>+18.6% <span class="font-normal text-slate-400">from yesterday</span></span>
+            </p>
+          </div>
+        </div>
+
+        <!-- KPI 2: TOTAL COLLECTION -->
+        <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex items-center gap-3.5">
+          <div class="w-12 h-12 rounded-2xl bg-[#16a34a] text-white flex items-center justify-center text-xl shadow-md shadow-emerald-500/20 flex-shrink-0">
+            <i class="fa-solid fa-sack-dollar"></i>
+          </div>
+          <div>
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Collection</span>
+            <h3 class="text-xl font-black text-slate-900 leading-tight">₹2,85,000</h3>
+            <p class="text-[10px] font-extrabold text-emerald-600 flex items-center gap-1 mt-0.5">
+              <i class="fa-solid fa-arrow-trend-up text-[9px]"></i>
+              <span>+22.4% <span class="font-normal text-slate-400">from yesterday</span></span>
+            </p>
+          </div>
+        </div>
+
+        <!-- KPI 3: TICKETS REMAINING -->
+        <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex items-center gap-3.5">
+          <div class="w-12 h-12 rounded-2xl bg-[#2563eb] text-white flex items-center justify-center text-xl shadow-md shadow-blue-500/20 flex-shrink-0">
+            <i class="fa-solid fa-ticket"></i>
+          </div>
+          <div>
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Tickets Remaining</span>
+            <h3 class="text-xl font-black text-slate-900 leading-tight">1,750</h3>
+            <p class="text-[10px] font-bold text-slate-400 mt-0.5">of 5,000</p>
+          </div>
+        </div>
+
+        <!-- KPI 4: PEOPLE ENTERED -->
+        <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex items-center gap-3.5">
+          <div class="w-12 h-12 rounded-2xl bg-[#ea580c] text-white flex items-center justify-center text-xl shadow-md shadow-orange-500/20 flex-shrink-0">
+            <i class="fa-solid fa-users"></i>
+          </div>
+          <div>
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">People Entered</span>
+            <h3 class="text-xl font-black text-slate-900 leading-tight">1,980</h3>
+            <p class="text-[10px] font-extrabold text-orange-600 mt-0.5">Today</p>
+          </div>
+        </div>
+
+        <!-- KPI 5: TODAY'S COLLECTION -->
+        <div class="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex items-center gap-3.5">
+          <div class="w-12 h-12 rounded-2xl bg-[#db2777] text-white flex items-center justify-center text-xl shadow-md shadow-pink-500/20 flex-shrink-0">
+            <i class="fa-solid fa-chart-line"></i>
+          </div>
+          <div>
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Today's Collection</span>
+            <h3 class="text-xl font-black text-slate-900 leading-tight">₹75,600</h3>
+            <p class="text-[10px] font-bold text-pink-600 mt-0.5">32.2% of total collection</p>
+          </div>
+        </div>
+
+      </div>
+
+
+      <!-- =========================================================
+           2. MIDDLE ROW: CHARTS & SALES SUMMARY (3 COLUMNS)
+           ========================================================= -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        
+        <!-- Left: Ticket Sales Overview Chart (5 cols) -->
+        <div class="lg:col-span-5 bg-white rounded-2xl p-5 border border-slate-100 shadow-xs flex flex-col justify-between">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-black text-slate-900 uppercase tracking-wider">Ticket Sales Overview</h3>
+            <button class="bg-slate-50 border border-slate-200 text-slate-700 text-[11px] font-bold py-1 px-2.5 rounded-lg flex items-center gap-1.5">
+              <span>Last 7 Days</span>
+              <i class="fa-solid fa-chevron-down text-[8px] text-slate-400"></i>
+            </button>
+          </div>
+
+          <!-- Chart Legend -->
+          <div class="flex items-center justify-end gap-4 text-[10px] font-bold text-slate-600 mb-2">
+            <div class="flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-[#6342ff]"></span>
+              <span>Tickets Sold</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-[#22c55e]"></span>
+              <span>Collection (₹)</span>
+            </div>
+          </div>
+
+          <!-- Chart Canvas Container -->
+          <div class="relative h-56 w-full">
+            <canvas id="salesOverviewChart"></canvas>
+          </div>
+        </div>
+
+
+        <!-- Center: Tickets By Type Donut (4 cols) -->
+        <div class="lg:col-span-4 bg-white rounded-2xl p-5 border border-slate-100 shadow-xs flex flex-col justify-between">
+          <h3 class="text-xs font-black text-slate-900 uppercase tracking-wider mb-2">Tickets By Type</h3>
+
+          <div class="flex items-center justify-center gap-4 my-auto">
+            <!-- Donut Chart Canvas with Center Text Overlay -->
+            <div class="relative w-40 h-40 flex items-center justify-center flex-shrink-0">
+              <canvas id="ticketTypeChart"></canvas>
+              <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span class="text-base font-black text-slate-900 leading-tight">3,250</span>
+                <span class="text-[10px] font-bold text-slate-400">Sold</span>
+              </div>
+            </div>
+
+            <!-- Legend List -->
+            <div class="space-y-2 text-[11px]">
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-sm bg-[#6342ff]"></span>
+                <div>
+                  <p class="font-bold text-slate-800 leading-none">General</p>
+                  <p class="text-[10px] text-slate-400 font-semibold">1,250 (38.5%)</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-sm bg-[#3b82f6]"></span>
+                <div>
+                  <p class="font-bold text-slate-800 leading-none">Premium</p>
+                  <p class="text-[10px] text-slate-400 font-semibold">950 (29.2%)</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-sm bg-[#f59e0b]"></span>
+                <div>
+                  <p class="font-bold text-slate-800 leading-none">VIP</p>
+                  <p class="text-[10px] text-slate-400 font-semibold">650 (20.0%)</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-sm bg-[#22c55e]"></span>
+                <div>
+                  <p class="font-bold text-slate-800 leading-none">VVIP</p>
+                  <p class="text-[10px] text-slate-400 font-semibold">400 (12.3%)</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+
+        <!-- Right: Sales Summary Breakdown (3 cols) -->
+        <div class="lg:col-span-3 bg-white rounded-2xl p-5 border border-slate-100 shadow-xs flex flex-col justify-between">
+          <h3 class="text-xs font-black text-slate-900 uppercase tracking-wider mb-3">Sales Summary</h3>
+
+          <div class="space-y-3.5 flex-1 flex flex-col justify-center">
+            <!-- 1. Total Collection -->
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center text-xs">
+                  <i class="fa-solid fa-sack-dollar"></i>
+                </div>
+                <span class="text-xs font-bold text-slate-700">Total Collection</span>
+              </div>
+              <span class="text-xs font-black text-slate-900">₹2,85,000</span>
+            </div>
+
+            <!-- 2. Online Collection -->
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center text-xs">
+                  <i class="fa-solid fa-globe"></i>
+                </div>
+                <span class="text-xs font-bold text-slate-700">Online Collection</span>
+              </div>
+              <span class="text-xs font-black text-slate-900">₹1,95,000</span>
+            </div>
+
+            <!-- 3. Offline Collection -->
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center text-xs">
+                  <i class="fa-solid fa-store"></i>
+                </div>
+                <span class="text-xs font-bold text-slate-700">Offline Collection</span>
+              </div>
+              <span class="text-xs font-black text-slate-900">₹90,000</span>
+            </div>
+
+            <!-- 4. Cash Collection -->
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center text-xs">
+                  <i class="fa-solid fa-money-bill-wave"></i>
+                </div>
+                <span class="text-xs font-bold text-slate-700">Cash Collection</span>
+              </div>
+              <span class="text-xs font-black text-slate-900">₹60,000</span>
+            </div>
+
+            <!-- 5. UPI Collection -->
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center text-xs">
+                  <i class="fa-solid fa-qrcode"></i>
+                </div>
+                <span class="text-xs font-bold text-slate-700">UPI Collection</span>
+              </div>
+              <span class="text-xs font-black text-slate-900">₹2,25,000</span>
+            </div>
+
+            <!-- 6. Average Ticket Value -->
+            <div class="flex items-center justify-between border-t border-slate-100 pt-2">
+              <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs">
+                  <i class="fa-solid fa-chart-simple"></i>
+                </div>
+                <span class="text-xs font-bold text-slate-700">Average Ticket Value</span>
+              </div>
+              <span class="text-xs font-black text-slate-900">₹87.69</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+
+      <!-- =========================================================
+           3. THIRD ROW: BOOKING SOURCE, GATE ENTRY, RECENT BOOKINGS
+           ========================================================= -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        
+        <!-- Left: Booking Source Donut (3 cols) -->
+        <div class="lg:col-span-3 bg-white rounded-2xl p-5 border border-slate-100 shadow-xs flex flex-col justify-between">
+          <h3 class="text-xs font-black text-slate-900 uppercase tracking-wider mb-2">Booking Source</h3>
+
+          <div class="flex items-center justify-center gap-4 my-auto">
+            <div class="relative w-32 h-32 flex items-center justify-center flex-shrink-0">
+              <canvas id="bookingSourceChart"></canvas>
+              <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span class="text-sm font-black text-slate-900 leading-tight">3,250</span>
+                <span class="text-[9px] font-bold text-slate-400">Total</span>
+              </div>
+            </div>
+
+            <!-- Legends -->
+            <div class="space-y-3 text-[11px]">
+              <div class="flex items-start gap-2">
+                <span class="w-2.5 h-2.5 rounded-sm bg-[#6342ff] mt-0.5"></span>
+                <div>
+                  <p class="font-bold text-slate-800 leading-none">Online</p>
+                  <p class="text-[10px] text-slate-400 font-semibold mt-0.5">2,100 (64.6%)</p>
+                </div>
+              </div>
+              <div class="flex items-start gap-2">
+                <span class="w-2.5 h-2.5 rounded-sm bg-[#22c55e] mt-0.5"></span>
+                <div>
+                  <p class="font-bold text-slate-800 leading-none">Offline (Counter)</p>
+                  <p class="text-[10px] text-slate-400 font-semibold mt-0.5">1,150 (35.4%)</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+
+        <!-- Center: Gate Entry Summary (5 cols) -->
+        <div class="lg:col-span-5 bg-white rounded-2xl p-5 border border-slate-100 shadow-xs flex flex-col justify-between">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-xs font-black text-slate-900 uppercase tracking-wider">Gate Entry Summary</h3>
+            <button class="bg-slate-50 border border-slate-200 text-slate-700 text-[11px] font-bold py-1 px-2.5 rounded-lg flex items-center gap-1">
+              <span>Today</span>
+              <i class="fa-solid fa-chevron-down text-[8px] text-slate-400"></i>
+            </button>
+          </div>
+
+          <!-- 4 Gates Grid Cards -->
+          <div class="grid grid-cols-4 gap-2.5">
+            
+            <!-- Gate A -->
+            <div class="bg-slate-50/70 border border-purple-100 rounded-2xl p-2.5 text-center flex flex-col justify-between">
+              <div class="flex items-center justify-center gap-1 text-purple-700 text-[10px] font-extrabold uppercase">
+                <i class="fa-solid fa-door-open text-[10px]"></i>
+                <span>Gate A</span>
+              </div>
+              <div class="my-1.5">
+                <span class="text-[9px] text-slate-400 font-bold block">Entered</span>
+                <span class="text-base font-black text-slate-900 leading-none">450</span>
+              </div>
+              <div>
+                <span class="text-[9px] text-slate-400 font-bold block">Capacity</span>
+                <span class="text-[11px] font-black text-slate-700">1,500</span>
+                <div class="w-full bg-slate-200 rounded-full h-1.5 mt-1.5 overflow-hidden">
+                  <div class="bg-purple-600 h-1.5 rounded-full" style="width: 30%"></div>
+                </div>
+                <span class="text-[9px] font-bold text-slate-400 block mt-1">30%</span>
+              </div>
+            </div>
+
+            <!-- Gate B -->
+            <div class="bg-slate-50/70 border border-blue-100 rounded-2xl p-2.5 text-center flex flex-col justify-between">
+              <div class="flex items-center justify-center gap-1 text-blue-600 text-[10px] font-extrabold uppercase">
+                <i class="fa-solid fa-door-open text-[10px]"></i>
+                <span>Gate B</span>
+              </div>
+              <div class="my-1.5">
+                <span class="text-[9px] text-slate-400 font-bold block">Entered</span>
+                <span class="text-base font-black text-slate-900 leading-none">620</span>
+              </div>
+              <div>
+                <span class="text-[9px] text-slate-400 font-bold block">Capacity</span>
+                <span class="text-[11px] font-black text-slate-700">1,500</span>
+                <div class="w-full bg-slate-200 rounded-full h-1.5 mt-1.5 overflow-hidden">
+                  <div class="bg-blue-600 h-1.5 rounded-full" style="width: 41%"></div>
+                </div>
+                <span class="text-[9px] font-bold text-slate-400 block mt-1">41%</span>
+              </div>
+            </div>
+
+            <!-- Gate C -->
+            <div class="bg-slate-50/70 border border-amber-100 rounded-2xl p-2.5 text-center flex flex-col justify-between">
+              <div class="flex items-center justify-center gap-1 text-amber-600 text-[10px] font-extrabold uppercase">
+                <i class="fa-solid fa-door-open text-[10px]"></i>
+                <span>Gate C</span>
+              </div>
+              <div class="my-1.5">
+                <span class="text-[9px] text-slate-400 font-bold block">Entered</span>
+                <span class="text-base font-black text-slate-900 leading-none">550</span>
+              </div>
+              <div>
+                <span class="text-[9px] text-slate-400 font-bold block">Capacity</span>
+                <span class="text-[11px] font-black text-slate-700">1,200</span>
+                <div class="w-full bg-slate-200 rounded-full h-1.5 mt-1.5 overflow-hidden">
+                  <div class="bg-amber-500 h-1.5 rounded-full" style="width: 46%"></div>
+                </div>
+                <span class="text-[9px] font-bold text-slate-400 block mt-1">46%</span>
+              </div>
+            </div>
+
+            <!-- Gate D -->
+            <div class="bg-slate-50/70 border border-emerald-100 rounded-2xl p-2.5 text-center flex flex-col justify-between">
+              <div class="flex items-center justify-center gap-1 text-emerald-600 text-[10px] font-extrabold uppercase">
+                <i class="fa-solid fa-door-open text-[10px]"></i>
+                <span>Gate D</span>
+              </div>
+              <div class="my-1.5">
+                <span class="text-[9px] text-slate-400 font-bold block">Entered</span>
+                <span class="text-base font-black text-slate-900 leading-none">360</span>
+              </div>
+              <div>
+                <span class="text-[9px] text-slate-400 font-bold block">Capacity</span>
+                <span class="text-[11px] font-black text-slate-700">800</span>
+                <div class="w-full bg-slate-200 rounded-full h-1.5 mt-1.5 overflow-hidden">
+                  <div class="bg-emerald-500 h-1.5 rounded-full" style="width: 45%"></div>
+                </div>
+                <span class="text-[9px] font-bold text-slate-400 block mt-1">45%</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+
+        <!-- Right: Recent Bookings Table (4 cols) -->
+        <div class="lg:col-span-4 bg-white rounded-2xl p-5 border border-slate-100 shadow-xs flex flex-col justify-between">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-xs font-black text-slate-900 uppercase tracking-wider">Recent Bookings</h3>
+            <a href="#" class="text-xs font-bold text-indigo-600 hover:text-indigo-800">View All</a>
+          </div>
+
+          <!-- Table Container -->
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-[11px]">
+              <thead>
+                <tr class="text-[9px] uppercase font-black text-slate-400 border-b border-slate-100 pb-1">
+                  <th class="pb-1.5">Booking ID</th>
+                  <th class="pb-1.5">Customer</th>
+                  <th class="pb-1.5">Tickets</th>
+                  <th class="pb-1.5">Amount</th>
+                  <th class="pb-1.5 text-center">Source</th>
+                  <th class="pb-1.5 text-right">Time</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 font-semibold text-slate-700">
+                <!-- Row 1 -->
+                <tr>
+                  <td class="py-2 text-indigo-700 font-bold">NJ26-00325</td>
+                  <td class="py-2 text-slate-900 font-bold truncate">Rakesh Murmu</td>
+                  <td class="py-2 text-slate-600">VIP × 2</td>
+                  <td class="py-2 font-black text-slate-900">₹400</td>
+                  <td class="py-2 text-center">
+                    <span class="bg-emerald-50 text-emerald-600 text-[9px] font-bold px-1.5 py-0.5 rounded border border-emerald-200">Online</span>
+                  </td>
+                  <td class="py-2 text-right text-[10px] text-slate-400">10:30 AM</td>
+                </tr>
+
+                <!-- Row 2 -->
+                <tr>
+                  <td class="py-2 text-indigo-700 font-bold">NJ26-00324</td>
+                  <td class="py-2 text-slate-900 font-bold truncate">Sanjay Hansda</td>
+                  <td class="py-2 text-slate-600">Premium × 1</td>
+                  <td class="py-2 font-black text-slate-900">₹100</td>
+                  <td class="py-2 text-center">
+                    <span class="bg-emerald-50 text-emerald-600 text-[9px] font-bold px-1.5 py-0.5 rounded border border-emerald-200">Online</span>
+                  </td>
+                  <td class="py-2 text-right text-[10px] text-slate-400">10:25 AM</td>
+                </tr>
+
+                <!-- Row 3 -->
+                <tr>
+                  <td class="py-2 text-indigo-700 font-bold">NJ26-00323</td>
+                  <td class="py-2 text-slate-900 font-bold truncate">Gita Tudu</td>
+                  <td class="py-2 text-slate-600">General × 3</td>
+                  <td class="py-2 font-black text-slate-900">₹150</td>
+                  <td class="py-2 text-center">
+                    <span class="bg-orange-50 text-orange-600 text-[9px] font-bold px-1.5 py-0.5 rounded border border-orange-200">Counter</span>
+                  </td>
+                  <td class="py-2 text-right text-[10px] text-slate-400">10:20 AM</td>
+                </tr>
+
+                <!-- Row 4 -->
+                <tr>
+                  <td class="py-2 text-indigo-700 font-bold">NJ26-00322</td>
+                  <td class="py-2 text-slate-900 font-bold truncate">Marandi Soren</td>
+                  <td class="py-2 text-slate-600">VIP × 1</td>
+                  <td class="py-2 font-black text-slate-900">₹200</td>
+                  <td class="py-2 text-center">
+                    <span class="bg-orange-50 text-orange-600 text-[9px] font-bold px-1.5 py-0.5 rounded border border-orange-200">Counter</span>
+                  </td>
+                  <td class="py-2 text-right text-[10px] text-slate-400">10:15 AM</td>
+                </tr>
+
+                <!-- Row 5 -->
+                <tr>
+                  <td class="py-2 text-indigo-700 font-bold">NJ26-00321</td>
+                  <td class="py-2 text-slate-900 font-bold truncate">Lita Kisku</td>
+                  <td class="py-2 text-slate-600">Premium × 2</td>
+                  <td class="py-2 font-black text-slate-900">₹200</td>
+                  <td class="py-2 text-center">
+                    <span class="bg-emerald-50 text-emerald-600 text-[9px] font-bold px-1.5 py-0.5 rounded border border-emerald-200">Online</span>
+                  </td>
+                  <td class="py-2 text-right text-[10px] text-slate-400">10:10 AM</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+
+      <!-- =========================================================
+           4. QUICK ACTIONS SECTION (7 ACTION BUTTONS)
+           ========================================================= -->
+      <div class="space-y-2.5">
+        <h3 class="text-xs font-black text-slate-900 uppercase tracking-wider">Quick Actions</h3>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+          
+          <!-- 1. Create Event -->
+          <button class="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left">
+            <div class="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-sm flex-shrink-0">
+              <i class="fa-solid fa-calendar-plus"></i>
+            </div>
+            <span class="text-xs font-bold text-slate-800 leading-tight">Create Event</span>
+          </button>
+
+          <!-- 2. Add Ticket Type -->
+          <button class="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left">
+            <div class="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-sm flex-shrink-0">
+              <i class="fa-solid fa-ticket-simple"></i>
+            </div>
+            <span class="text-xs font-bold text-slate-800 leading-tight">Add Ticket Type</span>
+          </button>
+
+          <!-- 3. New Booking (Counter) -->
+          <button class="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left">
+            <div class="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-sm flex-shrink-0">
+              <i class="fa-solid fa-user-plus"></i>
+            </div>
+            <span class="text-xs font-bold text-slate-800 leading-tight">New Booking (Counter)</span>
+          </button>
+
+          <!-- 4. View Bookings -->
+          <button class="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left">
+            <div class="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-sm flex-shrink-0">
+              <i class="fa-solid fa-list-check"></i>
+            </div>
+            <span class="text-xs font-bold text-slate-800 leading-tight">View Bookings</span>
+          </button>
+
+          <!-- 5. Scan Ticket -->
+          <button class="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left">
+            <div class="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-sm flex-shrink-0">
+              <i class="fa-solid fa-qrcode"></i>
+            </div>
+            <span class="text-xs font-bold text-slate-800 leading-tight">Scan Ticket</span>
+          </button>
+
+          <!-- 6. Sales Report -->
+          <button class="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left">
+            <div class="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-sm flex-shrink-0">
+              <i class="fa-solid fa-chart-column"></i>
+            </div>
+            <span class="text-xs font-bold text-slate-800 leading-tight">Sales Report</span>
+          </button>
+
+          <!-- 7. Gate Entry Log / Download -->
+          <button class="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left">
+            <div class="w-8 h-8 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center text-sm flex-shrink-0">
+              <i class="fa-solid fa-door-closed"></i>
+            </div>
+            <span class="text-xs font-bold text-slate-800 leading-tight">Gate Entry Log</span>
+          </button>
+
+        </div>
+      </div>
+
+
+      <!-- =========================================================
+           5. FOOTER SUMMARY KPI STRIP (DARK BLUE CONTAINER)
+           ========================================================= -->
+      <div class="bg-[#0f1430] text-white rounded-2xl p-4 shadow-xl border border-indigo-900/60 grid grid-cols-2 md:grid-cols-6 gap-4 items-center divide-y md:divide-y-0 md:divide-x divide-indigo-900/60">
+        
+        <!-- Total Events -->
+        <div class="flex items-center gap-3 pt-2 md:pt-0">
+          <div class="w-10 h-10 rounded-xl bg-purple-600/30 text-purple-400 flex items-center justify-center text-lg flex-shrink-0">
+            <i class="fa-solid fa-calendar-check"></i>
+          </div>
+          <div>
+            <span class="text-[9px] uppercase font-bold text-slate-400 block">Total Events</span>
+            <span class="text-sm font-black text-white leading-tight">3</span>
+            <span class="text-[9px] font-semibold text-slate-400 block">Active Events</span>
+          </div>
+        </div>
+
+        <!-- Total Ticket Types -->
+        <div class="flex items-center gap-3 pl-0 md:pl-4 pt-2 md:pt-0">
+          <div class="w-10 h-10 rounded-xl bg-blue-600/30 text-blue-400 flex items-center justify-center text-lg flex-shrink-0">
+            <i class="fa-solid fa-ticket"></i>
+          </div>
+          <div>
+            <span class="text-[9px] uppercase font-bold text-slate-400 block">Total Ticket Types</span>
+            <span class="text-sm font-black text-white leading-tight">4</span>
+            <span class="text-[9px] font-semibold text-slate-400 block">Active Types</span>
+          </div>
+        </div>
+
+        <!-- Total Bookings -->
+        <div class="flex items-center gap-3 pl-0 md:pl-4 pt-2 md:pt-0">
+          <div class="w-10 h-10 rounded-xl bg-teal-600/30 text-teal-400 flex items-center justify-center text-lg flex-shrink-0">
+            <i class="fa-solid fa-table-list"></i>
+          </div>
+          <div>
+            <span class="text-[9px] uppercase font-bold text-slate-400 block">Total Bookings</span>
+            <span class="text-sm font-black text-white leading-tight">1,250</span>
+            <span class="text-[9px] font-semibold text-slate-400 block">Total Bookings</span>
+          </div>
+        </div>
+
+        <!-- Total Customers -->
+        <div class="flex items-center gap-3 pl-0 md:pl-4 pt-2 md:pt-0">
+          <div class="w-10 h-10 rounded-xl bg-indigo-600/30 text-indigo-400 flex items-center justify-center text-lg flex-shrink-0">
+            <i class="fa-solid fa-users"></i>
+          </div>
+          <div>
+            <span class="text-[9px] uppercase font-bold text-slate-400 block">Total Customers</span>
+            <span class="text-sm font-black text-white leading-tight">1,860</span>
+            <span class="text-[9px] font-semibold text-slate-400 block">Registered</span>
+          </div>
+        </div>
+
+        <!-- Tickets Scanned Today -->
+        <div class="flex items-center gap-3 pl-0 md:pl-4 pt-2 md:pt-0">
+          <div class="w-10 h-10 rounded-xl bg-rose-600/30 text-rose-400 flex items-center justify-center text-lg flex-shrink-0">
+            <i class="fa-solid fa-qrcode"></i>
+          </div>
+          <div>
+            <span class="text-[9px] uppercase font-bold text-slate-400 block">Tickets Scanned (Today)</span>
+            <span class="text-sm font-black text-white leading-tight">1,980</span>
+            <span class="text-[9px] font-bold text-amber-400 block">64.6% of Sold Tickets</span>
+          </div>
+        </div>
+
+        <!-- System Status -->
+        <div class="flex items-center gap-3 pl-0 md:pl-4 pt-2 md:pt-0">
+          <div class="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-base flex-shrink-0 relative">
+            <span class="w-3 h-3 rounded-full bg-emerald-500 animate-ping absolute"></span>
+            <span class="w-3 h-3 rounded-full bg-emerald-400 relative"></span>
+          </div>
+          <div>
+            <span class="text-[9px] uppercase font-bold text-slate-400 block">System Status</span>
+            <span class="text-xs font-black text-emerald-400 leading-tight">All Systems Operational</span>
+          </div>
+        </div>
+
+      </div>
+
+    </main>
+
+  </div>
+
+
+  <!-- =========================================================================
+       CHART.JS SCRIPTS SETUP
+       ========================================================================= -->
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      
+      // 1. Sales Overview Multi-Line Chart
+      const salesCtx = document.getElementById('salesOverviewChart').getContext('2d');
+      new Chart(salesCtx, {
+        type: 'line',
+        data: {
+          labels: ['09 Aug', '10 Aug', '11 Aug', '12 Aug', '13 Aug', '14 Aug', '15 Aug'],
+          datasets: [
+            {
+              label: 'Tickets Sold',
+              data: [620, 840, 610, 520, 710, 590, 850],
+              borderColor: '#6342ff',
+              backgroundColor: '#6342ff',
+              borderWidth: 2.5,
+              tension: 0.35,
+              pointRadius: 3.5,
+              pointBackgroundColor: '#6342ff',
+              yAxisID: 'y'
+            },
+            {
+              label: 'Collection (₹)',
+              data: [420, 590, 390, 310, 510, 380, 560],
+              borderColor: '#22c55e',
+              backgroundColor: '#22c55e',
+              borderWidth: 2.5,
+              tension: 0.35,
+              pointRadius: 3.5,
+              pointBackgroundColor: '#22c55e',
+              yAxisID: 'y1'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { font: { size: 10, weight: '600' }, color: '#94a3b8' }
+            },
+            y: {
+              type: 'linear',
+              position: 'left',
+              min: 0,
+              max: 1000,
+              ticks: { stepSize: 200, font: { size: 9 }, color: '#94a3b8' },
+              grid: { color: '#f1f5f9' }
+            },
+            y1: {
+              type: 'linear',
+              position: 'right',
+              min: 0,
+              max: 100,
+              ticks: {
+                stepSize: 20,
+                callback: value => '₹' + value + 'K',
+                font: { size: 9 },
+                color: '#94a3b8'
+              },
+              grid: { drawOnChartArea: false }
+            }
+          }
+        }
+      });
+
+      // 2. Tickets By Type Donut Chart
+      const typeCtx = document.getElementById('ticketTypeChart').getContext('2d');
+      new Chart(typeCtx, {
+        type: 'doughnut',
+        data: {
+          labels: ['General', 'Premium', 'VIP', 'VVIP'],
+          datasets: [{
+            data: [1250, 950, 650, 400],
+            backgroundColor: ['#6342ff', '#3b82f6', '#f59e0b', '#22c55e'],
+            borderWidth: 0,
+            hoverOffset: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '72%',
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: true }
+          }
+        }
+      });
+
+      // 3. Booking Source Donut Chart
+      const sourceCtx = document.getElementById('bookingSourceChart').getContext('2d');
+      new Chart(sourceCtx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Online', 'Offline'],
+          datasets: [{
+            data: [2100, 1150],
+            backgroundColor: ['#6342ff', '#22c55e'],
+            borderWidth: 0,
+            hoverOffset: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '72%',
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: true }
+          }
+        }
+      });
+
+    });
+  </script>
+
+</body>
+</html>
