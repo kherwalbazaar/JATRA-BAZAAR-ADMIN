@@ -83,6 +83,8 @@ export interface EventItem {
 export interface TicketType {
   id: string;
   name: string;
+  committeeName?: string;
+  blocks?: string[];
   badgeText?: string;
   price: number;
   totalQuota: number;

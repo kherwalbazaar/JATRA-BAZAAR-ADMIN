@@ -4,29 +4,42 @@ import React, { useState } from 'react';
 import { X, PlusCircle, Tag, Layers, CheckCircle } from 'lucide-react';
 import { TicketType } from '@/types';
 
+const BLOCK_OPTIONS = [
+  'A1', 'A2', 'A3',
+  'B1', 'B2', 'B3',
+  'C1', 'C2', 'C3',
+  'D1', 'D2', 'D3',
+  'Gallery', 'Standing', 'Ground',
+];
+
 interface AddTicketTypeModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAddTicketType: (newType: TicketType) => void;
+  committeeNames?: string[];
 }
 
 export default function AddTicketTypeModal({
   isOpen,
   onClose,
-  onAddTicketType
+  onAddTicketType,
+  committeeNames = []
 }: AddTicketTypeModalProps) {
+  const [committee, setCommittee] = useState('');
   const [name, setName] = useState('');
+  const [block, setBlock] = useState('');
   const [price, setPrice] = useState(150);
   const [quota, setQuota] = useState(500);
   const [color, setColor] = useState('#8b5cf6');
-  const [badgeText, setBadgeText] = useState('Special Tier');
-  const [perksText, setPerksText] = useState('Front View Chairs, Dedicated Snack Bar');
-  const [gate, setGate] = useState('Gate B');
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!committee.trim()) {
+      alert('Please select a committee name');
+      return;
+    }
     if (!name.trim()) {
       alert('Please enter tier name');
       return;
@@ -35,15 +48,16 @@ export default function AddTicketTypeModal({
     const newType: TicketType = {
       id: `TT-${Date.now().toString().slice(-3)}`,
       name: name.trim(),
-      badgeText,
+      committeeName: committee.trim(),
+      blocks: block ? [block] : [],
       price: Number(price) || 100,
       totalQuota: Number(quota) || 500,
       sold: 0,
       color,
       bgColor: 'bg-purple-500',
       textColor: 'text-purple-600',
-      perks: perksText.split(',').map(s => s.trim()).filter(Boolean),
-      gateAccess: [gate]
+      perks: [],
+      gateAccess: []
     };
 
     onAddTicketType(newType);
@@ -73,15 +87,55 @@ export default function AddTicketTypeModal({
 
         <form onSubmit={handleSubmit} className="p-6 space-y-3.5 text-xs font-semibold">
           <div>
-            <label className="text-[11px] font-black uppercase text-slate-500 block mb-1">Tier Name *</label>
-            <input
-              type="text"
+            <label className="text-[11px] font-black uppercase text-slate-500 block mb-1">Committee Name *</label>
+            <select
               required
-              placeholder="e.g. Balcony VIP"
+              value={committee}
+              onChange={(e) => setCommittee(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+            >
+              <option value="" disabled>Select committee</option>
+              {committeeNames.map((c) => (
+                <option key={c} value={c}>🏛️ {c}</option>
+              ))}
+            </select>
+            <p className="text-[10px] text-slate-400 font-semibold mt-1">
+              If any committee wants to sell tickets online, fix the ticket price from here.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-black uppercase text-slate-500 block mb-1">Tier Name *</label>
+            <select
+              required
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
-            />
+            >
+              <option value="" disabled>🎫 Select tier</option>
+              <option value="Star">⭐ Star</option>
+              <option value="VIP">👑 VIP</option>
+              <option value="Special">✨ Special</option>
+              <option value="3rd Class">🎟️ 3rd Class</option>
+              <option value="Ground">🌿 Ground</option>
+              <option value="Standing">🧍 Standing</option>
+            </select>
+          </div>
+
+          {/* Block Name dropdown */}
+          <div>
+            <label className="text-[11px] font-black uppercase text-slate-500 block mb-1">Block Name *</label>
+            <select
+              required
+              value={block}
+              onChange={(e) => setBlock(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+            >
+              <option value="" disabled>Select block</option>
+              {BLOCK_OPTIONS.map((b) => (
+                <option key={b} value={b}>{b}</option>
+              ))}
+            </select>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -105,42 +159,6 @@ export default function AddTicketTypeModal({
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
               />
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[11px] font-black uppercase text-slate-500 block mb-1">Badge Subtext</label>
-              <input
-                type="text"
-                value={badgeText}
-                onChange={(e) => setBadgeText(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
-              />
-            </div>
-            <div>
-              <label className="text-[11px] font-black uppercase text-slate-500 block mb-1">Gate Entry</label>
-              <select
-                value={gate}
-                onChange={(e) => setGate(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
-              >
-                <option value="Gate A">Gate A (VIP)</option>
-                <option value="Gate B">Gate B (Premium)</option>
-                <option value="Gate C">Gate C (General East)</option>
-                <option value="Gate D">Gate D (General West)</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="text-[11px] font-black uppercase text-slate-500 block mb-1">Included Perks (comma separated)</label>
-            <input
-              type="text"
-              placeholder="e.g. Cushioned Seats, Tea Token, Program Booklet"
-              value={perksText}
-              onChange={(e) => setPerksText(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
-            />
           </div>
 
           <div className="pt-2">

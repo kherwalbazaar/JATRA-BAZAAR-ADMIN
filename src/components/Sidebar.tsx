@@ -46,7 +46,7 @@ export default function Sidebar({
     { id: 'events', label: 'Events', icon: <CalendarDays className="w-4 h-4" /> },
     { id: 'tickets-types', label: 'Ticket Types', icon: <LayoutGrid className="w-4 h-4" /> },
     { id: 'bookings', label: 'Bookings', icon: <CalendarCheck className="w-4 h-4" /> },
-    { id: 'tickets', label: 'Tickets & Scan', icon: <Ticket className="w-4 h-4" /> },
+    { id: 'tickets', label: 'Scanner', icon: <Ticket className="w-4 h-4" /> },
     { id: 'payments', label: 'Payments', icon: <CreditCard className="w-4 h-4" /> },
     { id: 'customers', label: 'Customers', icon: <Users className="w-4 h-4" /> },
     { id: 'counters', label: 'Counter Management', icon: <Store className="w-4 h-4" /> },

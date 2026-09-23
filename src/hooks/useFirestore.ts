@@ -724,15 +724,30 @@ export function useFirestore(): FirestoreState {
   }, [isOfflineMode, isLiveConnected]);
 
   const handleAddTicketType = useCallback(async (type: Omit<TicketType, 'id'> & { eventId: string }) => {
+    const cacheKey = `ticketTypes_${type.eventId}`;
     if (isOfflineMode || !isLiveConnected) {
       const newId = `TT-LOC-${Date.now()}`;
       const newType: TicketType = { ...type, id: newId };
-      setTicketTypes((prev) => [...prev, newType]);
+      setTicketTypes((prev) => {
+        const next = [...prev, newType];
+        cacheWrite(cacheKey, next);
+        return next;
+      });
       setLastUpdated(new Date());
       return newId;
     }
     isLocalActionRef.current = true;
     const id = await fs.addTicketType(type);
+
+    // Store also in local + show immediately in list (live listener will confirm)
+    const newType: TicketType = { ...type, id };
+    setTicketTypes((prev) => {
+      if (prev.some((t) => t.id === id)) return prev;
+      const next = [...prev, newType];
+      cacheWrite(cacheKey, next);
+      return next;
+    });
+
     setLastUpdated(new Date());
     return id;
   }, [isOfflineMode, isLiveConnected]);

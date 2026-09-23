@@ -218,6 +218,7 @@ export default function App() {
               ticketTypes={ticketTypes}
               onOpenAddTicketType={() => setAddTicketTypeOpen(true)}
               onUpdateQuota={updateQuota}
+              peopleEntered={kpis.peopleEntered}
             />
           )}
 
@@ -339,6 +340,9 @@ export default function App() {
         isOpen={addTicketTypeOpen}
         onClose={() => setAddTicketTypeOpen(false)}
         onAddTicketType={handleAddTicketType}
+        committeeNames={Array.from(
+          new Set(eventsList.map((e) => (e.committeeName || '').trim()).filter(Boolean))
+        )}
       />
 
       <PrintTicketModal

@@ -10,7 +10,9 @@ import {
   Users, 
   ArrowUpRight, 
   ShieldCheck,
-  Edit2
+  Edit2,
+  Star,
+  QrCode
 } from 'lucide-react';
 import { TicketType, EventItem } from '@/types';
 import { formatINR, formatNumber } from '@/lib/utils';
@@ -20,16 +22,18 @@ interface TicketTypesViewProps {
   ticketTypes: TicketType[];
   onOpenAddTicketType: () => void;
   onUpdateQuota: (typeId: string, delta: number) => void;
+  peopleEntered?: number;
 }
 
 export default function TicketTypesView({
   currentEvent,
   ticketTypes,
   onOpenAddTicketType,
-  onUpdateQuota
+  onUpdateQuota,
+  peopleEntered = 0
 }: TicketTypesViewProps) {
   return (
-    <div className="p-6 space-y-6">
+    <div className="px-6 pt-6 pb-2 space-y-6">
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -57,13 +61,12 @@ export default function TicketTypesView({
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
         {ticketTypes.map((type) => {
           const soldPct = Math.round((type.sold / type.totalQuota) * 100);
-          const revenue = type.sold * type.price;
           const remaining = type.totalQuota - type.sold;
 
           return (
             <div 
               key={type.id}
-              className="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-all p-5 flex flex-col justify-between space-y-4 relative overflow-hidden"
+              className="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-all p-5 flex flex-col space-y-4 relative overflow-hidden"
             >
               {/* Top Accent Strip */}
               <div 
@@ -83,6 +86,7 @@ export default function TicketTypesView({
                       <h3 className="text-base font-black text-slate-900 leading-tight">
                         {type.name}
                       </h3>
+                      <Star className="w-4 h-4 text-amber-400 fill-amber-400 flex-shrink-0" />
                     </div>
                     {type.badgeText && (
                       <span className="text-[10px] font-bold text-slate-400 block mt-0.5">
@@ -120,52 +124,23 @@ export default function TicketTypesView({
                   </div>
                 </div>
 
-                {/* Gate Access Badge */}
+                {/* QR Entries inside hall */}
                 <div className="mt-3.5 flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Entry Gate:</span>
-                  {type.gateAccess.map(gate => (
-                    <span key={gate} className="text-[10px] bg-slate-100 text-slate-700 font-extrabold px-2 py-0.5 rounded-md flex items-center gap-1">
-                      <DoorOpen className="w-2.5 h-2.5 text-slate-500" />
-                      <span>{gate}</span>
-                    </span>
-                  ))}
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">QR Entry in Hall:</span>
+                  <span className="text-[10px] bg-emerald-50 text-emerald-700 font-extrabold px-2 py-0.5 rounded-md flex items-center gap-1">
+                    <QrCode className="w-2.5 h-2.5" />
+                    <span>{formatNumber(peopleEntered)} persons</span>
+                  </span>
                 </div>
 
                 {/* Perks Checklist */}
                 <div className="mt-4 space-y-1.5 border-t border-slate-100 pt-3">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Included Benefits</span>
                   {type.perks.map((perk, idx) => (
                     <div key={idx} className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
                       <CheckCircle className="w-3 h-3 text-emerald-500 flex-shrink-0" />
                       <span className="truncate">{perk}</span>
                     </div>
                   ))}
-                </div>
-              </div>
-
-              {/* Bottom Card Summary & Quota Tweak */}
-              <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
-                <div>
-                  <span className="text-[9px] text-slate-400 font-bold uppercase block">Tier Revenue</span>
-                  <span className="text-xs font-black text-slate-900">{formatINR(revenue)}</span>
-                </div>
-
-                {/* Quick Quota Adjuster */}
-                <div className="flex items-center gap-1">
-                  <button 
-                    onClick={() => onUpdateQuota(type.id, -50)}
-                    className="w-6 h-6 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black flex items-center justify-center transition-colors"
-                    title="Decrease quota by 50"
-                  >
-                    -
-                  </button>
-                  <button 
-                    onClick={() => onUpdateQuota(type.id, 50)}
-                    className="w-6 h-6 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black flex items-center justify-center transition-colors"
-                    title="Increase quota by 50"
-                  >
-                    +
-                  </button>
                 </div>
               </div>
             </div>
