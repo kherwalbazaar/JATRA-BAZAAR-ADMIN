@@ -80,6 +80,22 @@ body {
   animation: connectionLostPulse 1.5s ease-in-out infinite;
 }
 
+/* Sale mode badge blinking highlight */
+@keyframes saleBadgeBlink {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(79, 57, 246, 0);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 5px rgba(79, 57, 246, 0.35);
+  }
+}
+
+.animate-sale-blink {
+  animation: saleBadgeBlink 1.2s ease-in-out infinite;
+}
+
 /* Print specific styles */
 @media print {
   body * {

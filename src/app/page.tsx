@@ -57,9 +57,27 @@ export default function App() {
     retryConnection,
   } = useFirestore();
 
-  // UI State
-  const [currentTab, setCurrentTab] = useState<NavigationTab>('dashboard');
+  // UI State (active tab persisted so Back from edit/details restores the same section)
+  const [currentTab, setCurrentTabState] = useState<NavigationTab>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const setCurrentTab = (tab: NavigationTab) => {
+    setCurrentTabState(tab);
+    try {
+      sessionStorage.setItem('jatra_active_tab', tab);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('jatra_active_tab');
+      if (saved) setCurrentTabState(saved as NavigationTab);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // Modal Visibility States
   const [scannerOpen, setScannerOpen] = useState(false);

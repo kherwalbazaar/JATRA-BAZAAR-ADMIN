@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Save, Plus, Trash2, Link2, FileText, Check } from 'lucide-react';
+import { Save, Plus, Trash2, Link2, FileText, Check, MoreVertical, Pencil } from 'lucide-react';
 import { EventItem, EventActor } from '@/types';
 import { getEventsOnce } from '@/lib/firestore';
 
@@ -152,6 +152,7 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
 
   const [draftRestored, setDraftRestored] = useState(boot.fromDraft);
   const [draftSaved, setDraftSaved] = useState(false);
+  const [noChanges, setNoChanges] = useState(false);
 
   const [saleMode, setSaleMode] = useState<EventItem['saleMode']>(src?.saleMode || 'Counter');
   const [title, setTitle] = useState(src?.title || '');
@@ -182,7 +183,14 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
   const [address, setAddress] = useState(src?.address || src?.venue || '');
   const [phone, setPhone] = useState(src?.phone || '');
 
-  const [actors, setActors] = useState<EventActor[]>(src?.actors?.length ? src.actors : [{ name: '', photo: '' }]);
+  const [actors, setActors] = useState<EventActor[]>(
+    src?.actors?.filter((a) => a.name.trim() || a.photo.trim()) || []
+  );
+  const [actorNameInput, setActorNameInput] = useState('');
+  const [actorPhotoInput, setActorPhotoInput] = useState('');
+  const [editingActorIdx, setEditingActorIdx] = useState<number | null>(null);
+  const [actorMenuOpen, setActorMenuOpen] = useState<number | null>(null);
+  const [deleteActorIdx, setDeleteActorIdx] = useState<number | null>(null);
   const [mainBanner, setMainBanner] = useState(src?.poster || '');
   const [additionalBanners, setAdditionalBanners] = useState<string[]>(src?.additionalBanners?.length ? src.additionalBanners : ['']);
 
@@ -192,8 +200,54 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
   const [singer, setSinger] = useState(src?.singer || '');
   const [trailerUrl, setTrailerUrl] = useState(src?.trailerUrl || '');
 
-  const updateActor = (i: number, key: keyof EventActor, value: string) => {
-    setActors((prev) => prev.map((a, idx) => (idx === i ? { ...a, [key]: value } : a)));
+  // Snapshot of the untouched form (edit mode only) — used to skip no-op updates
+  const [originalPayload] = useState<Omit<EventItem, 'id'> | null>(() =>
+    initial ? buildPayload() : null
+  );
+
+  const handleAddActor = () => {
+    const name = actorNameInput.trim();
+    const photo = actorPhotoInput.trim();
+    if (!name && !photo) {
+      alert('Enter actor name or photo URL first.');
+      return;
+    }
+    if (editingActorIdx !== null) {
+      setActors((prev) => prev.map((a, idx) => (idx === editingActorIdx ? { name, photo } : a)));
+      setEditingActorIdx(null);
+    } else {
+      setActors((prev) => [...prev, { name, photo }]);
+    }
+    setActorNameInput('');
+    setActorPhotoInput('');
+    setActorMenuOpen(null);
+  };
+
+  const handleEditActor = (i: number) => {
+    const a = actors[i];
+    if (!a) return;
+    setEditingActorIdx(i);
+    setActorNameInput(a.name);
+    setActorPhotoInput(a.photo);
+    setActorMenuOpen(null);
+  };
+
+  const handleCancelEditActor = () => {
+    setEditingActorIdx(null);
+    setActorNameInput('');
+    setActorPhotoInput('');
+  };
+
+  const handleConfirmDeleteActor = () => {
+    if (deleteActorIdx === null) return;
+    const idx = deleteActorIdx;
+    setActors((prev) => prev.filter((_, i) => i !== idx));
+    if (editingActorIdx === idx) handleCancelEditActor();
+    else if (editingActorIdx !== null && editingActorIdx > idx) {
+      setEditingActorIdx((v) => (v === null ? v : v - 1));
+    }
+    setDeleteActorIdx(null);
+    setActorMenuOpen(null);
   };
 
   // ── Party / Story dropdown data (loaded from Firestore events) ──
@@ -301,14 +355,9 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
     // Event Date & Times are intentionally NOT filled — must be entered fresh.
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  function buildPayload(): Omit<EventItem, 'id'> {
     const cleanTitle = title === NEW_OPTION ? '' : title.trim();
     const cleanParty = partyName === NEW_OPTION ? '' : partyName.trim();
-    if (!cleanTitle || !eventTitle.trim() || !address.trim() || !year || !month || !dayOfMonth) {
-      alert('Please fill required fields: Story Name, Event Title, Address, Year, Month, Day');
-      return;
-    }
 
     const y = Number(year);
     const m = MONTHS.findIndex((mo) => mo.value === month);
@@ -363,6 +412,25 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
 
       trailerUrl: trailerUrl.trim(),
     };
+
+    return payload;
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanTitle = title === NEW_OPTION ? '' : title.trim();
+    if (!cleanTitle || !eventTitle.trim() || !address.trim() || !year || !month || !dayOfMonth) {
+      alert('Please fill required fields: Story Name, Event Title, Address, Year, Month, Day');
+      return;
+    }
+
+    const payload = buildPayload();
+
+    if (originalPayload && JSON.stringify(payload) === JSON.stringify(originalPayload)) {
+      setNoChanges(true);
+      setTimeout(() => onCancel(), 900);
+      return;
+    }
 
     await onSubmit(payload);
     if (enableDraft) clearDraft();
@@ -632,77 +700,216 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
 
       {/* 4. Cast & Crew */}
       <SectionHeader n={4} title="Cast & Crew" />
-      <div className="space-y-3">
-        {actors.map((actor, i) => (
-          <div key={i} className="grid grid-cols-1 md:grid-cols-[1fr_1.5fr_auto] gap-3 items-end bg-slate-50 border border-slate-200 rounded-xl p-3">
+      <div className="space-y-4">
+        {/* Add / Edit actor input block */}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className={labelCls}>Actor Name</label>
-              <input type="text" value={actor.name} onChange={(e) => updateActor(i, 'name', e.target.value)} placeholder="e.g. Balakram Tudu" className={inputCls} />
+              <input
+                type="text"
+                value={actorNameInput}
+                onChange={(e) => setActorNameInput(e.target.value)}
+                placeholder="e.g. Rahi DIDI"
+                className={inputCls}
+              />
             </div>
             <div>
               <label className={labelCls}>Actor Photo URL</label>
               <input
                 type="text"
-                value={actor.photo}
-                onChange={(e) => updateActor(i, 'photo', e.target.value)}
+                value={actorPhotoInput}
+                onChange={(e) => setActorPhotoInput(e.target.value)}
                 onPaste={(e) => {
                   const text = e.clipboardData.getData('text');
                   if (text) {
                     e.preventDefault();
-                    updateActor(i, 'photo', text.trim());
+                    setActorPhotoInput(text.trim());
                   }
                 }}
                 placeholder="e.g. https://example.com/actor.jpg"
                 className={inputCls}
               />
-              <div className="mt-2 h-28 w-28 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center">
-                {actor.photo ? (
-                  <img
-                    key={actor.photo}
-                    src={actor.photo}
-                    alt="Actor preview"
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      const el = e.currentTarget;
-                      el.style.display = 'none';
-                      const ph = el.parentElement?.querySelector('[data-ph]') as HTMLElement | null;
-                      if (ph) ph.style.display = 'flex';
-                    }}
-                    onLoad={(e) => {
-                      const el = e.currentTarget;
-                      el.style.display = 'block';
-                      const ph = el.parentElement?.querySelector('[data-ph]') as HTMLElement | null;
-                      if (ph) ph.style.display = 'none';
-                    }}
-                  />
-                ) : null}
-                <span
-                  data-ph
-                  className="text-[9px] font-black text-slate-400 uppercase text-center px-2"
-                  style={{ display: actor.photo ? 'none' : 'flex' }}
-                >
-                  Paste photo link
-                </span>
-              </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setActors((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev))}
-              className="mb-0.5 w-9 h-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 flex items-center justify-center transition-colors flex-shrink-0"
-              title="Remove actor"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
           </div>
-        ))}
-        <button
-          type="button"
-          onClick={() => setActors((prev) => [...prev, { name: '', photo: '' }])}
-          className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-black rounded-xl transition-colors"
-        >
-          <Plus className="w-3.5 h-3.5" /> Add Actor
-        </button>
+
+          {/* Live photo preview */}
+          {actorPhotoInput.trim() && (
+            <div className="h-48 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 flex items-center justify-center">
+              <img
+                key={actorPhotoInput}
+                src={actorPhotoInput.trim()}
+                alt="Actor preview"
+                className="max-h-full max-w-full object-contain"
+                onError={(e) => {
+                  const el = e.currentTarget;
+                  el.style.display = 'none';
+                  const ph = el.parentElement?.querySelector('[data-ph]') as HTMLElement | null;
+                  if (ph) ph.style.display = 'flex';
+                }}
+                onLoad={(e) => {
+                  const el = e.currentTarget;
+                  el.style.display = 'block';
+                  const ph = el.parentElement?.querySelector('[data-ph]') as HTMLElement | null;
+                  if (ph) ph.style.display = 'none';
+                }}
+              />
+              <span
+                data-ph
+                className="text-[10px] font-black text-slate-400 uppercase px-4 text-center"
+                style={{ display: 'none' }}
+              >
+                Image failed to load
+              </span>
+            </div>
+          )}
+
+          {/* Typed name + Add/Update action */}
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs font-bold text-slate-500 truncate">
+              {actorNameInput.trim() || 'Actor name will appear here'}
+            </span>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {editingActorIdx !== null && (
+                <button
+                  type="button"
+                  onClick={handleCancelEditActor}
+                  className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-600 text-xs font-black rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleAddActor}
+                className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {editingActorIdx !== null ? 'Update Actor' : 'Add Actor'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Added actors grid */}
+        {actors.length > 0 && (
+          <div className="flex flex-wrap gap-3">
+            {actors.map((actor, i) => (
+              <div key={i} className="relative bg-slate-50 border border-slate-200 rounded-xl w-fit max-w-[320px]">
+                {/* 3-dot menu */}
+                <button
+                  type="button"
+                  onClick={() => setActorMenuOpen((v) => (v === i ? null : i))}
+                  className="absolute top-2 right-2 z-20 w-8 h-8 rounded-lg bg-white/95 border border-slate-200 shadow-sm hover:bg-white flex items-center justify-center transition-colors"
+                  title="Actor options"
+                >
+                  <MoreVertical className="w-4 h-4 text-slate-600" />
+                </button>
+                {actorMenuOpen === i && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setActorMenuOpen(null)} />
+                    <div className="absolute top-11 right-2 z-30 w-32 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => handleEditActor(i)}
+                        className="w-full px-3 py-2 text-left text-xs font-black text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteActorIdx(i);
+                          setActorMenuOpen(null);
+                        }}
+                        className="w-full px-3 py-2 text-left text-xs font-black text-red-600 hover:bg-red-50 flex items-center gap-2 border-t border-slate-100"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* Photo — card width follows image width */}
+                <div className="h-48 rounded-t-xl overflow-hidden bg-slate-100 flex items-center justify-center border-b border-slate-200 min-w-[160px]">
+                  {actor.photo ? (
+                    <img
+                      key={actor.photo}
+                      src={actor.photo}
+                      alt={actor.name || 'Actor'}
+                      className="h-full w-auto max-w-[320px] object-contain"
+                      onError={(e) => {
+                        const el = e.currentTarget;
+                        el.style.display = 'none';
+                        const ph = el.parentElement?.querySelector('[data-ph]') as HTMLElement | null;
+                        if (ph) ph.style.display = 'flex';
+                      }}
+                      onLoad={(e) => {
+                        const el = e.currentTarget;
+                        el.style.display = 'block';
+                        const ph = el.parentElement?.querySelector('[data-ph]') as HTMLElement | null;
+                        if (ph) ph.style.display = 'none';
+                      }}
+                    />
+                  ) : null}
+                  <span
+                    data-ph
+                    className="text-[9px] font-black text-slate-400 uppercase text-center px-2"
+                    style={{ display: actor.photo ? 'none' : 'flex' }}
+                  >
+                    No photo
+                  </span>
+                </div>
+
+                {/* Name */}
+                <div className="px-3 py-2.5 flex items-center justify-center gap-2">
+                  <span className="text-[10px] sm:text-[11px] md:text-xs lg:text-sm font-black text-slate-700 truncate text-center">
+                    {actor.name || 'Unnamed actor'}
+                  </span>
+                  {editingActorIdx === i && (
+                    <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded flex-shrink-0">
+                      Editing
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* Delete actor confirmation modal */}
+      {deleteActorIdx !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setDeleteActorIdx(null)} />
+          <div className="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm border border-slate-200">
+            <h3 className="text-sm font-black text-slate-800 mb-1.5">Delete Actor?</h3>
+            <p className="text-xs font-semibold text-slate-500 mb-5">
+              Are you sure you want to delete{' '}
+              <span className="text-slate-700">
+                “{actors[deleteActorIdx]?.name || actors[deleteActorIdx]?.photo || 'this actor'}”
+              </span>
+              ? This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setDeleteActorIdx(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black rounded-xl transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteActor}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-black rounded-xl transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 5. Banner */}
       <SectionHeader n={5} title="Banner" />
@@ -814,6 +1021,12 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
             <FileText className="w-3.5 h-3.5" />
             Save as Draft
           </button>
+        )}
+        {noChanges && (
+          <span className="flex items-center gap-1.5 text-xs font-black text-amber-600 mr-auto">
+            <Check className="w-3.5 h-3.5" />
+            No changes — nothing updated
+          </span>
         )}
         <button
           type="button"

@@ -4,6 +4,28 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { EventItem, TicketType, BookingItem, GateInfo, CounterBooth, KPIStats } from '@/types';
 import * as fs from '@/lib/firestore';
 
+// ─── Local cache (localStorage) — database data stored locally ────
+const CACHE_NS = 'jatra_cache_';
+
+function cacheRead<T>(key: string): T | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(CACHE_NS + key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function cacheWrite(key: string, value: unknown): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(CACHE_NS + key, JSON.stringify(value));
+  } catch {
+    /* quota exceeded — ignore */
+  }
+}
+
 export interface FirestoreState {
   events: EventItem[];
   currentEvent: EventItem | null;
@@ -100,6 +122,15 @@ export function useFirestore(): FirestoreState {
 
   const unsubRefs = useRef<(() => void)[]>([]);
 
+  // Hydrate events from local storage instantly (live listeners then refresh)
+  useEffect(() => {
+    const cached = cacheRead<EventItem[]>('events');
+    if (cached && cached.length) {
+      setEvents(cached);
+      setCurrentEvent((prev) => prev ?? (cached.find((e) => e.status === 'active') ?? cached[0]));
+    }
+  }, []);
+
   const cleanup = useCallback(() => {
     unsubRefs.current.forEach((unsub) => unsub());
     unsubRefs.current = [];
@@ -139,6 +170,7 @@ export function useFirestore(): FirestoreState {
         if (isCancelled) return;
         if (directEvents.length > 0) {
           setEvents(directEvents);
+          cacheWrite('events', directEvents);
           setCurrentEvent((prev) => {
             if (prev) {
               const matched = directEvents.find((e) => e.id === prev.id);
@@ -192,6 +224,7 @@ export function useFirestore(): FirestoreState {
           }
           setLastUpdated(new Date());
 
+          cacheWrite('events', evts);
           if (evts.length > 0) {
             setEvents(evts);
             // Auto-select or preserve currently selected event
@@ -252,14 +285,27 @@ export function useFirestore(): FirestoreState {
     cleanup();
     if (!currentEvent?.id || isOfflineMode) return;
 
+    const eid = currentEvent.id;
+
+    // Hydrate sub-collections from local storage instantly
+    const cachedTypes = cacheRead<TicketType[]>(`ticketTypes_${eid}`);
+    if (cachedTypes) setTicketTypes(cachedTypes);
+    const cachedBookings = cacheRead<BookingItem[]>(`bookings_${eid}`);
+    if (cachedBookings) setBookings(cachedBookings);
+    const cachedGates = cacheRead<GateInfo[]>(`gates_${eid}`);
+    if (cachedGates) setGates(cachedGates);
+    const cachedCounters = cacheRead<CounterBooth[]>(`counters_${eid}`);
+    if (cachedCounters) setCounters(cachedCounters);
+
     const unsubs: (() => void)[] = [];
 
     try {
       unsubs.push(
         fs.listenTicketTypes(
-          currentEvent.id,
+          eid,
           (types) => {
             setTicketTypes(types);
+            cacheWrite(`ticketTypes_${eid}`, types);
             setIsLiveConnected(true);
             setIsConnectionLost(false);
             if (isLocalActionRef.current) {
@@ -288,9 +334,10 @@ export function useFirestore(): FirestoreState {
     try {
       unsubs.push(
         fs.listenBookings(
-          currentEvent.id,
+          eid,
           (bks) => {
             setBookings(bks);
+            cacheWrite(`bookings_${eid}`, bks);
             setIsLiveConnected(true);
             setIsConnectionLost(false);
             if (isLocalActionRef.current) {
@@ -319,9 +366,10 @@ export function useFirestore(): FirestoreState {
     try {
       unsubs.push(
         fs.listenGates(
-          currentEvent.id,
+          eid,
           (gts) => {
             setGates(gts);
+            cacheWrite(`gates_${eid}`, gts);
             setIsLiveConnected(true);
             setIsConnectionLost(false);
             if (isLocalActionRef.current) {
@@ -350,9 +398,10 @@ export function useFirestore(): FirestoreState {
     try {
       unsubs.push(
         fs.listenCounters(
-          currentEvent.id,
+          eid,
           (cnts) => {
             setCounters(cnts);
+            cacheWrite(`counters_${eid}`, cnts);
             setIsLiveConnected(true);
             setIsConnectionLost(false);
             if (isLocalActionRef.current) {
@@ -399,6 +448,7 @@ export function useFirestore(): FirestoreState {
       const freshEvents = await fs.getEventsOnce();
       if (freshEvents.length > 0) {
         setEvents(freshEvents);
+        cacheWrite('events', freshEvents);
         setCurrentEvent(freshEvents[0]);
       }
       setIsOfflineMode(false);
@@ -430,7 +480,11 @@ export function useFirestore(): FirestoreState {
     if (isOfflineMode || !isLiveConnected) {
       const newId = `EVT-LOC-${Date.now()}`;
       const newEvt: EventItem = { ...event, id: newId };
-      setEvents((prev) => [newEvt, ...prev]);
+      setEvents((prev) => {
+        const next = [newEvt, ...prev];
+        cacheWrite('events', next);
+        return next;
+      });
       setCurrentEvent(newEvt);
       setLastUpdated(new Date());
       return newId;
@@ -442,6 +496,7 @@ export function useFirestore(): FirestoreState {
     try {
       const freshEvents = await fs.getEventsOnce();
       setEvents(freshEvents);
+      cacheWrite('events', freshEvents);
       setCurrentEvent((prev) => {
         if (prev) {
           const matched = freshEvents.find((e) => e.id === prev.id);
@@ -475,6 +530,7 @@ export function useFirestore(): FirestoreState {
       
       // Update local state with fresh data
       setEvents(freshEvents);
+      cacheWrite('events', freshEvents);
       setCurrentEvent((prev) => {
         if (prev) {
           const matched = freshEvents.find((e) => e.id === prev.id);
@@ -487,7 +543,11 @@ export function useFirestore(): FirestoreState {
     } catch (err) {
       console.error('Failed to delete event from Firestore:', err);
       // If Firestore delete fails, still update local state
-      setEvents((prev) => prev.filter((e) => e.id !== eventId));
+      setEvents((prev) => {
+        const next = prev.filter((e) => e.id !== eventId);
+        cacheWrite('events', next);
+        return next;
+      });
       if (currentEvent?.id === eventId) {
         setCurrentEvent(null);
       }
@@ -499,7 +559,11 @@ export function useFirestore(): FirestoreState {
 
   const handleUpdateEvent = useCallback(async (event: EventItem) => {
     if (isOfflineMode || !isLiveConnected) {
-      setEvents((prev) => prev.map((e) => e.id === event.id ? event : e));
+      setEvents((prev) => {
+        const next = prev.map((e) => (e.id === event.id ? event : e));
+        cacheWrite('events', next);
+        return next;
+      });
       if (currentEvent?.id === event.id) {
         setCurrentEvent(event);
       }
@@ -513,6 +577,7 @@ export function useFirestore(): FirestoreState {
     try {
       const freshEvents = await fs.getEventsOnce();
       setEvents(freshEvents);
+      cacheWrite('events', freshEvents);
       setCurrentEvent((prev) => {
         if (prev) {
           const matched = freshEvents.find((e) => e.id === prev.id);
