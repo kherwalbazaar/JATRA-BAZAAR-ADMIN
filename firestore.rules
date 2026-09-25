@@ -1,0 +1,115 @@
+rules_version = '2';
+
+// JATRA BAZAAR — Firestore security rules
+//
+// NOTE: The current app has NO Firebase Auth login, so rules cannot yet
+// distinguish admin vs. scanner vs. public by identity. The scanner system
+// therefore relies on:
+//   1. Client-side re-validation of the scanner member on EVERY scan
+//      (validateAndRecordEntry reads scannerMembers fresh from the DB)
+//   2. Atomic Firestore transactions for double-scan protection
+//      (deterministic ticketEntries doc id: <eventId>__<ticketNumber>)
+//   3. These rules as the deployment boundary.
+//
+// When Firebase Auth is added later:
+//   - admin role  → full access
+//   - scanner role → read own scannerMembers doc; create ticketEntries;
+//                    read own entries; NEVER update approvalStatus/accountStatus
+//   - public      → read-only (or no access)
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // ─── Events / bookings / catalog (admin panel data) ────────────
+    match /events/{eventId} {
+      allow read: if true;
+      allow write: if true; // TODO: restrict to admin when Auth is added
+    }
+
+    match /ticketTypes/{docId} {
+      allow read: if true;
+      allow write: if true; // TODO: restrict to admin
+    }
+
+    match /bookings/{docId} {
+      allow read: if true;
+      allow write: if true; // TODO: restrict to admin/POS counters
+    }
+
+    match /counters/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /gates/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /logs/{docId} {
+      allow read, write: if true;
+    }
+
+    match /users/{docId} {
+      allow read, write: if true;
+    }
+
+    // ─── Scanner members ───────────────────────────────────────────
+    match /scannerMembers/{memberId} {
+      // Anyone (gate phones) must be able to look up a member by Scanner ID
+      // at login; the approval/account status is re-checked on every scan.
+      allow read: if true;
+
+      // TODO (with Auth): only admin may create/update members, and a
+      // scanner session must NEVER be able to flip its own
+      // approvalStatus / accountStatus / scannerId.
+      allow create, update, delete: if true;
+    }
+
+    // ─── Ticket entries (scan history + double-scan lock) ──────────
+    match /ticketEntries/{entryId} {
+      allow read: if true; // admin scan-history view + scanner dashboard
+
+      // entryId format: <eventId>__<ticketNumber> — the deterministic id is
+      // what makes double-entry impossible under a transaction.
+      // A scanner may CREATE an entry but must not rewrite an already
+      // 'entered' record (enforced in app logic via runTransaction;
+      // tighten to admin-only update when Auth exists).
+      allow create: if true;
+      allow update, delete: if true; // TODO: reject overwriting entryStatus 'entered'
+    }
+
+    // ─── Audit logs (append-only trail) ────────────────────────────
+    match /auditLogs/{logId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if false; // history must be immutable
+    }
+
+    // ─── Seats (Seat Create → user booking grid) ──────────────────
+    // Path: seats/{eventId}/{blockId}/{rowId}-{seatNumber}
+    match /seats/{eventId}/{blockId}/{docId} {
+      allow read: if true;
+      allow write: if true; // TODO: restrict to admin when Auth is added
+    }
+
+    match /seatMeta/{eventId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Deny anything else by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

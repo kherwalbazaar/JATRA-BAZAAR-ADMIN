@@ -2,8 +2,11 @@ export type NavigationTab =
   | 'dashboard' 
   | 'events' 
   | 'tickets-types' 
+  | 'create-seat'
   | 'bookings' 
   | 'tickets' 
+  | 'scanner-members'
+  | 'scan-history'
   | 'payments' 
   | 'customers' 
   | 'counters' 
@@ -96,6 +99,19 @@ export interface TicketType {
   gateAccess: string[];
 }
 
+export interface Seat {
+  id: string;
+  eventId: string;
+  blockId: string;
+  rowId: string;
+  seatNumber: number;
+  seatLabel: string;
+  status: 'available' | 'booked';
+  price?: number;
+  createdAt?: string;
+  bookedAt?: string | null;
+}
+
 export interface BookingItem {
   id: string;
   eventId: string;
@@ -120,6 +136,7 @@ export interface BookingItem {
 
 export interface GateInfo {
   id: string;
+  eventId?: string;
   name: string;
   entered: number;
   capacity: number;
@@ -159,4 +176,69 @@ export interface KPIStats {
   upiCollection: number;
   averageTicketValue: number;
   scannedTodayPercentage: number;
+}
+
+// ─── Scanner system ───────────────────────────────────────────────
+
+export type ScannerApprovalStatus = 'pending' | 'approved' | 'rejected';
+export type ScannerAccountStatus = 'active' | 'deactivated';
+
+export interface ScannerMember {
+  id: string;
+  scannerId: string; // SCN-001
+  name: string;
+  email: string;
+  mobile: string;
+  profilePhoto: string;
+  approvalStatus: ScannerApprovalStatus;
+  accountStatus: ScannerAccountStatus;
+  assignedGateId?: string;
+  address?: string;
+  idProof?: string;
+  notes?: string;
+  createdAt: string; // ISO
+  approvedAt?: string;
+  approvedBy?: string;
+  deactivatedAt?: string;
+  deactivatedBy?: string;
+  lastScanAt?: string;
+  totalScans: number;
+}
+
+export type ScanResult =
+  | 'SUCCESS'
+  | 'ALREADY_USED'
+  | 'INVALID'
+  | 'CANCELLED'
+  | 'UNPAID'
+  | 'WRONG_EVENT'
+  | 'SCANNER_DENIED';
+
+export interface TicketEntry {
+  id: string;
+  ticketId: string; // booking.ticketNumber
+  eventId: string;
+  scannerId: string; // SCN-001
+  memberId: string; // scannerMembers doc id
+  scannerName: string;
+  gateId: string;
+  entryStatus: 'entered' | 'rejected';
+  scanResult: ScanResult;
+  scannedAt: string; // ISO
+  audienceName?: string;
+  persons?: number;
+  ticketType?: string;
+  bookingSource?: string;
+  previousEntryTime?: string;
+  previousScannerId?: string;
+  previousGateId?: string;
+}
+
+export interface AuditLog {
+  id: string;
+  action: string; // scanner.approved | scanner.rejected | scanner.activated | scanner.deactivated | entry.accepted | entry.rejected | scanner.added
+  performedBy: string;
+  targetId: string;
+  timestamp: string; // ISO
+  metadata?: Record<string, string | number | boolean>;
 }

@@ -6,14 +6,14 @@ import { getStorage } from 'firebase/storage';
 import { getAnalytics, isSupported } from 'firebase/analytics';
 
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyDcc6ANkeJAuUSvedrhuumEog2zI4YPzXc",
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "event-management-system-27c89.firebaseapp.com",
-  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL || "https://event-management-system-27c89-default-rtdb.firebaseio.com",
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "event-management-system-27c89",
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "event-management-system-27c89.firebasestorage.app",
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "536795248572",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:536795248572:web:320f3d8b0920f7db8a9db9",
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || "G-0BXTHJD0VP"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase (Singleton pattern to prevent re-initialization on Next.js Fast Refresh)
@@ -51,6 +51,11 @@ export const FIRESTORE_COLLECTIONS = {
   SETTINGS: 'settings',
   LOGS: 'logs',
   USERS: 'users',
+  SCANNER_MEMBERS: 'scannerMembers',
+  TICKET_ENTRIES: 'ticketEntries',
+  AUDIT_LOGS: 'auditLogs',
+  SEATS: 'seats',
+  SEAT_META: 'seatMeta',
 } as const;
 
 export default app;

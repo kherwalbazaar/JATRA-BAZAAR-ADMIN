@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { EventItem, TicketType, BookingItem, GateInfo, CounterBooth, KPIStats } from '@/types';
+import { EventItem, TicketType, BookingItem, GateInfo, CounterBooth, KPIStats, Seat } from '@/types';
 import * as fs from '@/lib/firestore';
 
 // ─── Local cache (localStorage) — database data stored locally ────
@@ -54,6 +54,17 @@ export interface FirestoreState {
   decrementGate: (gateId: string) => Promise<void>;
   resetGate: (gateId: string) => Promise<void>;
   addTicketType: (type: Omit<TicketType, 'id'> & { eventId: string }) => Promise<string>;
+  updateTicketType: (typeId: string, data: Partial<TicketType>) => Promise<void>;
+  deleteTicketType: (typeId: string) => Promise<void>;
+  seats: Seat[];
+  createSeatRow: (params: {
+    eventId: string;
+    blockId: string;
+    rowId: string;
+    totalSeats: number;
+    price?: number;
+  }) => Promise<number>;
+  deleteSeatRow: (params: { eventId: string; blockId: string; rowId: string }) => Promise<void>;
   seedDatabase: () => Promise<void>;
   retryConnection: () => void;
 }
@@ -104,6 +115,7 @@ export function useFirestore(): FirestoreState {
   const [bookings, setBookings] = useState<BookingItem[]>([]);
   const [gates, setGates] = useState<GateInfo[]>([]);
   const [counters, setCounters] = useState<CounterBooth[]>([]);
+  const [seats, setSeats] = useState<Seat[]>([]);
   const [kpis, setKpis] = useState<KPIStats>(() => computeKPIs([], [], null));
 
   // Connection & live status
@@ -296,6 +308,8 @@ export function useFirestore(): FirestoreState {
     if (cachedGates) setGates(cachedGates);
     const cachedCounters = cacheRead<CounterBooth[]>(`counters_${eid}`);
     if (cachedCounters) setCounters(cachedCounters);
+    const cachedSeats = cacheRead<Seat[]>(`seats_${eid}`);
+    if (cachedSeats) setSeats(cachedSeats);
 
     const unsubs: (() => void)[] = [];
 
@@ -424,6 +438,28 @@ export function useFirestore(): FirestoreState {
       );
     } catch (err) {
       console.error('Counters listener error:', err);
+      setIsConnectionLost(true);
+    }
+
+    try {
+      unsubs.push(
+        fs.listenSeats(
+          eid,
+          (sts) => {
+            setSeats(sts);
+            cacheWrite(`seats_${eid}`, sts);
+            setIsLiveConnected(true);
+            setIsConnectionLost(false);
+            setLastUpdated(new Date());
+          },
+          (err) => {
+            console.warn('Seats listener error:', err);
+            setIsConnectionLost(true);
+          }
+        )
+      );
+    } catch (err) {
+      console.error('Seats listener error:', err);
       setIsConnectionLost(true);
     }
 
@@ -752,6 +788,69 @@ export function useFirestore(): FirestoreState {
     return id;
   }, [isOfflineMode, isLiveConnected]);
 
+  const handleUpdateTicketType = useCallback(async (typeId: string, data: Partial<TicketType>) => {
+    const cacheKey = `ticketTypes_${currentEvent?.id ?? 'all'}`;
+    setTicketTypes((prev) => {
+      const next = prev.map((t) => (t.id === typeId ? { ...t, ...data } : t));
+      cacheWrite(cacheKey, next);
+      return next;
+    });
+    if (isOfflineMode || !isLiveConnected) {
+      setLastUpdated(new Date());
+      return;
+    }
+    isLocalActionRef.current = true;
+    await fs.updateTicketType(typeId, data);
+    setLastUpdated(new Date());
+  }, [isOfflineMode, isLiveConnected, currentEvent?.id]);
+
+  const handleDeleteTicketType = useCallback(async (typeId: string) => {
+    const cacheKey = `ticketTypes_${currentEvent?.id ?? 'all'}`;
+    setTicketTypes((prev) => {
+      const next = prev.filter((t) => t.id !== typeId);
+      cacheWrite(cacheKey, next);
+      return next;
+    });
+    if (isOfflineMode || !isLiveConnected) {
+      setLastUpdated(new Date());
+      return;
+    }
+    isLocalActionRef.current = true;
+    await fs.deleteTicketType(typeId);
+    setLastUpdated(new Date());
+  }, [isOfflineMode, isLiveConnected]);
+
+  const handleCreateSeatRow = useCallback(
+    async (params: {
+      eventId: string;
+      blockId: string;
+      rowId: string;
+      totalSeats: number;
+      price?: number;
+    }) => {
+      if (isOfflineMode || !isLiveConnected) {
+        throw new Error('Offline — connect to create seats.');
+      }
+      isLocalActionRef.current = true;
+      const count = await fs.createSeatRow(params);
+      setLastUpdated(new Date());
+      return count;
+    },
+    [isOfflineMode, isLiveConnected]
+  );
+
+  const handleDeleteSeatRow = useCallback(
+    async (params: { eventId: string; blockId: string; rowId: string }) => {
+      if (isOfflineMode || !isLiveConnected) {
+        throw new Error('Offline — connect to delete seats.');
+      }
+      isLocalActionRef.current = true;
+      await fs.deleteSeatRow(params);
+      setLastUpdated(new Date());
+    },
+    [isOfflineMode, isLiveConnected]
+  );
+
   return {
     events,
     currentEvent,
@@ -779,6 +878,11 @@ export function useFirestore(): FirestoreState {
     decrementGate: handleDecrementGate,
     resetGate: handleResetGate,
     addTicketType: handleAddTicketType,
+    updateTicketType: handleUpdateTicketType,
+    deleteTicketType: handleDeleteTicketType,
+    seats,
+    createSeatRow: handleCreateSeatRow,
+    deleteSeatRow: handleDeleteSeatRow,
     seedDatabase,
     retryConnection,
   };

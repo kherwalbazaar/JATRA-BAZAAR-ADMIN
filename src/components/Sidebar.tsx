@@ -21,7 +21,9 @@ import {
   Calendar,
   ArrowRight,
   Sparkles,
-  ChevronDown
+  ChevronDown,
+  History,
+  Armchair
 } from 'lucide-react';
 import { NavigationTab, EventItem } from '@/types';
 
@@ -45,8 +47,9 @@ export default function Sidebar({
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
     { id: 'events', label: 'Events', icon: <CalendarDays className="w-4 h-4" /> },
     { id: 'tickets-types', label: 'Ticket Types', icon: <LayoutGrid className="w-4 h-4" /> },
-    { id: 'bookings', label: 'Bookings', icon: <CalendarCheck className="w-4 h-4" /> },
+    { id: 'create-seat', label: 'Create Seat', icon: <Armchair className="w-4 h-4" /> },
     { id: 'tickets', label: 'Scanner', icon: <Ticket className="w-4 h-4" /> },
+    { id: 'scan-history', label: 'Scan History', icon: <History className="w-4 h-4" /> },
     { id: 'payments', label: 'Payments', icon: <CreditCard className="w-4 h-4" /> },
     { id: 'customers', label: 'Customers', icon: <Users className="w-4 h-4" /> },
     { id: 'counters', label: 'Counter Management', icon: <Store className="w-4 h-4" /> },

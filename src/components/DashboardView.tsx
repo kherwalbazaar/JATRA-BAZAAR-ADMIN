@@ -216,7 +216,7 @@ export default function DashboardView({
   };
 
   return (
-    <main className="p-6 space-y-5">
+    <main className="p-6 space-y-5 bg-white min-h-full">
       
       {/* =========================================================
            1. TOP 5 KEY KPI STATS CARDS
@@ -224,68 +224,57 @@ export default function DashboardView({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
         
         {/* KPI 1: TOTAL TICKETS SOLD */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex items-center gap-3.5 hover:shadow-md transition-shadow">
-          <div className="w-12 h-12 rounded-2xl bg-[#6342ff] text-white flex items-center justify-center text-xl shadow-md shadow-indigo-500/20 flex-shrink-0">
-            <Ticket className="w-6 h-6 -rotate-12" />
+        <div className="bg-[#eef1f8] rounded-xl p-3 border border-slate-200/70 shadow-xs flex items-center gap-2.5 hover:shadow-md transition-shadow">
+          <div className="w-9 h-9 rounded-xl bg-[#6342ff] text-white flex items-center justify-center shadow-md shadow-indigo-500/20 flex-shrink-0">
+            <Ticket className="w-[18px] h-[18px] -rotate-12" />
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Tickets Sold</span>
-            <h3 className="text-xl font-black text-slate-900 leading-tight">{formatNumber(kpis.totalTicketsSold)}</h3>
-            <p className="text-[10px] font-extrabold text-emerald-600 flex items-center gap-1 mt-0.5">
-              <TrendingUp className="w-3 h-3" />
-              <span>+18.6% <span className="font-normal text-slate-400">from yesterday</span></span>
-            </p>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Total Tickets Sold</span>
+            <h3 className="text-base font-black text-slate-900 leading-tight">{formatNumber(kpis.totalTicketsSold)}</h3>
           </div>
         </div>
 
         {/* KPI 2: TOTAL COLLECTION */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex items-center gap-3.5 hover:shadow-md transition-shadow">
-          <div className="w-12 h-12 rounded-2xl bg-[#16a34a] text-white flex items-center justify-center text-xl shadow-md shadow-emerald-500/20 flex-shrink-0">
-            <Coins className="w-6 h-6" />
+        <div className="bg-[#eef1f8] rounded-xl p-3 border border-slate-200/70 shadow-xs flex items-center gap-2.5 hover:shadow-md transition-shadow">
+          <div className="w-9 h-9 rounded-xl bg-[#16a34a] text-white flex items-center justify-center shadow-md shadow-emerald-500/20 flex-shrink-0">
+            <Coins className="w-[18px] h-[18px]" />
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Collection</span>
-            <h3 className="text-xl font-black text-slate-900 leading-tight">{formatINR(kpis.totalCollection)}</h3>
-            <p className="text-[10px] font-extrabold text-emerald-600 flex items-center gap-1 mt-0.5">
-              <TrendingUp className="w-3 h-3" />
-              <span>+22.4% <span className="font-normal text-slate-400">from yesterday</span></span>
-            </p>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Total Collection</span>
+            <h3 className="text-base font-black text-slate-900 leading-tight">{formatINR(kpis.totalCollection)}</h3>
           </div>
         </div>
 
         {/* KPI 3: TICKETS REMAINING */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex items-center gap-3.5 hover:shadow-md transition-shadow">
-          <div className="w-12 h-12 rounded-2xl bg-[#2563eb] text-white flex items-center justify-center text-xl shadow-md shadow-blue-500/20 flex-shrink-0">
-            <Ticket className="w-6 h-6" />
+        <div className="bg-[#eef1f8] rounded-xl p-3 border border-slate-200/70 shadow-xs flex items-center gap-2.5 hover:shadow-md transition-shadow">
+          <div className="w-9 h-9 rounded-xl bg-[#2563eb] text-white flex items-center justify-center shadow-md shadow-blue-500/20 flex-shrink-0">
+            <Ticket className="w-[18px] h-[18px]" />
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Tickets Remaining</span>
-            <h3 className="text-xl font-black text-slate-900 leading-tight">{formatNumber(kpis.ticketsRemaining)}</h3>
-            <p className="text-[10px] font-bold text-slate-400 mt-0.5">of {formatNumber(kpis.totalCapacity)}</p>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Tickets Remaining</span>
+            <h3 className="text-base font-black text-slate-900 leading-tight">{formatNumber(kpis.ticketsRemaining)}</h3>
           </div>
         </div>
 
         {/* KPI 4: PEOPLE ENTERED */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex items-center gap-3.5 hover:shadow-md transition-shadow">
-          <div className="w-12 h-12 rounded-2xl bg-[#ea580c] text-white flex items-center justify-center text-xl shadow-md shadow-orange-500/20 flex-shrink-0">
-            <Users className="w-6 h-6" />
+        <div className="bg-[#eef1f8] rounded-xl p-3 border border-slate-200/70 shadow-xs flex items-center gap-2.5 hover:shadow-md transition-shadow">
+          <div className="w-9 h-9 rounded-xl bg-[#ea580c] text-white flex items-center justify-center shadow-md shadow-orange-500/20 flex-shrink-0">
+            <Users className="w-[18px] h-[18px]" />
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">People Entered</span>
-            <h3 className="text-xl font-black text-slate-900 leading-tight">{formatNumber(kpis.peopleEntered)}</h3>
-            <p className="text-[10px] font-extrabold text-orange-600 mt-0.5">Today</p>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">People Entered</span>
+            <h3 className="text-base font-black text-slate-900 leading-tight">{formatNumber(kpis.peopleEntered)}</h3>
           </div>
         </div>
 
         {/* KPI 5: TODAY'S COLLECTION */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-xs flex items-center gap-3.5 hover:shadow-md transition-shadow">
-          <div className="w-12 h-12 rounded-2xl bg-[#db2777] text-white flex items-center justify-center text-xl shadow-md shadow-pink-500/20 flex-shrink-0">
-            <BarChart3 className="w-6 h-6" />
+        <div className="bg-[#eef1f8] rounded-xl p-3 border border-slate-200/70 shadow-xs flex items-center gap-2.5 hover:shadow-md transition-shadow">
+          <div className="w-9 h-9 rounded-xl bg-[#db2777] text-white flex items-center justify-center shadow-md shadow-pink-500/20 flex-shrink-0">
+            <BarChart3 className="w-[18px] h-[18px]" />
           </div>
           <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Today's Collection</span>
-            <h3 className="text-xl font-black text-slate-900 leading-tight">{formatINR(kpis.todayCollection)}</h3>
-            <p className="text-[10px] font-bold text-pink-600 mt-0.5">{kpis.todayPercentageOfTotal}% of total collection</p>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Today's Collection</span>
+            <h3 className="text-base font-black text-slate-900 leading-tight">{formatINR(kpis.todayCollection)}</h3>
           </div>
         </div>
 
@@ -298,7 +287,7 @@ export default function DashboardView({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         
         {/* Left: Ticket Sales Overview Chart (5 cols) */}
-        <div className="lg:col-span-5 bg-white rounded-2xl p-5 border border-slate-100 shadow-xs flex flex-col justify-between">
+        <div className="lg:col-span-5 bg-[#eef1f8] rounded-2xl p-5 border border-slate-200/70 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Ticket Sales Overview</h3>
             <button className="bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-bold py-1 px-2.5 rounded-lg flex items-center gap-1.5 transition-colors">
@@ -327,7 +316,7 @@ export default function DashboardView({
 
 
         {/* Center: Tickets By Type Donut (4 cols) */}
-        <div className="lg:col-span-4 bg-white rounded-2xl p-5 border border-slate-100 shadow-xs flex flex-col justify-between">
+        <div className="lg:col-span-4 bg-[#eef1f8] rounded-2xl p-5 border border-slate-200/70 shadow-xs flex flex-col justify-between">
           <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider mb-2">Tickets By Type</h3>
 
           <div className="flex items-center justify-center gap-4 my-auto">
@@ -360,7 +349,7 @@ export default function DashboardView({
 
 
         {/* Right: Sales Summary Breakdown (3 cols) */}
-        <div className="lg:col-span-3 bg-white rounded-2xl p-5 border border-slate-100 shadow-xs flex flex-col justify-between">
+        <div className="lg:col-span-3 bg-[#eef1f8] rounded-2xl p-5 border border-slate-200/70 shadow-xs flex flex-col justify-between">
           <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider mb-3">Sales Summary</h3>
 
           <div className="space-y-3.5 flex-1 flex flex-col justify-center">
@@ -441,7 +430,7 @@ export default function DashboardView({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         
         {/* Left: Booking Source Donut (3 cols) */}
-        <div className="lg:col-span-3 bg-white rounded-2xl p-5 border border-slate-100 shadow-xs flex flex-col justify-between">
+        <div className="lg:col-span-3 bg-[#eef1f8] rounded-2xl p-5 border border-slate-200/70 shadow-xs flex flex-col justify-between">
           <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider mb-2">Booking Source</h3>
 
           <div className="flex items-center justify-center gap-4 my-auto">
@@ -475,7 +464,7 @@ export default function DashboardView({
 
 
         {/* Center: Gate Entry Summary (5 cols) */}
-        <div className="lg:col-span-5 bg-white rounded-2xl p-5 border border-slate-100 shadow-xs flex flex-col justify-between">
+        <div className="lg:col-span-5 bg-[#eef1f8] rounded-2xl p-5 border border-slate-200/70 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Gate Entry Summary</h3>
             <button 
@@ -517,7 +506,7 @@ export default function DashboardView({
 
 
         {/* Right: Recent Bookings Table (4 cols) */}
-        <div className="lg:col-span-4 bg-white rounded-2xl p-5 border border-slate-100 shadow-xs flex flex-col justify-between">
+        <div className="lg:col-span-4 bg-[#eef1f8] rounded-2xl p-5 border border-slate-200/70 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Recent Bookings</h3>
             <button 
@@ -585,7 +574,7 @@ export default function DashboardView({
           {/* 1. Create Event */}
           <button 
             onClick={onOpenCreateEvent}
-            className="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left"
+            className="bg-[#eef1f8] hover:bg-[#e4e9f4] border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left"
           >
             <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-sm flex-shrink-0">
               <CalendarPlus className="w-4 h-4" />
@@ -596,7 +585,7 @@ export default function DashboardView({
           {/* 2. Add Ticket Type */}
           <button 
             onClick={onOpenAddTicketType}
-            className="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left"
+            className="bg-[#eef1f8] hover:bg-[#e4e9f4] border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left"
           >
             <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-sm flex-shrink-0">
               <PlusCircle className="w-4 h-4" />
@@ -607,7 +596,7 @@ export default function DashboardView({
           {/* 3. New Booking (Counter) */}
           <button 
             onClick={onOpenNewBooking}
-            className="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left"
+            className="bg-[#eef1f8] hover:bg-[#e4e9f4] border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left"
           >
             <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-sm flex-shrink-0">
               <UserPlus className="w-4 h-4" />
@@ -618,7 +607,7 @@ export default function DashboardView({
           {/* 4. View Bookings */}
           <button 
             onClick={() => onNavigateTab('bookings')}
-            className="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left"
+            className="bg-[#eef1f8] hover:bg-[#e4e9f4] border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left"
           >
             <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-sm flex-shrink-0">
               <ListChecks className="w-4 h-4" />
@@ -629,7 +618,7 @@ export default function DashboardView({
           {/* 5. Scan Ticket */}
           <button 
             onClick={onOpenScanner}
-            className="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left"
+            className="bg-[#eef1f8] hover:bg-[#e4e9f4] border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left"
           >
             <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center text-sm flex-shrink-0">
               <QrCode className="w-4 h-4" />
@@ -640,7 +629,7 @@ export default function DashboardView({
           {/* 6. Sales Report */}
           <button 
             onClick={() => onNavigateTab('reports')}
-            className="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left"
+            className="bg-[#eef1f8] hover:bg-[#e4e9f4] border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left"
           >
             <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-sm flex-shrink-0">
               <FileSpreadsheet className="w-4 h-4" />
@@ -651,7 +640,7 @@ export default function DashboardView({
           {/* 7. Gate Entry Log */}
           <button 
             onClick={() => onNavigateTab('gates')}
-            className="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left"
+            className="bg-[#eef1f8] hover:bg-[#e4e9f4] border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left"
           >
             <div className="w-8 h-8 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center text-sm flex-shrink-0">
               <DoorOpen className="w-4 h-4" />
@@ -666,7 +655,7 @@ export default function DashboardView({
       {/* =========================================================
            5. FOOTER SUMMARY KPI STRIP (DARK BLUE CONTAINER)
            ========================================================= */}
-      <div className="bg-[#0f1430] text-white rounded-2xl p-4 shadow-xl border border-indigo-900/60 grid grid-cols-2 md:grid-cols-6 gap-4 items-center divide-y md:divide-y-0 md:divide-x divide-indigo-900/60">
+      <div className="bg-[#141a35] text-white rounded-2xl p-4 shadow-xl border border-indigo-800/50 grid grid-cols-2 md:grid-cols-6 gap-4 items-center divide-y md:divide-y-0 md:divide-x divide-indigo-800/50">
         
         {/* Total Events */}
         <div className="flex items-center gap-3 pt-2 md:pt-0">

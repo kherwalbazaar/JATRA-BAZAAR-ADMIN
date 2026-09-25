@@ -7,11 +7,16 @@ import Header from '@/components/Header';
 import DashboardView from '@/components/DashboardView';
 import EventsView from '@/components/EventsView';
 import TicketTypesView from '@/components/TicketTypesView';
+import SeatCreateSection from '@/components/SeatCreateSection';
 import BookingsView from '@/components/BookingsView';
 import GateManagementView from '@/components/GateManagementView';
 import CounterManagementView from '@/components/CounterManagementView';
 import ReportsView from '@/components/ReportsView';
 import SettingsView from '@/components/SettingsView';
+import ScannerMembersView from '@/components/ScannerMembersView';
+import ScanHistoryView from '@/components/ScanHistoryView';
+import ScannerMemberList from '@/components/ScannerMemberList';
+import CreateScannerUserModal from '@/components/CreateScannerUserModal';
 
 // Modals
 import TicketScannerModal from '@/components/TicketScannerModal';
@@ -23,6 +28,7 @@ import EventDetailsModal from '@/components/EventDetailsModal';
 
 import { NavigationTab, BookingItem, EventItem, TicketType } from '@/types';
 import { useFirestore } from '@/hooks/useFirestore';
+import { UserPlus } from 'lucide-react';
 
 export default function App() {
   const router = useRouter();
@@ -53,6 +59,11 @@ export default function App() {
     decrementGate,
     resetGate,
     addTicketType,
+    updateTicketType,
+    deleteTicketType,
+    seats,
+    createSeatRow,
+    deleteSeatRow,
     seedDatabase,
     retryConnection,
   } = useFirestore();
@@ -85,6 +96,7 @@ export default function App() {
   const [createEventOpen, setCreateEventOpen] = useState(false);
   const [addTicketTypeOpen, setAddTicketTypeOpen] = useState(false);
   const [printTicketTarget, setPrintTicketTarget] = useState<BookingItem | null>(null);
+  const [createUserOpen, setCreateUserOpen] = useState(false);
   const [selectedEventForModal, setSelectedEventForModal] = useState<EventItem | null>(null);
   const [editingEvent, setEditingEvent] = useState<EventItem | null>(null);
 
@@ -111,12 +123,24 @@ export default function App() {
   };
 
   // Handlers: Add Ticket Category
+  const [editingTicketType, setEditingTicketType] = useState<TicketType | null>(null);
+
   const handleAddTicketType = async (newType: TicketType) => {
     if (!currentEvent) return;
     await addTicketType({
       ...newType,
       eventId: currentEvent.id,
     });
+  };
+
+  const handleUpdateTicketType = async (typeId: string, data: Partial<TicketType>) => {
+    await updateTicketType(typeId, data);
+    setEditingTicketType(null);
+  };
+
+  const handleDeleteTicketType = async (type: TicketType) => {
+    if (!window.confirm(`Delete ticket category "${type.name}"? This cannot be undone.`)) return;
+    await deleteTicketType(type.id);
   };
 
   return (
@@ -181,7 +205,7 @@ export default function App() {
         />
 
         {/* View Routing */}
-        <div className="flex-1">
+        <div className={`flex-1 flex flex-col ${currentTab === 'dashboard' ? 'bg-white' : ''}`}>
           {currentTab === 'dashboard' && (
             <DashboardView
               currentEvent={currentEvent}
@@ -191,7 +215,10 @@ export default function App() {
               recentBookings={bookings}
               onNavigateTab={setCurrentTab}
               onOpenCreateEvent={() => router.push('/create-event')}
-              onOpenAddTicketType={() => setAddTicketTypeOpen(true)}
+              onOpenAddTicketType={() => {
+                setEditingTicketType(null);
+                setAddTicketTypeOpen(true);
+              }}
               onOpenNewBooking={() => setNewBookingOpen(true)}
               onOpenScanner={() => setScannerOpen(true)}
               onSelectBooking={(b) => setPrintTicketTarget(b)}
@@ -216,36 +243,46 @@ export default function App() {
             <TicketTypesView
               currentEvent={currentEvent}
               ticketTypes={ticketTypes}
-              onOpenAddTicketType={() => setAddTicketTypeOpen(true)}
+              onOpenAddTicketType={() => {
+                setEditingTicketType(null);
+                setAddTicketTypeOpen(true);
+              }}
+              onEditTicketType={(type) => {
+                setEditingTicketType(type);
+                setAddTicketTypeOpen(true);
+              }}
+              onDeleteTicketType={handleDeleteTicketType}
               onUpdateQuota={updateQuota}
               peopleEntered={kpis.peopleEntered}
             />
           )}
 
-          {currentTab === 'bookings' && (
-            <BookingsView
-              bookings={bookings}
-              onOpenNewBooking={() => setNewBookingOpen(true)}
-              onSelectBooking={(b) => setPrintTicketTarget(b)}
-              onPrintTicket={(b) => setPrintTicketTarget(b)}
-            />
+          {currentTab === 'create-seat' && (
+            <div className="px-6 pt-6 pb-6 space-y-4">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Create Seat</h2>
+                <p className="text-xs text-slate-400 font-semibold mt-0.5">
+                  {currentEvent
+                    ? `Configured for: ${currentEvent.title}`
+                    : 'Select an event first from the Events section.'}
+                </p>
+              </div>
+              <SeatCreateSection
+                currentEventId={currentEvent?.id}
+                seats={seats}
+                ticketTypes={ticketTypes}
+                onCreateSeatRow={createSeatRow}
+                onDeleteSeatRow={deleteSeatRow}
+              />
+            </div>
           )}
 
-          {currentTab === 'tickets' && (
+          {currentTab === 'bookings' && (
             <div className="p-6 space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-black text-slate-900">Ticket Validation & Gate Scanning</h2>
-                  <p className="text-xs text-slate-400 font-semibold mt-0.5">Scan attendee QR codes to verify authenticity and admit at gate turnstiles.</p>
-                </div>
-                <button
-                  onClick={() => setScannerOpen(true)}
-                  className="bg-[#4f39f6] text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md shadow-indigo-600/30"
-                >
-                  Open QR Scanner Camera
-                </button>
-              </div>
-
+              <h2 className="text-xl font-black text-slate-900">Bookings & Transactions</h2>
+              <p className="text-xs text-slate-400 font-semibold -mt-4">
+                {bookings.length} Listed — Search, verify, reprint receipts, and track all ticket orders across online and counter channels.
+              </p>
               <BookingsView
                 bookings={bookings}
                 onOpenNewBooking={() => setNewBookingOpen(true)}
@@ -254,6 +291,30 @@ export default function App() {
               />
             </div>
           )}
+
+          {currentTab === 'tickets' && (
+            <div className="p-6 flex-1 flex flex-col min-h-0">
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900">Ticket Validation & Gate Scanning</h2>
+                  <p className="text-xs text-slate-400 font-semibold mt-0.5">Scan attendee QR codes to verify authenticity and admit at gate turnstiles.</p>
+                </div>
+                <button
+                  onClick={() => setCreateUserOpen(true)}
+                  className="bg-[#4f39f6] hover:bg-[#432ee0] text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md shadow-indigo-600/30 flex items-center gap-1.5"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  Create User
+                </button>
+              </div>
+
+              <ScannerMemberList />
+            </div>
+          )}
+
+          {currentTab === 'scanner-members' && <ScannerMembersView />}
+
+          {currentTab === 'scan-history' && <ScanHistoryView />}
 
           {currentTab === 'payments' && (
             <ReportsView
@@ -338,8 +399,13 @@ export default function App() {
 
       <AddTicketTypeModal
         isOpen={addTicketTypeOpen}
-        onClose={() => setAddTicketTypeOpen(false)}
+        onClose={() => {
+          setAddTicketTypeOpen(false);
+          setEditingTicketType(null);
+        }}
         onAddTicketType={handleAddTicketType}
+        onUpdateTicketType={handleUpdateTicketType}
+        editingType={editingTicketType}
         committeeNames={Array.from(
           new Set(eventsList.map((e) => (e.committeeName || '').trim()).filter(Boolean))
         )}
@@ -354,6 +420,12 @@ export default function App() {
       <EventDetailsModal
         event={selectedEventForModal}
         onClose={() => setSelectedEventForModal(null)}
+      />
+
+      <CreateScannerUserModal
+        isOpen={createUserOpen}
+        onClose={() => setCreateUserOpen(false)}
+        gates={gates}
       />
     </div>
   );

@@ -117,8 +117,10 @@ export default function EventsView({
           return (
             <div 
               key={evt.id}
-              className={`bg-white rounded-2xl border-2 border-blue-500 transition-all duration-200 overflow-hidden flex flex-col justify-between hover:shadow-lg hover:shadow-blue-500/20 ${
-                isCurrent ? 'shadow-md shadow-blue-500/30' : 'shadow-xs'
+              className={`bg-white rounded-2xl border-2 transition-all duration-200 overflow-hidden flex flex-col justify-between hover:shadow-lg ${
+                isCurrent 
+                  ? 'border-blue-500 shadow-md shadow-blue-500/30 hover:shadow-blue-500/40' 
+                  : 'border-slate-200 shadow-xs hover:shadow-slate-200/50'
               }`}
             >
               {/* Event Poster Image */}
@@ -225,7 +227,11 @@ export default function EventsView({
               {/* Details button — flush to left/right/bottom, no rounded corners */}
               <button
                 onClick={() => onViewEventDetails(evt)}
-                className="w-full py-2 bg-blue-500 hover:bg-blue-600 text-white text-[11px] font-bold flex items-center justify-center gap-1 transition-colors"
+                className={`w-full py-2 text-white text-[11px] font-bold flex items-center justify-center gap-1 transition-colors ${
+                  isCurrent 
+                    ? 'bg-blue-500 hover:bg-blue-600' 
+                    : 'bg-slate-700 hover:bg-slate-800'
+                }`}
               >
                 <span>Details</span>
                 <ExternalLink className="w-3 h-3" />
