@@ -261,8 +261,8 @@ export default function EventsView({
               </h3>
               <p className="text-sm text-slate-500 font-semibold">
                 {confirmModal.type === 'delete' 
-                  ? `Are you sure you want to delete "${confirmModal.event.title}"? This action cannot be undone.`
-                  : `Do you want to edit "${confirmModal.event.title}"?`}
+                  ? `Are you sure you want to delete "${confirmModal.event.partyName || confirmModal.event.title}"? This action cannot be undone.`
+                  : `Do you want to edit "${confirmModal.event.partyName || confirmModal.event.title}"?`}
               </p>
             </div>
             <div className="px-6 pb-6 flex gap-3">
