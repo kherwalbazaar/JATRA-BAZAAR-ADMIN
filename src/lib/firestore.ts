@@ -146,7 +146,7 @@ export async function getEventFormFormat(): Promise<Record<string, unknown> | nu
 
 export async function getEventsOnce(): Promise<EventItem[]> {
   const snap = await getDocs(colRef(C.EVENTS));
-  const events = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventItem));
+  const events = snap.docs.map((d) => ({ ...d.data(), id: d.id } as EventItem));
   events.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
   return events;
 }
@@ -159,7 +159,9 @@ export function listenEvents(
   return onSnapshot(
     q,
     (snap) => {
-      const events = snap.docs.map((d) => ({ id: d.id, ...d.data() } as EventItem));
+      // Doc id wins: some payloads stored a stale `id` field (EVT-…)
+      // that does not match the document, which broke update/delete.
+      const events = snap.docs.map((d) => ({ ...d.data(), id: d.id } as EventItem));
       events.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
       callback(events);
     },
@@ -171,12 +173,16 @@ export function listenEvents(
 }
 
 export async function addEvent(event: Omit<EventItem, 'id'>): Promise<string> {
-  const ref = await addDoc(colRef(C.EVENTS), event);
+  const payload: Record<string, unknown> = { ...event };
+  delete payload.id;
+  const ref = await addDoc(colRef(C.EVENTS), payload as Omit<EventItem, 'id'>);
   return ref.id;
 }
 
 export async function updateEvent(id: string, data: Partial<EventItem>): Promise<void> {
-  await updateDoc(docRef(C.EVENTS, id), data);
+  const payload: Record<string, unknown> = { ...data };
+  delete payload.id;
+  await updateDoc(docRef(C.EVENTS, id), payload as Partial<EventItem>);
 }
 
 export async function deleteEvent(id: string): Promise<void> {
@@ -631,6 +637,43 @@ function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** JSON keys that may carry the booking number inside a QR payload. */
+const QR_ID_KEYS = ['id', 'ticketnumber', 'ticketno', 'code', 'bookingid', 'serial'];
+
+/**
+ * Resolves a scanned QR payload to a booking.
+ *
+ * The customer app encodes QRs in a few historical shapes:
+ *   - {"id":"NJ26-00001", ...}      (current)
+ *   - NJ26-00001-2                  (per-seat serial)
+ *   - NJ26-00001-RAMESH-TUDU        (legacy ticket + holder name)
+ * Only the first segment that actually exists in `bookings` is accepted,
+ * so an unknown code can never be turned into a valid entry.
+ */
+async function findBookingByTicketNumber(raw: string): Promise<BookingItem | null> {
+  const lookup = async (value: string): Promise<BookingItem | null> => {
+    if (!value) return null;
+    const q = query(colRef(C.BOOKINGS), where('ticketNumber', '==', value));
+    const snap = await getDocs(q);
+    if (snap.empty) return null;
+    const d = snap.docs[0];
+    return { id: d.id, ...d.data() } as BookingItem;
+  };
+
+  const direct = await lookup(raw);
+  if (direct) return direct;
+
+  let candidate = raw;
+  for (let i = 0; i < 3; i++) {
+    const cut = candidate.lastIndexOf('-');
+    if (cut <= 0) break;
+    candidate = candidate.slice(0, cut);
+    const found = await lookup(candidate);
+    if (found) return found;
+  }
+  return null;
+}
+
 /**
  * Full server-side (Firestore) ticket validation + atomic entry recording.
  * - Re-reads the scanner member from the database (never trusts the client session)
@@ -656,19 +699,108 @@ export async function validateAndRecordEntry(
     };
   }
 
-  // 2. Extract ticket id from QR (JSON payload or plain code) — never trust QR content beyond the id
+  // 2. Extract ticket id from QR (JSON payload or plain code)
   let ticketNumber = code;
-  try {
-    const parsed = JSON.parse(code);
-    if (parsed && typeof parsed === 'object') {
-      ticketNumber = String(parsed.id ?? parsed.ticketNumber ?? '');
+  let qrSeat = '';
+  let qrSeatIndex: number | undefined;
+
+  let payloadStr = code.trim();
+  if (payloadStr.includes('{') || payloadStr.toLowerCase().includes('%7b')) {
+    if (!payloadStr.startsWith('{')) {
+      try {
+        payloadStr = decodeURIComponent(payloadStr);
+      } catch {
+        /* keep original */
+      }
     }
-  } catch {
-    /* plain ticket code */
+    try {
+      const parsed = JSON.parse(payloadStr);
+      if (parsed && typeof parsed === 'object') {
+        const record = parsed as Record<string, unknown>;
+        const key = Object.keys(record).find((name) =>
+          QR_ID_KEYS.some((candidate) => candidate === name.toLowerCase())
+        );
+        ticketNumber = key ? String(record[key] ?? '') : '';
+        qrSeat = String(record['seat'] || record['seatNumber'] || '').trim();
+        const sIdx = Number(record['seatIndex']);
+        if (Number.isFinite(sIdx)) qrSeatIndex = sIdx;
+      }
+    } catch {
+      /* plain ticket code */
+    }
   }
   ticketNumber = ticketNumber.trim().toUpperCase();
   if (!ticketNumber) {
     return { result: 'INVALID', message: 'This ticket could not be verified.' };
+  }
+
+  const rawTicketId = ticketNumber;
+
+  // 3. Find ticket in database
+  const booking = await findBookingByTicketNumber(rawTicketId);
+  if (!booking) {
+    try {
+      await addDoc(colRef(C.TICKET_ENTRIES), {
+        eventId: ctx.eventId,
+        scannerId: member.scannerId,
+        memberId: member.id,
+        scannerName: member.name,
+        gateId: ctx.gateId,
+        ticketId: rawTicketId,
+        entryStatus: 'rejected',
+        scanResult: 'INVALID',
+        scannedAt: new Date().toISOString(),
+      } satisfies Omit<TicketEntry, 'id'>);
+    } catch (err) {
+      console.warn('Failed to log rejected scan:', err);
+    }
+    await writeAuditLog({
+      action: 'entry.rejected',
+      performedBy: member.scannerId,
+      targetId: rawTicketId,
+      metadata: { result: 'INVALID', eventId: ctx.eventId },
+    });
+    return { result: 'INVALID', ticketId: rawTicketId, message: 'This ticket could not be verified.' };
+  }
+
+  const canonicalBookingNumber = booking.ticketNumber;
+  const seatsArray = Array.isArray(booking.seats) ? (booking.seats as string[]) : [];
+  const totalSeats = seatsArray.length || booking.quantity || 1;
+
+  let seatIndex = qrSeatIndex;
+  let specificTicketId = rawTicketId;
+
+  const seatMatch = rawTicketId.match(/-([0-9]+)$/);
+  if (seatMatch && Number(seatMatch[1]) > 0 && Number(seatMatch[1]) <= totalSeats) {
+    if (!seatIndex) seatIndex = Number(seatMatch[1]);
+  } else if (totalSeats > 1 && !rawTicketId.includes('-', canonicalBookingNumber.length)) {
+    // Parent booking was scanned without suffix: find first unused seat
+    const usedTickets = (Array.isArray(booking.usedTickets) ? booking.usedTickets : []).map((s: string) =>
+      String(s).trim().toUpperCase()
+    );
+    const usedSeats = (Array.isArray(booking.usedSeats) ? booking.usedSeats : []).map((s: string) =>
+      String(s).trim().toUpperCase()
+    );
+    let foundUnusedIndex = -1;
+    for (let i = 0; i < totalSeats; i++) {
+      const candTicket = `${canonicalBookingNumber}-${i + 1}`.toUpperCase();
+      const candSeat = (seatsArray[i] || '').toUpperCase();
+      if (!usedTickets.includes(candTicket) && (!candSeat || !usedSeats.includes(candSeat))) {
+        foundUnusedIndex = i + 1;
+        break;
+      }
+    }
+    if (foundUnusedIndex > 0) {
+      seatIndex = foundUnusedIndex;
+      specificTicketId = `${canonicalBookingNumber}-${seatIndex}`;
+    }
+  }
+
+  let seatLabel = qrSeat || '';
+  if (!seatLabel && seatIndex && seatsArray[seatIndex - 1]) {
+    seatLabel = String(seatsArray[seatIndex - 1]);
+  } else if (!seatLabel && booking.seatNumber) {
+    seatLabel = String(booking.seatNumber);
   }
 
   const base = {
@@ -677,7 +809,9 @@ export async function validateAndRecordEntry(
     memberId: member.id,
     scannerName: member.name,
     gateId: ctx.gateId,
-    ticketId: ticketNumber,
+    ticketId: specificTicketId,
+    baseTicketId: canonicalBookingNumber,
+    seat: seatLabel || undefined,
   };
 
   const logRejection = async (
@@ -698,33 +832,24 @@ export async function validateAndRecordEntry(
     await writeAuditLog({
       action: 'entry.rejected',
       performedBy: member.scannerId,
-      targetId: ticketNumber,
+      targetId: specificTicketId,
       metadata: { result, eventId: ctx.eventId },
     });
-    return { result, ticketId: ticketNumber, ...extra } as EntryResult;
+    return { result, ticketId: specificTicketId, ...extra } as EntryResult;
   };
-
-  // 3. Find ticket in database
-  const q = query(colRef(C.BOOKINGS), where('ticketNumber', '==', ticketNumber));
-  const snap = await getDocs(q);
-  if (snap.empty) {
-    await logRejection('INVALID', { audienceName: undefined });
-    return { result: 'INVALID', ticketId: ticketNumber, message: 'This ticket could not be verified.' };
-  }
-  const booking = { id: snap.docs[0].id, ...snap.docs[0].data() } as BookingItem;
 
   // 4. Check event
   if (booking.eventId !== ctx.eventId) {
     await logRejection('WRONG_EVENT', {
       audienceName: booking.customerName,
-      persons: booking.quantity,
+      persons: 1,
       ticketType: booking.ticketTypeName,
     });
     return {
       result: 'WRONG_EVENT',
-      ticketId: ticketNumber,
+      ticketId: specificTicketId,
       audienceName: booking.customerName,
-      persons: booking.quantity,
+      persons: 1,
       message: 'This ticket belongs to another event.',
     };
   }
@@ -733,14 +858,14 @@ export async function validateAndRecordEntry(
   if (booking.status === 'Cancelled' || booking.status === 'Refunded') {
     await logRejection('CANCELLED', {
       audienceName: booking.customerName,
-      persons: booking.quantity,
+      persons: 1,
       ticketType: booking.ticketTypeName,
     });
     return {
       result: 'CANCELLED',
-      ticketId: ticketNumber,
+      ticketId: specificTicketId,
       audienceName: booking.customerName,
-      persons: booking.quantity,
+      persons: 1,
       message: 'This ticket has been cancelled.',
     };
   }
@@ -749,20 +874,99 @@ export async function validateAndRecordEntry(
   if (booking.status !== 'Confirmed' && booking.status !== 'Checked-in') {
     await logRejection('UNPAID', {
       audienceName: booking.customerName,
-      persons: booking.quantity,
+      persons: 1,
       ticketType: booking.ticketTypeName,
     });
     return {
       result: 'UNPAID',
-      ticketId: ticketNumber,
+      ticketId: specificTicketId,
       audienceName: booking.customerName,
-      persons: booking.quantity,
+      persons: 1,
       message: 'This ticket is not eligible for entry.',
     };
   }
 
+  // Check if this specific ticket / seat was already used
+  const usedTickets = (Array.isArray(booking.usedTickets) ? booking.usedTickets : []).map((s: string) =>
+    String(s).trim().toUpperCase()
+  );
+  const usedSeats = (Array.isArray(booking.usedSeats) ? booking.usedSeats : []).map((s: string) =>
+    String(s).trim().toUpperCase()
+  );
+  const usedCount = Number(booking.usedCount || 0);
+
+  if (usedTickets.includes(specificTicketId.toUpperCase())) {
+    await logRejection('ALREADY_USED', {
+      audienceName: booking.customerName,
+      persons: 1,
+      ticketType: booking.ticketTypeName,
+    });
+    return {
+      result: 'ALREADY_USED',
+      ticketId: specificTicketId,
+      audienceName: booking.customerName,
+      persons: 1,
+      message: 'This ticket has already been used for entry.',
+    };
+  }
+
+  if (seatLabel && usedSeats.includes(seatLabel.toUpperCase())) {
+    await logRejection('ALREADY_USED', {
+      audienceName: booking.customerName,
+      persons: 1,
+      ticketType: booking.ticketTypeName,
+    });
+    return {
+      result: 'ALREADY_USED',
+      ticketId: specificTicketId,
+      audienceName: booking.customerName,
+      persons: 1,
+      message: 'This seat ticket has already been used for entry.',
+    };
+  }
+
+  if (totalSeats > 1) {
+    if (
+      (usedTickets.length >= totalSeats && totalSeats > 0) ||
+      (usedSeats.length >= totalSeats && totalSeats > 0) ||
+      (usedCount >= totalSeats && totalSeats > 0)
+    ) {
+      await logRejection('ALREADY_USED', {
+        audienceName: booking.customerName,
+        persons: 1,
+        ticketType: booking.ticketTypeName,
+      });
+      return {
+        result: 'ALREADY_USED',
+        ticketId: specificTicketId,
+        audienceName: booking.customerName,
+        persons: 1,
+        message: 'All tickets for this booking have already been used.',
+      };
+    }
+  } else {
+    if (
+      booking.status === 'Checked-in' ||
+      (booking.status as string) === 'Used' ||
+      usedCount >= 1
+    ) {
+      await logRejection('ALREADY_USED', {
+        audienceName: booking.customerName,
+        persons: 1,
+        ticketType: booking.ticketTypeName,
+      });
+      return {
+        result: 'ALREADY_USED',
+        ticketId: specificTicketId,
+        audienceName: booking.customerName,
+        persons: 1,
+        message: 'This ticket has already been used for entry.',
+      };
+    }
+  }
+
   // 7. Atomic duplicate-entry check (double-scan security)
-  const entryRef = docRef(C.TICKET_ENTRIES, entryDocId(ctx.eventId, ticketNumber));
+  const entryRef = docRef(C.TICKET_ENTRIES, entryDocId(ctx.eventId, specificTicketId));
   let alreadyUsed: { entryTime?: string; scannerId?: string; scannerName?: string; gateId?: string } | null = null;
 
   const won = await runTransaction(db, async (tx) => {
@@ -781,8 +985,9 @@ export async function validateAndRecordEntry(
       // stale rejected record at this id — allow overwrite to entered
       tx.set(entryRef, {
         ...base,
+        ticketNumber: specificTicketId,
         audienceName: booking.customerName,
-        persons: booking.quantity,
+        persons: 1,
         ticketType: booking.ticketTypeName,
         bookingSource: booking.source,
         entryStatus: 'entered',
@@ -793,8 +998,9 @@ export async function validateAndRecordEntry(
     }
     tx.set(entryRef, {
       ...base,
+      ticketNumber: specificTicketId,
       audienceName: booking.customerName,
-      persons: booking.quantity,
+      persons: 1,
       ticketType: booking.ticketTypeName,
       bookingSource: booking.source,
       entryStatus: 'entered',
@@ -808,7 +1014,7 @@ export async function validateAndRecordEntry(
     const prev = (alreadyUsed || {}) as { entryTime?: string; scannerId?: string; scannerName?: string; gateId?: string };
     await logRejection('ALREADY_USED', {
       audienceName: booking.customerName,
-      persons: booking.quantity,
+      persons: 1,
       ticketType: booking.ticketTypeName,
       previousEntryTime: prev.entryTime,
       previousScannerId: prev.scannerId,
@@ -816,9 +1022,9 @@ export async function validateAndRecordEntry(
     });
     return {
       result: 'ALREADY_USED',
-      ticketId: ticketNumber,
+      ticketId: specificTicketId,
       audienceName: booking.customerName,
-      persons: booking.quantity,
+      persons: 1,
       previousEntryTime: prev.entryTime,
       previousScannerId: prev.scannerId,
       previousScannerName: prev.scannerName,
@@ -829,8 +1035,37 @@ export async function validateAndRecordEntry(
 
   // 8. Best-effort post-entry updates (booking status, gate counter, scanner stats)
   try {
-    if (booking.status !== 'Checked-in') {
-      await updateDoc(docRef(C.BOOKINGS, booking.id), { status: 'Checked-in' });
+    const bookingRef = docRef(C.BOOKINGS, booking.id);
+    const bookingSnap = await getDoc(bookingRef);
+    if (bookingSnap.exists()) {
+      const bData = bookingSnap.data() as Partial<BookingItem> & Record<string, unknown>;
+      const existingUsedTickets = (
+        Array.isArray(bData.usedTickets) ? bData.usedTickets : []
+      ).map((s: string) => String(s).trim());
+      const existingUsedSeats = (
+        Array.isArray(bData.usedSeats) ? bData.usedSeats : []
+      ).map((s: string) => String(s).trim());
+
+      const nextUsedTickets = Array.from(
+        new Set([...existingUsedTickets, specificTicketId])
+      );
+      const nextUsedSeats = seatLabel
+        ? Array.from(new Set([...existingUsedSeats, seatLabel]))
+        : existingUsedSeats;
+
+      const isFullyUsed = nextUsedTickets.length >= totalSeats;
+
+      const updatePayload: Record<string, unknown> = {
+        usedTickets: nextUsedTickets,
+        usedSeats: nextUsedSeats,
+        usedCount: nextUsedTickets.length,
+        lastScannedAt: new Date().toISOString(),
+      };
+      if (isFullyUsed) {
+        updatePayload.status = 'Checked-in';
+        updatePayload.usedAt = new Date().toISOString();
+      }
+      await updateDoc(bookingRef, updatePayload);
     }
   } catch (err) {
     console.warn('Failed to update booking status:', err);
@@ -839,7 +1074,7 @@ export async function validateAndRecordEntry(
     const gateSnap = await getDoc(docRef(C.GATES, ctx.gateId));
     if (gateSnap.exists()) {
       const gate = gateSnap.data() as GateInfo;
-      const newEntered = gate.entered + booking.quantity;
+      const newEntered = gate.entered + 1;
       await updateDoc(docRef(C.GATES, ctx.gateId), {
         entered: newEntered,
         percentage: Math.round((newEntered / gate.capacity) * 100),
@@ -869,15 +1104,15 @@ export async function validateAndRecordEntry(
   await writeAuditLog({
     action: 'entry.accepted',
     performedBy: member.scannerId,
-    targetId: ticketNumber,
-    metadata: { eventId: ctx.eventId, gateId: ctx.gateId, persons: booking.quantity },
+    targetId: specificTicketId,
+    metadata: { eventId: ctx.eventId, gateId: ctx.gateId, persons: 1, seat: seatLabel },
   });
 
   return {
     result: 'SUCCESS',
-    ticketId: ticketNumber,
+    ticketId: specificTicketId,
     audienceName: booking.customerName,
-    persons: booking.quantity,
+    persons: 1,
     ticketType: booking.ticketTypeName,
     bookingSource: booking.source,
     gateId: ctx.gateId,

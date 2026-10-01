@@ -11,6 +11,7 @@ import SeatCreateSection from '@/components/SeatCreateSection';
 import BookingsView from '@/components/BookingsView';
 import GateManagementView from '@/components/GateManagementView';
 import CounterManagementView from '@/components/CounterManagementView';
+import CounterBookingView from '@/components/CounterBookingView';
 import ReportsView from '@/components/ReportsView';
 import SettingsView from '@/components/SettingsView';
 import ScannerMembersView from '@/components/ScannerMembersView';
@@ -275,6 +276,17 @@ export default function App() {
                 onDeleteSeatRow={deleteSeatRow}
               />
             </div>
+          )}
+
+          {currentTab === 'counter-booking' && (
+            <CounterBookingView
+              currentEvent={currentEvent}
+              bookings={bookings}
+              ticketTypes={ticketTypes}
+              seats={seats}
+              onOpenNewBooking={() => setNewBookingOpen(true)}
+              onPrintTicket={(b) => setPrintTicketTarget(b)}
+            />
           )}
 
           {currentTab === 'bookings' && (

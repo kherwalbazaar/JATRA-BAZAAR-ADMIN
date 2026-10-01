@@ -1,113 +1,146 @@
 rules_version = '2';
 
-// JATRA BAZAAR — Firestore security rules
+// ============================================================
+// JATRA BAZAAR — shared Firestore rules
 //
-// NOTE: The current app has NO Firebase Auth login, so rules cannot yet
-// distinguish admin vs. scanner vs. public by identity. The scanner system
-// therefore relies on:
-//   1. Client-side re-validation of the scanner member on EVERY scan
-//      (validateAndRecordEntry reads scannerMembers fresh from the DB)
-//   2. Atomic Firestore transactions for double-scan protection
-//      (deterministic ticketEntries doc id: <eventId>__<ticketNumber>)
-//   3. These rules as the deployment boundary.
+// ONE ruleset used by BOTH apps (they share the same Firebase
+// project: event-management-system-27c89):
+//   - JATRA BAZAAR        (customer app)
+//   - JATRA BAZAAR ADMIN  (admin panel + gate scanner)
 //
-// When Firebase Auth is added later:
-//   - admin role  → full access
-//   - scanner role → read own scannerMembers doc; create ticketEntries;
-//                    read own entries; NEVER update approvalStatus/accountStatus
-//   - public      → read-only (or no access)
+// Keep this file identical in both repositories and deploy with:
+//   firebase deploy --only firestore:rules
+//
+// There is no Firebase Auth login yet, so identity-based rules
+// cannot distinguish admin / scanner / public. Integrity is
+// therefore enforced by:
+//   1. Client re-validation of the scanner member on every scan
+//      (validateAndRecordEntry reads scannerMembers fresh)
+//   2. Atomic transactions + deterministic ticketEntries ids
+//      (<eventId>__<ticketNumber>) for double-scan protection
+//   3. This file as the deployment boundary.
+//
+// When Firebase Auth is added, replace the `true` write rules
+// with isAdmin()/isScanner() helpers.
+// ============================================================
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isSignedIn() {
-      return request.auth != null;
+    // ─── 1. Users ──────────────────────────────────────────────
+    match /users/{userId} {
+      allow read, write: if true;
     }
 
-    // ─── Events / bookings / catalog (admin panel data) ────────────
+    // ─── 2. Events ─────────────────────────────────────────────
+    // Admin creates/edits, customer app subscribes (read-only).
     match /events/{eventId} {
       allow read: if true;
-      allow write: if true; // TODO: restrict to admin when Auth is added
-    }
-
-    match /ticketTypes/{docId} {
-      allow read: if true;
-      allow write: if true; // TODO: restrict to admin
-    }
-
-    match /bookings/{docId} {
-      allow read: if true;
-      allow write: if true; // TODO: restrict to admin/POS counters
-    }
-
-    match /counters/{docId} {
-      allow read: if true;
       allow write: if true;
+
+      // Ticket types also exist as an event subcollection
+      // (legacy path — kept so old docs stay readable).
+      match /ticketTypes/{typeId} {
+        allow read, write: if true;
+      }
     }
 
-    match /gates/{docId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    match /settings/{docId} {
-      allow read: if true;
-      allow write: if true;
-    }
-
-    match /logs/{docId} {
+    // ─── 3. Ticket types (root level — the ADMIN's source) ─────
+    // Written by the admin panel, read by both apps.
+    match /ticketTypes/{typeId} {
       allow read, write: if true;
     }
 
-    match /users/{docId} {
+    // Legacy tier collection (older customer-app pricing cards).
+    match /ticketTiers/{tierId} {
       allow read, write: if true;
     }
 
-    // ─── Scanner members ───────────────────────────────────────────
-    match /scannerMembers/{memberId} {
-      // Anyone (gate phones) must be able to look up a member by Scanner ID
-      // at login; the approval/account status is re-checked on every scan.
-      allow read: if true;
-
-      // TODO (with Auth): only admin may create/update members, and a
-      // scanner session must NEVER be able to flip its own
-      // approvalStatus / accountStatus / scannerId.
-      allow create, update, delete: if true;
-    }
-
-    // ─── Ticket entries (scan history + double-scan lock) ──────────
-    match /ticketEntries/{entryId} {
-      allow read: if true; // admin scan-history view + scanner dashboard
-
-      // entryId format: <eventId>__<ticketNumber> — the deterministic id is
-      // what makes double-entry impossible under a transaction.
-      // A scanner may CREATE an entry but must not rewrite an already
-      // 'entered' record (enforced in app logic via runTransaction;
-      // tighten to admin-only update when Auth exists).
-      allow create: if true;
-      allow update, delete: if true; // TODO: reject overwriting entryStatus 'entered'
-    }
-
-    // ─── Audit logs (append-only trail) ────────────────────────────
-    match /auditLogs/{logId} {
+    // ─── 4. Bookings (online sales + POS counter sales) ────────
+    // customer app  → saveBooking()
+    // admin panel   → NewBookingModal / BookingsView
+    // gate scanner  → lookup by ticketNumber in validateAndRecordEntry()
+    match /bookings/{bookingId} {
       allow read: if true;
       allow create: if true;
-      allow update, delete: if false; // history must be immutable
+      allow update: if true;
+      allow delete: if false;
     }
 
-    // ─── Seats (Seat Create → user booking grid) ──────────────────
-    // Path: seats/{eventId}/{blockId}/{rowId}-{seatNumber}
+    // ─── 5. Tickets (per-seat QR tickets) ──────────────────────
+    match /tickets/{ticketId} {
+      allow read, write: if true;
+    }
+
+    // ─── 6. Seats  seats/{eventId}/{blockId}/{rowId}-{number} ──
+    // Same path in both apps; admin "Seat Create" fills the grid
+    // the customer app books from.
     match /seats/{eventId}/{blockId}/{docId} {
-      allow read: if true;
-      allow write: if true; // TODO: restrict to admin when Auth is added
+      allow read, write: if true;
     }
 
     match /seatMeta/{eventId} {
-      allow read: if true;
-      allow write: if true;
+      allow read, write: if true;
     }
 
-    // Deny anything else by default
+    // ─── 7. Counters / gates / settings ────────────────────────
+    match /counters/{counterId} {
+      allow read, write: if true;
+    }
+
+    match /gates/{gateId} {
+      allow read, write: if true;
+    }
+
+    match /settings/{docId} {
+      allow read, write: if true;
+    }
+
+    // ─── 8. Banners (customer app home carousel) ───────────────
+    match /banners/{bannerId} {
+      allow read, write: if true;
+    }
+
+    // ─── 9. Scanner members (created in ADMIN, used by scanner) ─
+    // Gate phones must look a member up by Scanner ID at login;
+    // approval/account status is re-checked on every scan.
+    match /scannerMembers/{memberId} {
+      allow read: if true;
+      // TODO (with Auth): only admin may write, and a scanner
+      // session must NEVER flip its own approvalStatus /
+      // accountStatus / scannerId.
+      allow create, update, delete: if true;
+    }
+
+    // ─── 10. Ticket entries (scan history + double-scan lock) ──
+    // entryId: <eventId>__<ticketNumber> — the deterministic id is
+    // what makes double entry impossible under a transaction.
+    match /ticketEntries/{entryId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if false;
+    }
+
+    // ─── 11. Audit logs (append-only) ──────────────────────────
+    match /auditLogs/{logId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if false;
+    }
+
+    // ─── 12. App logs (append-only) ────────────────────────────
+    match /logs/{logId} {
+      allow read, create: if true;
+      allow update, delete: if false;
+    }
+
+    // ─── 13. Support tickets ───────────────────────────────────
+    match /supportTickets/{ticketId} {
+      allow read, write: if true;
+    }
+
+    // Anything not listed above is denied
     match /{document=**} {
       allow read, write: if false;
     }

@@ -1,21 +1,22 @@
-export type NavigationTab = 
-  | 'dashboard' 
-  | 'events' 
-  | 'tickets-types' 
+export type NavigationTab =
+  | 'dashboard'
+  | 'events'
+  | 'tickets-types'
   | 'create-seat'
-  | 'bookings' 
-  | 'tickets' 
+  | 'counter-booking'
+  | 'bookings'
+  | 'tickets'
   | 'scanner-members'
   | 'scan-history'
-  | 'payments' 
-  | 'customers' 
-  | 'counters' 
-  | 'gates' 
-  | 'reports' 
-  | 'marketing' 
-  | 'settings' 
-  | 'users' 
-  | 'logs' 
+  | 'payments'
+  | 'customers'
+  | 'counters'
+  | 'gates'
+  | 'reports'
+  | 'marketing'
+  | 'settings'
+  | 'users'
+  | 'logs'
   | 'support';
 
 export interface EventActor {
@@ -130,8 +131,15 @@ export interface BookingItem {
   transactionId?: string;
   time: string;
   date: string;
-  status: 'Confirmed' | 'Checked-in' | 'Refunded' | 'Cancelled';
+  status: 'Confirmed' | 'Checked-in' | 'Refunded' | 'Cancelled' | 'Used';
   assignedGate: string;
+  seats?: string[];
+  seatNumber?: string;
+  seatCount?: number;
+  usedTickets?: string[];
+  usedSeats?: string[];
+  usedCount?: number;
+  usedAt?: string;
 }
 
 export interface GateInfo {
@@ -232,6 +240,10 @@ export interface TicketEntry {
   previousEntryTime?: string;
   previousScannerId?: string;
   previousGateId?: string;
+  ticketNumber?: string;
+  baseTicketId?: string;
+  seat?: string;
+  seatIndex?: number;
 }
 
 export interface AuditLog {

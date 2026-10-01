@@ -23,7 +23,8 @@ import {
   Sparkles,
   ChevronDown,
   History,
-  Armchair
+  Armchair,
+  ShoppingCart
 } from 'lucide-react';
 import { NavigationTab, EventItem } from '@/types';
 
@@ -48,6 +49,7 @@ export default function Sidebar({
     { id: 'events', label: 'Events', icon: <CalendarDays className="w-4 h-4" /> },
     { id: 'tickets-types', label: 'Ticket Types', icon: <LayoutGrid className="w-4 h-4" /> },
     { id: 'create-seat', label: 'Create Seat', icon: <Armchair className="w-4 h-4" /> },
+    { id: 'counter-booking', label: 'Counter Booking', icon: <ShoppingCart className="w-4 h-4" /> },
     { id: 'tickets', label: 'Scanner', icon: <Ticket className="w-4 h-4" /> },
     { id: 'scan-history', label: 'Scan History', icon: <History className="w-4 h-4" /> },
     { id: 'payments', label: 'Payments', icon: <CreditCard className="w-4 h-4" /> },
