@@ -69,7 +69,7 @@ export default function NewBookingModal({
       source: 'Counter',
       counterName: 'Booth 1 - Main Entrance',
       paymentMethod,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: currentEvent?.time || currentEvent?.startTime || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       date: currentEvent?.date ?? new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
       status: 'Confirmed',
       assignedGate
