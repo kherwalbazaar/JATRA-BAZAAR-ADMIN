@@ -123,8 +123,31 @@ export default function PrintTicketModal({
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Payment:</span>
-                <span className="font-bold text-slate-900">{booking.paymentMethod} • ₹{booking.amount}</span>
+                <span className="font-bold text-slate-900">{booking.paymentMethod}</span>
               </div>
+              {booking.ticketAmount !== undefined ? (
+                <>
+                  <div className="flex justify-between text-[10px]">
+                    <span className="text-slate-500">Ticket Base:</span>
+                    <span className="text-slate-700 font-bold">₹{booking.ticketAmount}</span>
+                  </div>
+                  {booking.totalFees !== undefined && booking.totalFees > 0 ? (
+                    <div className="flex justify-between text-[10px]">
+                      <span className="text-slate-500">Fees & GST:</span>
+                      <span className="text-slate-700">₹{booking.totalFees}</span>
+                    </div>
+                  ) : null}
+                  <div className="flex justify-between font-bold text-slate-900 pt-0.5 border-t border-dotted border-slate-200">
+                    <span className="text-slate-500">Total Paid:</span>
+                    <span className="text-emerald-700">₹{booking.amount}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Total Paid:</span>
+                  <span className="font-bold text-slate-900">₹{booking.amount}</span>
+                </div>
+              )}
             </div>
 
             {/* QR Code */}

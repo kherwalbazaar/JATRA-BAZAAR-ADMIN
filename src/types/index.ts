@@ -113,9 +113,47 @@ export interface Seat {
   bookedAt?: string | null;
 }
 
+export type TicketStatus = 'ACTIVE' | 'ENTERED' | 'CANCELLED';
+
+export interface TicketItem {
+  id: string; // e.g. NJ26-00001-1
+  ticketId: string; // e.g. NJ26-00001-1
+  bookingId: string; // e.g. NJ26-00001
+  bookingDocId?: string;
+  ticketIndex: number;
+  totalTickets: number;
+  eventId: string;
+  eventName: string;
+  ticketTypeId: string;
+  ticketTypeName: string;
+  seat?: string | null;
+  seatIndex?: number;
+  seatCount?: number;
+  block?: string | null;
+  assignedGate: string;
+  customerName: string;
+  customerPhone: string;
+  serialNumber: string;
+  qrToken: string;
+  status: TicketStatus;
+  date: string;
+  time: string;
+  unitPrice?: number;
+  scannedAt?: string | null;
+  scannedBy?: string | null;
+  scannerMemberId?: string | null;
+  scannerMemberName?: string | null;
+  scanGateId?: string | null;
+  scanDate?: string | null;
+  scanTime?: string | null;
+  createdAt: string;
+}
+
 export interface BookingItem {
   id: string;
+  bookingId?: string;
   eventId: string;
+  eventName?: string;
   ticketNumber: string;
   customerName: string;
   customerPhone: string;
@@ -132,14 +170,27 @@ export interface BookingItem {
   time: string;
   date: string;
   status: 'Confirmed' | 'Checked-in' | 'Refunded' | 'Cancelled' | 'Used';
+  bookingStatus?: 'Confirmed' | 'Cancelled';
   assignedGate: string;
+  block?: string;
   seats?: string[];
   seatNumber?: string;
   seatCount?: number;
   usedTickets?: string[];
   usedSeats?: string[];
   usedCount?: number;
+  enteredCount?: number;
+  remainingCount?: number;
   usedAt?: string;
+
+  // Gateway-independent charge breakdown
+  ticketAmount?: number;
+  baseAmount?: number;
+  convenienceFee?: number;
+  gstOnConvenienceFee?: number;
+  platformCharge?: number;
+  totalFees?: number;
+  finalCustomerAmount?: number;
 }
 
 export interface GateInfo {
@@ -222,9 +273,66 @@ export type ScanResult =
   | 'WRONG_EVENT'
   | 'SCANNER_DENIED';
 
+export interface IdentifiedBooking {
+  status: 'FOUND' | 'ALREADY_USED' | 'CANCELLED' | 'WRONG_EVENT' | 'UNPAID' | 'INVALID';
+  message?: string;
+  booking?: BookingItem;
+  tickets?: TicketItem[];
+  preselectedTicketId?: string;
+  rejectedTicket?: {
+    ticketId: string;
+    seat?: string;
+    entryTime?: string;
+    scannerId?: string;
+    scannerName?: string;
+  };
+}
+
+export interface BatchEntryResult {
+  result: ScanResult;
+  message?: string;
+  admittedTickets: TicketItem[];
+  admittedCount: number;
+  remainingCount: number;
+  totalTickets: number;
+  bookingId: string;
+  audienceName: string;
+  ticketType?: string;
+  gateId?: string;
+  entryTime?: string;
+  scanTime?: string;
+  scanDate?: string;
+  scannedAt?: string;
+  scannerId?: string;
+  scannerName?: string;
+}
+
+export interface EntryResult {
+  result: ScanResult;
+  ticketId?: string;
+  bookingId?: string;
+  audienceName?: string;
+  seat?: string;
+  block?: string;
+  persons?: number;
+  ticketType?: string;
+  bookingSource?: string;
+  eventName?: string;
+  gateId?: string;
+  entryTime?: string;
+  scannedAt?: string;
+  scannerId?: string;
+  scannerName?: string;
+  previousEntryTime?: string;
+  previousScannerId?: string;
+  previousScannerName?: string;
+  previousGateId?: string;
+  message?: string;
+}
+
 export interface TicketEntry {
   id: string;
-  ticketId: string; // booking.ticketNumber
+  ticketId: string; // booking.ticketNumber or individual ticketId
   eventId: string;
   scannerId: string; // SCN-001
   memberId: string; // scannerMembers doc id
@@ -233,12 +341,16 @@ export interface TicketEntry {
   entryStatus: 'entered' | 'rejected';
   scanResult: ScanResult;
   scannedAt: string; // ISO
+  scanDate?: string; // YYYY-MM-DD local
+  scanTime?: string; // e.g. 11:42:15 PM
+  bookingId?: string;
   audienceName?: string;
   persons?: number;
   ticketType?: string;
   bookingSource?: string;
   previousEntryTime?: string;
   previousScannerId?: string;
+  previousScannerName?: string;
   previousGateId?: string;
   ticketNumber?: string;
   baseTicketId?: string;

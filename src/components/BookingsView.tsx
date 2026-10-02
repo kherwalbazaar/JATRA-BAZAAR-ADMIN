@@ -193,7 +193,12 @@ export default function BookingsView({
                       {b.quantity}
                     </td>
                     <td className="py-3 px-4 font-black text-slate-900">
-                      ₹{b.amount}
+                      <div>₹{b.amount}</div>
+                      {b.ticketAmount !== undefined && b.convenienceFee !== undefined && (
+                        <div className="text-[10px] text-slate-400 font-semibold">
+                          base: ₹{b.ticketAmount}
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-center">
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
@@ -210,15 +215,44 @@ export default function BookingsView({
                       </span>
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                        b.status === 'Checked-in'
-                          ? 'bg-blue-100 text-blue-700'
-                          : b.status === 'Confirmed'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-slate-100 text-slate-600'
-                      }`}>
-                        {b.status}
-                      </span>
+                      {b.status === 'Cancelled' || b.status === 'Refunded' ? (
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">
+                          Cancelled
+                        </span>
+                      ) : b.quantity > 1 ? (
+                        (() => {
+                          const usedCount = b.enteredCount ?? (Array.isArray(b.usedTickets) ? b.usedTickets.length : 0);
+                          if (usedCount >= b.quantity || b.status === 'Checked-in') {
+                            return (
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                                All Used ({b.quantity}/{b.quantity})
+                              </span>
+                            );
+                          }
+                          if (usedCount > 0) {
+                            return (
+                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                                {usedCount} / {b.quantity} Entered
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                              Active (0/{b.quantity})
+                            </span>
+                          );
+                        })()
+                      ) : (
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                          b.status === 'Checked-in'
+                            ? 'bg-blue-100 text-blue-700'
+                            : b.status === 'Confirmed'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {b.status === 'Checked-in' ? 'Entered' : b.status}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 px-4 font-bold text-slate-600">
                       {b.assignedGate}

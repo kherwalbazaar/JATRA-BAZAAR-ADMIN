@@ -10,6 +10,7 @@ import {
   Ban,
   Clock,
   Filter,
+  RotateCw,
 } from 'lucide-react';
 import { TicketEntry, ScannerMember } from '@/types';
 import * as fs from '@/lib/firestore';
@@ -24,33 +25,61 @@ const resultStyle: Record<string, { label: string; cls: string }> = {
   SCANNER_DENIED: { label: '⨯ Scanner Blocked', cls: 'bg-red-100 text-red-700 border-red-200' },
 };
 
-function dateOf(iso?: string): string {
-  return iso ? iso.slice(0, 10) : '';
+function localDateStr(d: Date = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
+
+function dateOfEntry(e: TicketEntry): string {
+  if (e.scanDate && /^\d{4}-\d{2}-\d{2}$/.test(e.scanDate)) {
+    return e.scanDate;
+  }
+  if (e.scannedAt) {
+    try {
+      return localDateStr(new Date(e.scannedAt));
+    } catch {
+      return e.scannedAt.slice(0, 10);
+    }
+  }
+  return '';
+}
+
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  return localDateStr(new Date());
 }
+
 function yesterdayStr(): string {
   const d = new Date();
   d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+  return localDateStr(d);
 }
-function fmt(iso?: string): string {
+
+function fmt(iso?: string, scanTime?: string, scanDate?: string): string {
+  if (scanTime) {
+    return `${scanDate ? `${scanDate} ` : ''}${scanTime}`;
+  }
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  try {
+    return new Date(iso).toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
 }
 
 export default function ScanHistoryView() {
   const [entries, setEntries] = useState<TicketEntry[]>([]);
   const [members, setMembers] = useState<ScannerMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const [range, setRange] = useState<'today' | 'yesterday' | 'all' | 'custom'>('today');
+  const [range, setRange] = useState<'today' | 'yesterday' | 'all' | 'custom'>('all');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [scannerId, setScannerId] = useState('');
@@ -59,10 +88,33 @@ export default function ScanHistoryView() {
   const [eventId, setEventId] = useState('');
   const [search, setSearch] = useState('');
 
+  const loadData = async () => {
+    try {
+      const data = await fs.getTicketEntriesOnce();
+      setEntries(data);
+    } catch (err) {
+      console.error('Failed to load ticket entries once:', err);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
+
   useEffect(() => {
     const unsubs: (() => void)[] = [];
     try {
-      unsubs.push(fs.listenTicketEntries((e) => { setEntries(e); setLoading(false); }, () => setLoading(false)));
+      unsubs.push(
+        fs.listenTicketEntries(
+          (e) => {
+            setEntries(e);
+            setLoading(false);
+          },
+          () => setLoading(false)
+        )
+      );
     } catch {
       setLoading(false);
     }
@@ -83,13 +135,13 @@ export default function ScanHistoryView() {
 
     if (range === 'today') {
       const t = todayStr();
-      list = list.filter((e) => (e.scannedAt || '').startsWith(t));
+      list = list.filter((e) => dateOfEntry(e) === t);
     } else if (range === 'yesterday') {
       const y = yesterdayStr();
-      list = list.filter((e) => (e.scannedAt || '').startsWith(y));
+      list = list.filter((e) => dateOfEntry(e) === y);
     } else if (range === 'custom' && customFrom && customTo) {
       list = list.filter((e) => {
-        const d = dateOf(e.scannedAt);
+        const d = dateOfEntry(e);
         return d >= customFrom && d <= customTo;
       });
     }
@@ -103,9 +155,11 @@ export default function ScanHistoryView() {
       list = list.filter(
         (e) =>
           (e.ticketId || '').toLowerCase().includes(q) ||
+          (e.bookingId || '').toLowerCase().includes(q) ||
           (e.audienceName || '').toLowerCase().includes(q) ||
           (e.scannerId || '').toLowerCase().includes(q) ||
-          (e.scannerName || '').toLowerCase().includes(q)
+          (e.scannerName || '').toLowerCase().includes(q) ||
+          (e.seat || '').toLowerCase().includes(q)
       );
     }
     return list;
@@ -122,7 +176,7 @@ export default function ScanHistoryView() {
   );
 
   const clearFilters = () => {
-    setRange('today');
+    setRange('all');
     setCustomFrom('');
     setCustomTo('');
     setScannerId('');
@@ -145,12 +199,23 @@ export default function ScanHistoryView() {
             Every ticket scan (successful and rejected) is recorded here.
           </p>
         </div>
-        <button
-          onClick={clearFilters}
-          className="text-xs font-black text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl transition-colors self-start sm:self-auto"
-        >
-          Clear Filters
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-1.5 text-xs font-black text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-xl transition-colors disabled:opacity-50"
+            title="Refresh scan history"
+          >
+            <RotateCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          <button
+            onClick={clearFilters}
+            className="text-xs font-black text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl transition-colors"
+          >
+            Clear Filters
+          </button>
+        </div>
       </div>
 
       {/* Summary */}
@@ -326,7 +391,14 @@ export default function ScanHistoryView() {
               const rs = resultStyle[e.scanResult] || resultStyle.INVALID;
               return (
                 <div key={e.id || i} className="grid grid-cols-2 md:grid-cols-12 gap-2 px-4 py-2.5 items-center hover:bg-slate-50/70 transition-colors text-xs">
-                  <div className="md:col-span-2 font-mono font-black text-slate-800">{e.ticketId}</div>
+                  <div className="md:col-span-2 font-mono font-black text-slate-800">
+                    <div>{e.ticketId}</div>
+                    {e.seat && (
+                      <div className="text-[10px] text-slate-400 font-sans font-bold">
+                        Seat: {e.seat}
+                      </div>
+                    )}
+                  </div>
                   <div className="md:col-span-2 font-bold text-slate-700 truncate">{e.audienceName || '—'}</div>
                   <div className="md:col-span-2">
                     <span className="font-black text-indigo-700 font-mono text-[11px]">{e.scannerId}</span>
@@ -337,7 +409,7 @@ export default function ScanHistoryView() {
                     <span className={`inline-block text-[9px] font-black px-2 py-0.5 rounded-full border ${rs.cls}`}>{rs.label}</span>
                   </div>
                   <div className="md:col-span-1 font-bold text-slate-600">{e.persons || 1}</div>
-                  <div className="md:col-span-2 text-slate-500 font-semibold">{fmt(e.scannedAt)}</div>
+                  <div className="md:col-span-2 text-slate-500 font-semibold">{fmt(e.scannedAt, e.scanTime, e.scanDate)}</div>
                 </div>
               );
             })}

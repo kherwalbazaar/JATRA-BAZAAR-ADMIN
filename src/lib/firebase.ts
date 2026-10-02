@@ -44,6 +44,7 @@ export const FIRESTORE_COLLECTIONS = {
   EVENTS: 'events',
   TICKET_TYPES: 'ticketTypes',
   BOOKINGS: 'bookings',
+  TICKETS: 'tickets',
   COUNTERS: 'counters',
   GATES: 'gates',
   SETTINGS: 'settings',

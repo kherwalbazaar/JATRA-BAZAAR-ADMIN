@@ -68,9 +68,11 @@ export default function ScannerMembersView() {
     return () => unsubs.forEach((u) => u());
   }, []);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = fs.todayStr();
   const stats = useMemo(() => {
-    const todaysEntries = entries.filter((e) => (e.scannedAt || '').startsWith(today));
+    const todaysEntries = entries.filter(
+      (e) => e.scanDate === today || (e.scannedAt || '').slice(0, 10) === today
+    );
     return {
       total: members.length,
       approved: members.filter((m) => m.approvalStatus === 'approved').length,
@@ -87,7 +89,12 @@ export default function ScannerMembersView() {
   }, [members, entries, today]);
 
   const todayScansFor = (m: ScannerMember) =>
-    entries.filter((e) => e.memberId === m.id && e.entryStatus === 'entered' && (e.scannedAt || '').startsWith(today)).length;
+    entries.filter(
+      (e) =>
+        (e.memberId === m.id || e.scannerId === m.scannerId) &&
+        e.entryStatus === 'entered' &&
+        (e.scanDate === today || (e.scannedAt || '').slice(0, 10) === today)
+    ).length;
 
   const applyAction = async () => {
     if (!confirm) return;

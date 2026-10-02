@@ -26,6 +26,7 @@ import CreateEventModal from '@/components/CreateEventModal';
 import AddTicketTypeModal from '@/components/AddTicketTypeModal';
 import PrintTicketModal from '@/components/PrintTicketModal';
 import EventDetailsModal from '@/components/EventDetailsModal';
+import BookingDetailsModal from '@/components/BookingDetailsModal';
 
 import { NavigationTab, BookingItem, EventItem, TicketType } from '@/types';
 import { useFirestore } from '@/hooks/useFirestore';
@@ -97,6 +98,7 @@ export default function App() {
   const [createEventOpen, setCreateEventOpen] = useState(false);
   const [addTicketTypeOpen, setAddTicketTypeOpen] = useState(false);
   const [printTicketTarget, setPrintTicketTarget] = useState<BookingItem | null>(null);
+  const [bookingDetailsTarget, setBookingDetailsTarget] = useState<BookingItem | null>(null);
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [selectedEventForModal, setSelectedEventForModal] = useState<EventItem | null>(null);
   const [editingEvent, setEditingEvent] = useState<EventItem | null>(null);
@@ -222,7 +224,7 @@ export default function App() {
               }}
               onOpenNewBooking={() => setNewBookingOpen(true)}
               onOpenScanner={() => setScannerOpen(true)}
-              onSelectBooking={(b) => setPrintTicketTarget(b)}
+              onSelectBooking={(b) => setBookingDetailsTarget(b)}
             />
           )}
 
@@ -298,7 +300,7 @@ export default function App() {
               <BookingsView
                 bookings={bookings}
                 onOpenNewBooking={() => setNewBookingOpen(true)}
-                onSelectBooking={(b) => setPrintTicketTarget(b)}
+                onSelectBooking={(b) => setBookingDetailsTarget(b)}
                 onPrintTicket={(b) => setPrintTicketTarget(b)}
               />
             </div>
@@ -343,7 +345,7 @@ export default function App() {
               <BookingsView
                 bookings={bookings}
                 onOpenNewBooking={() => setNewBookingOpen(true)}
-                onSelectBooking={(b) => setPrintTicketTarget(b)}
+                onSelectBooking={(b) => setBookingDetailsTarget(b)}
                 onPrintTicket={(b) => setPrintTicketTarget(b)}
               />
             </div>
@@ -386,6 +388,7 @@ export default function App() {
         isOpen={scannerOpen}
         onClose={() => setScannerOpen(false)}
         bookings={bookings}
+        currentEvent={currentEvent}
         onCheckInTicket={handleCheckInTicket}
       />
 
@@ -421,6 +424,13 @@ export default function App() {
         committeeNames={Array.from(
           new Set(eventsList.map((e) => (e.committeeName || '').trim()).filter(Boolean))
         )}
+      />
+
+      <BookingDetailsModal
+        isOpen={!!bookingDetailsTarget}
+        booking={bookingDetailsTarget}
+        onClose={() => setBookingDetailsTarget(null)}
+        onPrintBooking={(b) => setPrintTicketTarget(b)}
       />
 
       <PrintTicketModal

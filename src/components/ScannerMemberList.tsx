@@ -78,7 +78,7 @@ export default function ScannerMemberList() {
     return () => unsubs.forEach((u) => u());
   }, []);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = fs.todayStr();
 
   const connectPayload = useMemo(() => {
     if (!viewing) return '';
@@ -96,7 +96,12 @@ export default function ScannerMemberList() {
   }, [viewing]);
 
   const todayScans = (memberId: string) =>
-    entries.filter((e) => e.memberId === memberId && e.entryStatus === 'entered' && (e.scannedAt || '').startsWith(today)).length;
+    entries.filter(
+      (e) =>
+        (e.memberId === memberId || e.scannerId === memberId) &&
+        e.entryStatus === 'entered' &&
+        (e.scanDate === today || (e.scannedAt || '').slice(0, 10) === today)
+    ).length;
 
   const applyAction = async () => {
     if (!confirm) return;

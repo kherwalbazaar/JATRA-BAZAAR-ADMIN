@@ -18,12 +18,25 @@ import {
   Ticket,
   RefreshCw,
   ShieldAlert,
+  Check,
+  CheckSquare,
+  Square,
+  Sparkles,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { ScannerMember, TicketEntry, EventItem, GateInfo } from '@/types';
+import {
+  ScannerMember,
+  TicketEntry,
+  EventItem,
+  GateInfo,
+  TicketItem,
+  BookingItem,
+  IdentifiedBooking,
+  BatchEntryResult,
+} from '@/types';
 import * as fs from '@/lib/firestore';
 
-type Screen = 'login' | 'denied' | 'dashboard' | 'scanning';
+type Screen = 'login' | 'denied' | 'dashboard' | 'scanning' | 'select-tickets';
 type ResultKind = 'success' | 'already' | 'invalid' | 'denied';
 
 interface ScanOutcome {
@@ -31,9 +44,18 @@ interface ScanOutcome {
   title: string;
   subtitle: string;
   ticketId?: string;
+  bookingId?: string;
   audienceName?: string;
+  seat?: string;
+  block?: string;
+  ticketType?: string;
+  entryTime?: string;
+  scannerId?: string;
+  scannerName?: string;
+  statusBadge?: string;
   persons?: number;
   previousEntryTime?: string;
+  previousScannerId?: string;
   previousScannerName?: string;
   previousGateId?: string;
 }
@@ -75,6 +97,12 @@ export default function ScannerPortalPage() {
   const [manualCode, setManualCode] = useState('');
   const [manualOpen, setManualOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // Multi-ticket selection
+  const [identifiedBooking, setIdentifiedBooking] = useState<BookingItem | null>(null);
+  const [identifiedTickets, setIdentifiedTickets] = useState<TicketItem[]>([]);
+  const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
+  const [admittingTickets, setAdmittingTickets] = useState(false);
 
   // Camera
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -264,9 +292,9 @@ export default function ScannerPortalPage() {
   const currentGate = gates.find((g) => g.id === gateId) || null;
 
   const stats = useMemo(() => {
-    const mine = entries.filter((e) => e.memberId === member?.id);
-    const today = new Date().toISOString().slice(0, 10);
-    const todays = mine.filter((e) => (e.scannedAt || '').startsWith(today));
+    const mine = entries.filter((e) => e.memberId === member?.id || e.scannerId === member?.scannerId);
+    const today = fs.todayStr();
+    const todays = mine.filter((e) => e.scanDate === today || (e.scannedAt || '').slice(0, 10) === today);
     return {
       todayEntries: todays.filter((e) => e.entryStatus === 'entered').length,
       successful: mine.filter((e) => e.scanResult === 'SUCCESS').length,
@@ -274,7 +302,7 @@ export default function ScannerPortalPage() {
       invalid: mine.filter((e) => e.scanResult === 'INVALID' || e.scanResult === 'WRONG_EVENT').length,
       recent: mine.slice(0, 8),
     };
-  }, [entries, member?.id]);
+  }, [entries, member?.id, member?.scannerId]);
 
   // ── Login ────────────────────────────────────────────────────────
   const handleLogin = async (e: React.FormEvent) => {
@@ -416,53 +444,67 @@ export default function ScannerPortalPage() {
     }
     setBusy(true);
     try {
-      const res = await fs.validateAndRecordEntry(code, {
+      const res = await fs.identifyBookingForEntry(code, {
         memberId: member.id,
         gateId,
         eventId,
       });
 
+      if (res.status === 'FOUND' && res.booking && res.tickets && res.tickets.length > 0) {
+        setIdentifiedBooking(res.booking);
+        setIdentifiedTickets(res.tickets);
+
+        if (res.preselectedTicketId) {
+          const preT = res.tickets.find((t) => t.ticketId === res.preselectedTicketId);
+          if (preT && preT.status === 'ACTIVE') {
+            setSelectedTicketIds([res.preselectedTicketId]);
+          } else {
+            setSelectedTicketIds([]);
+          }
+        } else {
+          const activeOnly = res.tickets.filter((t) => t.status === 'ACTIVE');
+          if (activeOnly.length === 1) {
+            setSelectedTicketIds([activeOnly[0].ticketId]);
+          } else {
+            setSelectedTicketIds([]);
+          }
+        }
+        stopCamera();
+        setScreen('select-tickets');
+        return;
+      }
+
+      // Handle rejections
       let kind: ResultKind = 'invalid';
       let title = 'INVALID TICKET';
       let subtitle = res.message || 'This ticket could not be verified.';
 
-      switch (res.result) {
-        case 'SUCCESS':
-          kind = 'success';
-          title = 'ENTRY ALLOWED';
-          subtitle = 'Ticket verified successfully.';
-          confetti({ particleCount: 70, spread: 75, origin: { y: 0.6 } });
-          break;
+      switch (res.status) {
         case 'ALREADY_USED':
           kind = 'already';
-          title = 'ALREADY USED';
-          subtitle = 'This ticket has already been used for entry.';
+          title = '❌ ALREADY USED';
+          subtitle = res.message || 'This ticket has already been scanned.';
           break;
         case 'CANCELLED':
           kind = 'invalid';
-          title = 'TICKET CANCELLED';
-          subtitle = 'This ticket has been cancelled.';
+          title = '❌ CANCELLED TICKET';
+          subtitle = 'This ticket is not valid for entry.';
           break;
         case 'UNPAID':
           kind = 'invalid';
-          title = 'NOT ELIGIBLE';
+          title = '❌ NOT ELIGIBLE';
           subtitle = 'This ticket is not eligible for entry.';
           break;
         case 'WRONG_EVENT':
           kind = 'invalid';
-          title = 'WRONG EVENT';
+          title = '❌ WRONG EVENT';
           subtitle = 'This ticket belongs to another event.';
           break;
-        case 'SCANNER_DENIED':
-          kind = 'denied';
-          title = 'SCANNER BLOCKED';
-          subtitle = res.message || 'Your scanner access is blocked.';
-          setDeniedReason(subtitle);
-          break;
         case 'INVALID':
+        default:
           kind = 'invalid';
-          title = 'INVALID TICKET';
-          subtitle = 'This ticket could not be verified.';
+          title = '❌ INVALID TICKET';
+          subtitle = res.message || 'This QR code is not recognized.';
           break;
       }
 
@@ -470,16 +512,29 @@ export default function ScannerPortalPage() {
         kind,
         title,
         subtitle,
-        ticketId: res.ticketId || (kind === 'success' || kind === 'already' ? code.trim().toUpperCase() : undefined),
-        audienceName: res.audienceName,
-        persons: res.persons,
-        previousEntryTime: res.previousEntryTime,
-        previousScannerName: res.previousScannerName,
-        previousGateId: res.previousGateId,
+        ticketId: res.rejectedTicket?.ticketId || code.trim().toUpperCase(),
+        bookingId: res.booking?.ticketNumber,
+        audienceName: res.booking?.customerName,
+        seat: res.rejectedTicket?.seat,
+        entryTime: res.rejectedTicket?.entryTime,
+        scannerId: res.rejectedTicket?.scannerId || member.scannerId,
+        scannerName: res.rejectedTicket?.scannerName || member.name,
+        statusBadge: res.status,
+        previousEntryTime: res.rejectedTicket?.entryTime,
+        previousScannerId: res.rejectedTicket?.scannerId,
+        previousScannerName: res.rejectedTicket?.scannerName,
       });
+
+      if (res.booking && res.tickets) {
+        setIdentifiedBooking(res.booking);
+        setIdentifiedTickets(res.tickets);
+      } else {
+        setIdentifiedBooking(null);
+        setIdentifiedTickets([]);
+      }
+
       setScreen('scanning');
       stopCamera();
-      if (kind === 'denied') setScreen('denied');
     } catch (err) {
       console.error('Scan failed:', err);
       setOutcome({
@@ -492,6 +547,91 @@ export default function ScannerPortalPage() {
     } finally {
       setBusy(false);
       setManualCode('');
+    }
+  };
+
+  // ── Ticket Selection Handlers ────────────────────────────────────
+  const handleSelectAll = () => {
+    const activeIds = identifiedTickets
+      .filter((t) => t.status === 'ACTIVE')
+      .map((t) => t.ticketId);
+    setSelectedTicketIds(activeIds);
+  };
+
+  const handleClearSelection = () => {
+    setSelectedTicketIds([]);
+  };
+
+  const toggleTicketSelection = (ticketId: string) => {
+    setSelectedTicketIds((prev) =>
+      prev.includes(ticketId) ? prev.filter((id) => id !== ticketId) : [...prev, ticketId]
+    );
+  };
+
+  const handleAdmitSelected = async () => {
+    if (!selectedTicketIds.length || !identifiedBooking || !member) return;
+    setAdmittingTickets(true);
+    try {
+      const res = await fs.validateAndRecordBatchEntry(
+        selectedTicketIds,
+        identifiedBooking.ticketNumber,
+        {
+          memberId: member.id,
+          gateId,
+          eventId,
+        }
+      );
+
+      if (res.result === 'SUCCESS') {
+        confetti({ particleCount: 75, spread: 80, origin: { y: 0.6 } });
+
+        const admittedSeatLabels = res.admittedTickets
+          .map((t) => t.seat || t.ticketId)
+          .filter(Boolean)
+          .join(', ');
+
+        setOutcome({
+          kind: 'success',
+          title: '✓ ATTENDEE ENTRY ALLOWED',
+          subtitle: `${res.admittedCount} ${res.admittedCount > 1 ? 'tickets' : 'ticket'} verified. Entry granted.`,
+          ticketId: res.admittedTickets.map((t) => t.ticketId).join(', '),
+          bookingId: res.bookingId,
+          audienceName: res.audienceName,
+          seat: admittedSeatLabels,
+          ticketType: res.ticketType,
+          entryTime: res.scanTime,
+          scannerId: res.scannerId,
+          scannerName: res.scannerName,
+          persons: res.admittedCount,
+          statusBadge: 'ENTERED',
+        });
+
+        setIdentifiedTickets((prev) =>
+          prev.map((t) => (selectedTicketIds.includes(t.ticketId) ? { ...t, status: 'ENTERED', scanTime: res.scanTime } : t))
+        );
+        setSelectedTicketIds([]);
+        setScreen('scanning');
+      } else {
+        let kind: ResultKind = 'invalid';
+        if (res.result === 'ALREADY_USED') kind = 'already';
+        setOutcome({
+          kind,
+          title: res.result === 'ALREADY_USED' ? '❌ ALREADY USED' : '❌ ADMISSION FAILED',
+          subtitle: res.message || 'Could not admit tickets.',
+          bookingId: res.bookingId,
+        });
+        setScreen('scanning');
+      }
+    } catch (err) {
+      console.error('Batch admission error:', err);
+      setOutcome({
+        kind: 'invalid',
+        title: 'ADMISSION FAILED',
+        subtitle: 'A network error occurred while processing admission.',
+      });
+      setScreen('scanning');
+    } finally {
+      setAdmittingTickets(false);
     }
   };
 
@@ -602,6 +742,226 @@ export default function ScannerPortalPage() {
     );
   }
 
+  // ── Select Tickets Screen ────────────────────────────────────────
+  if (screen === 'select-tickets' && identifiedBooking) {
+    const activeTickets = identifiedTickets.filter((t) => t.status === 'ACTIVE');
+
+    return (
+      <div className="min-h-screen bg-[#f4f6fc] text-slate-800 flex flex-col">
+        {/* Top Navigation */}
+        <div className="bg-[#0f1430] text-white px-4 py-3.5 flex items-center justify-between sticky top-0 z-20 shadow-md">
+          <button
+            onClick={() => {
+              setScreen('scanning');
+              startCamera();
+            }}
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" /> Cancel & Scan
+          </button>
+          <div className="text-right">
+            <span className="text-xs font-black font-mono text-indigo-300">{member?.scannerId}</span>
+            <span className="text-[10px] font-bold text-slate-400 block">{currentGate?.name || gateId}</span>
+          </div>
+        </div>
+
+        {/* Content Container */}
+        <div className="flex-1 max-w-lg w-full mx-auto p-4 sm:p-5 space-y-4 pb-28">
+          {/* Main Title Banner */}
+          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-100">
+                  Entry Checkpoint
+                </span>
+                <h2 className="text-lg font-black text-slate-900 tracking-tight mt-1.5">
+                  SELECT TICKETS FOR ENTRY
+                </h2>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <span className="text-[10px] font-black uppercase text-slate-400 block">Booking ID</span>
+                <span className="text-xs font-black font-mono bg-slate-100 text-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 inline-block mt-0.5">
+                  {identifiedBooking.ticketNumber}
+                </span>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="text-[10px] font-black uppercase text-slate-400 block">Customer</span>
+                <span className="font-extrabold text-slate-900 text-sm truncate block mt-0.5">
+                  {identifiedBooking.customerName || 'Attendee'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase text-slate-400 block">Tier / Block</span>
+                <span className="font-bold text-slate-700 truncate block mt-0.5">
+                  {identifiedBooking.block ? `${identifiedBooking.block} • ` : ''}
+                  {identifiedBooking.ticketTypeName || 'General'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Action Toolbar: SELECT ALL, CLEAR SELECTION, Selected Counter */}
+          <div className="bg-white rounded-2xl p-3 border border-slate-200/90 shadow-2xs flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSelectAll}
+                disabled={activeTickets.length === 0}
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl transition-all shadow-xs active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+              >
+                <CheckSquare className="w-3.5 h-3.5" />
+                SELECT ALL
+              </button>
+              <button
+                type="button"
+                onClick={handleClearSelection}
+                disabled={selectedTicketIds.length === 0}
+                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                CLEAR SELECTION
+              </button>
+            </div>
+
+            <div className="bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-xl">
+              <span className="text-xs font-black text-indigo-950">
+                Selected: <span className="text-indigo-600 font-extrabold">{selectedTicketIds.length}</span>{' '}
+                {selectedTicketIds.length === 1 ? 'Ticket' : 'Tickets'}
+              </span>
+            </div>
+          </div>
+
+          {/* Available Tickets Section Header */}
+          <div className="flex items-center justify-between px-1 pt-1 text-xs">
+            <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+              Available Tickets ({identifiedTickets.length} total • {activeTickets.length} active)
+            </span>
+            <span className="text-[10px] font-bold text-slate-400">Tap card to toggle</span>
+          </div>
+
+          {/* Available Tickets Cards */}
+          <div className="space-y-2.5">
+            {identifiedTickets.map((t) => {
+              const isActive = t.status === 'ACTIVE';
+              const isSelected = selectedTicketIds.includes(t.ticketId);
+              const isEntered = t.status === 'ENTERED';
+              const isCancelled = t.status === 'CANCELLED';
+
+              return (
+                <div
+                  key={t.ticketId}
+                  onClick={() => {
+                    if (isActive) toggleTicketSelection(t.ticketId);
+                  }}
+                  className={`p-3.5 rounded-2xl border transition-all select-none flex items-center justify-between gap-3 ${
+                    !isActive
+                      ? 'bg-slate-100/70 border-slate-200 opacity-60 cursor-not-allowed'
+                      : isSelected
+                      ? 'bg-indigo-50/80 border-indigo-500 shadow-sm cursor-pointer ring-2 ring-indigo-500/20'
+                      : 'bg-white border-slate-200/90 hover:border-slate-300 shadow-2xs cursor-pointer'
+                  }`}
+                >
+                  {/* Left: Checkbox Touch Target */}
+                  <div className="flex items-center gap-3 min-w-0">
+                    {isActive ? (
+                      <div
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'border-2 border-slate-300 bg-white hover:border-indigo-400'
+                        }`}
+                      >
+                        {isSelected ? <Check className="w-4 h-4 stroke-[3]" /> : null}
+                      </div>
+                    ) : (
+                      <div className="w-6 h-6 rounded-lg flex items-center justify-center bg-slate-200 text-slate-600 text-xs font-black flex-shrink-0">
+                        {isEntered ? '✓' : '✕'}
+                      </div>
+                    )}
+
+                    {/* Seat & Ticket ID */}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base font-black text-slate-900 tracking-tight">
+                          {t.seat || `Ticket #${t.ticketIndex || 1}`}
+                        </span>
+                        {t.block && (
+                          <span className="text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                            {t.block}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] font-mono font-bold text-slate-500 mt-0.5">
+                        {t.ticketId}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: Status Badge */}
+                  <div className="flex-shrink-0 text-right">
+                    {isActive && (
+                      <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        ACTIVE
+                      </span>
+                    )}
+                    {isEntered && (
+                      <div className="text-right">
+                        <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-slate-200 text-slate-700">
+                          ENTERED ✓
+                        </span>
+                        {t.scanTime && (
+                          <span className="block text-[9px] font-bold text-slate-400 mt-0.5">
+                            {t.scanTime}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {isCancelled && (
+                      <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-full bg-rose-100 text-rose-700">
+                        CANCELLED
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Sticky Bottom Admission Button Bar */}
+        <div className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-4 z-30 shadow-lg">
+          <div className="max-w-lg mx-auto">
+            <button
+              type="button"
+              onClick={handleAdmitSelected}
+              disabled={selectedTicketIds.length === 0 || admittingTickets}
+              className="w-full py-4 bg-[#4f39f6] hover:bg-[#432ee0] text-white text-sm font-black rounded-2xl shadow-xl shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {admittingTickets ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Processing Admission...</span>
+                </>
+              ) : selectedTicketIds.length === 0 ? (
+                <span>Select Tickets for Entry</span>
+              ) : (
+                <>
+                  <Check className="w-5 h-5 stroke-[2.5]" />
+                  <span>
+                    ADMIT {selectedTicketIds.length}{' '}
+                    {selectedTicketIds.length === 1 ? 'TICKET' : 'TICKETS'} FOR ENTRY
+                  </span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Result screen ────────────────────────────────────────────────
   if (screen === 'scanning' && outcome) {
     const styles: Record<ResultKind, { bg: string; ring: string; text: string; icon: React.ReactNode }> = {
@@ -618,35 +978,90 @@ export default function ScannerPortalPage() {
         <h1 className="text-3xl sm:text-4xl font-black tracking-tight">{outcome.title}</h1>
         <p className="text-sm font-semibold opacity-90 mt-2 max-w-sm">{outcome.subtitle}</p>
 
-        <div className="mt-6 space-y-1.5 w-full max-w-xs">
+        <div className="mt-6 space-y-2 w-full max-w-sm text-left">
           {outcome.ticketId && (
-            <div className="bg-black/20 rounded-xl py-2.5 px-4">
-              <span className="text-[10px] font-black uppercase opacity-70 block">Ticket</span>
-              <span className="text-base font-black font-mono tracking-wider">{outcome.ticketId}</span>
+            <div className="bg-black/20 rounded-xl py-2 px-3.5 flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase opacity-70">Ticket ID</span>
+              <span className="text-sm font-black font-mono tracking-wider">{outcome.ticketId}</span>
+            </div>
+          )}
+          {outcome.bookingId && (
+            <div className="bg-black/20 rounded-xl py-2 px-3.5 flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase opacity-70">Booking ID</span>
+              <span className="text-xs font-black font-mono opacity-90">{outcome.bookingId}</span>
             </div>
           )}
           {outcome.audienceName && (
-            <div className="bg-black/20 rounded-xl py-2.5 px-4">
-              <span className="text-[10px] font-black uppercase opacity-70 block">Audience</span>
-              <span className="text-sm font-black">
-                {outcome.audienceName}
-                {outcome.persons ? ` • ${outcome.persons} person${outcome.persons > 1 ? 's' : ''}` : ''}
+            <div className="bg-black/20 rounded-xl py-2 px-3.5 flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase opacity-70">Attendee</span>
+              <span className="text-xs font-black">{outcome.audienceName}</span>
+            </div>
+          )}
+          {(outcome.seat || outcome.ticketType) && (
+            <div className="bg-black/20 rounded-xl py-2 px-3.5 flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase opacity-70">Seat / Tier</span>
+              <span className="text-xs font-black">
+                {outcome.block ? `${outcome.block} • ` : ''}
+                {outcome.seat ? `Seat ${outcome.seat}` : outcome.ticketType || 'General'}
               </span>
             </div>
           )}
-          {outcome.kind === 'already' && outcome.previousEntryTime && (
-            <div className="bg-black/20 rounded-xl py-2.5 px-4">
-              <span className="text-[10px] font-black uppercase opacity-70 block">First Entered</span>
-              <span className="text-xs font-bold">
-                {fmtTime(outcome.previousEntryTime)}
-                {outcome.previousScannerName ? ` by ${outcome.previousScannerName}` : ''}
-                {outcome.previousGateId ? ` at ${outcome.previousGateId}` : ''}
+          {outcome.kind === 'success' && outcome.entryTime && (
+            <div className="bg-black/20 rounded-xl py-2 px-3.5 flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase opacity-70">Entry Time</span>
+              <span className="text-xs font-black">{outcome.entryTime}</span>
+            </div>
+          )}
+          {outcome.kind === 'success' && (outcome.scannerId || outcome.scannerName) && (
+            <div className="bg-black/20 rounded-xl py-2 px-3.5 flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase opacity-70">Scanner</span>
+              <span className="text-xs font-black">
+                {outcome.scannerId} {outcome.scannerName ? `• ${outcome.scannerName}` : ''}
               </span>
             </div>
           )}
+          {outcome.kind === 'already' && (
+            <div className="bg-black/30 border border-white/20 rounded-xl p-3 space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[10px] font-black uppercase opacity-75">Initial Entry</span>
+                <span className="font-extrabold">{fmtTime(outcome.previousEntryTime)}</span>
+              </div>
+              {(outcome.previousScannerId || outcome.previousScannerName) && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[10px] font-black uppercase opacity-75">Scanner</span>
+                  <span className="font-bold">
+                    {outcome.previousScannerId} {outcome.previousScannerName ? `(${outcome.previousScannerName})` : ''}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="bg-black/20 rounded-xl py-1.5 px-3.5 flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase opacity-70">Status</span>
+            <span className="text-[11px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-white/20">
+              {outcome.kind === 'success' ? 'ENTERED ✓' : outcome.kind === 'already' ? 'ALREADY USED' : outcome.title.replace(/^❌\s*/, '')}
+            </span>
+          </div>
         </div>
 
         <div className="mt-8 flex flex-col gap-3 w-full max-w-xs">
+          {outcome.kind === 'already' &&
+            identifiedBooking &&
+            identifiedTickets.filter((t) => t.status === 'ACTIVE').length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOutcome(null);
+                  setSelectedTicketIds([]);
+                  setScreen('select-tickets');
+                }}
+                className="w-full py-3.5 bg-amber-300 hover:bg-amber-200 text-slate-950 text-xs font-black rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
+              >
+                <Ticket className="w-4 h-4" />
+                View Other Tickets in Booking ({identifiedTickets.filter((t) => t.status === 'ACTIVE').length} Active)
+              </button>
+            )}
+
           <button
             onClick={scanNext}
             className="w-full py-4 bg-white text-slate-900 text-sm font-black rounded-xl shadow-xl active:scale-95 transition-all"
