@@ -8,6 +8,7 @@ export type NavigationTab =
   | 'tickets'
   | 'scanner-members'
   | 'scan-history'
+  | 'online-history'
   | 'payments'
   | 'customers'
   | 'counters'
@@ -115,6 +116,40 @@ export interface Seat {
 
 export type TicketStatus = 'ACTIVE' | 'ENTERED' | 'CANCELLED';
 
+// ─── Online payment history ───────────────────────────────────────
+
+export type PaymentStatus = 'Successful' | 'Pending' | 'Failed' | 'Refunded' | 'Cancelled';
+
+export type PaymentMethod = 'UPI' | 'Cash' | 'Card' | 'Net Banking' | 'Wallet' | 'Other';
+
+export const PAYMENT_STATUSES: PaymentStatus[] = [
+  'Successful',
+  'Pending',
+  'Failed',
+  'Refunded',
+  'Cancelled',
+];
+
+export const PAYMENT_METHODS: PaymentMethod[] = [
+  'UPI',
+  'Card',
+  'Net Banking',
+  'Wallet',
+  'Cash',
+  'Other',
+];
+
+// Per-ticket entry rows used by the Online History transaction details.
+export interface OnlineTicketRow {
+  ticketId: string;
+  displayId: string;
+  category: string;
+  price: number;
+  entryStatus: 'Used' | 'Unused' | 'Cancelled';
+  seat?: string | null;
+  scannedAt?: string | null;
+}
+
 export interface TicketItem {
   id: string; // e.g. NJ26-00001-1
   ticketId: string; // e.g. NJ26-00001-1
@@ -165,7 +200,7 @@ export interface BookingItem {
   amount: number;
   source: 'Online' | 'Counter';
   counterName?: string;
-  paymentMethod: 'UPI' | 'Cash' | 'Card';
+  paymentMethod: PaymentMethod;
   transactionId?: string;
   time: string;
   date: string;
@@ -191,6 +226,20 @@ export interface BookingItem {
   platformCharge?: number;
   totalFees?: number;
   finalCustomerAmount?: number;
+
+  // Online payment / transaction metadata
+  paymentStatus?: PaymentStatus;
+  paymentChannel?: 'Online' | 'Counter';
+  gatewayTransactionId?: string;
+  paymentDate?: string; // ISO
+  /** Explicit purchased ticket IDs (never rewritten after scanning). */
+  ticketIds?: string[];
+  createdAt?: string; // ISO
+  /** Charge/ cost fields that may be stored on the transaction by the payment layer. */
+  otherCharges?: number;
+  gatewayFee?: number;
+  actualCost?: number;
+  profit?: number;
 }
 
 export interface GateInfo {

@@ -272,6 +272,32 @@ export function listenBookings(
   );
 }
 
+// Streams bookings across every event — used by the Online History section.
+export function listenAllBookings(
+  callback: (bookings: BookingItem[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    colRef(C.BOOKINGS),
+    (snap) => {
+      const bookings = snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingItem));
+      bookings.sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+      callback(bookings);
+    },
+    (err) => {
+      console.warn('listenAllBookings error:', err);
+      onError?.(err);
+    }
+  );
+}
+
+export async function getAllBookingsOnce(): Promise<BookingItem[]> {
+  const snap = await getDocs(colRef(C.BOOKINGS));
+  const bookings = snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingItem));
+  bookings.sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+  return bookings;
+}
+
 export async function addBooking(booking: Omit<BookingItem, 'id'> & { eventId: string }): Promise<string> {
   const batch = writeBatch(db);
   const bookingRef = doc(colRef(C.BOOKINGS));

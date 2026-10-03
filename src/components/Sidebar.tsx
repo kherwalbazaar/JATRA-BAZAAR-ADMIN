@@ -24,7 +24,8 @@ import {
   ChevronDown,
   History,
   Armchair,
-  ShoppingCart
+  ShoppingCart,
+  Globe
 } from 'lucide-react';
 import { NavigationTab, EventItem } from '@/types';
 
@@ -52,6 +53,7 @@ export default function Sidebar({
     { id: 'counter-booking', label: 'Counter Booking', icon: <ShoppingCart className="w-4 h-4" /> },
     { id: 'tickets', label: 'Scanner', icon: <Ticket className="w-4 h-4" /> },
     { id: 'scan-history', label: 'Scan History', icon: <History className="w-4 h-4" /> },
+    { id: 'online-history', label: 'Online History', icon: <Globe className="w-4 h-4" /> },
     { id: 'payments', label: 'Payments', icon: <CreditCard className="w-4 h-4" /> },
     { id: 'customers', label: 'Customers', icon: <Users className="w-4 h-4" /> },
     { id: 'counters', label: 'Counter Management', icon: <Store className="w-4 h-4" /> },

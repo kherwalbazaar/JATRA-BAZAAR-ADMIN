@@ -16,6 +16,7 @@ import ReportsView from '@/components/ReportsView';
 import SettingsView from '@/components/SettingsView';
 import ScannerMembersView from '@/components/ScannerMembersView';
 import ScanHistoryView from '@/components/ScanHistoryView';
+import OnlineHistoryView from '@/components/OnlineHistoryView';
 import ScannerMemberList from '@/components/ScannerMemberList';
 import CreateScannerUserModal from '@/components/CreateScannerUserModal';
 
@@ -329,6 +330,10 @@ export default function App() {
           {currentTab === 'scanner-members' && <ScannerMembersView />}
 
           {currentTab === 'scan-history' && <ScanHistoryView />}
+
+          {currentTab === 'online-history' && (
+            <OnlineHistoryView events={eventsList} ticketTypes={ticketTypes} />
+          )}
 
           {currentTab === 'payments' && (
             <ReportsView
