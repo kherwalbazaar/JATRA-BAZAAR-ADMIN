@@ -36,6 +36,27 @@ interface SidebarProps {
   onViewEventDetails: (event: EventItem) => void;
 }
 
+export const NAV_LABELS: Record<string, string> = {
+  dashboard: 'Dashboard',
+  events: 'Events',
+  'tickets-types': 'Ticket Types',
+  'create-seat': 'Create Seat',
+  'counter-booking': 'Counter Booking',
+  tickets: 'Scanner',
+  'scan-history': 'Scan History',
+  'online-history': 'Online History',
+  payments: 'Payments',
+  customers: 'Customers',
+  counters: 'Counter Management',
+  gates: 'Gate Management',
+  reports: 'Reports & Analytics',
+  marketing: 'Marketing',
+  settings: 'Settings',
+  users: 'Users & Roles',
+  logs: 'System Logs',
+  support: 'Support',
+};
+
 export default function Sidebar({
   currentTab,
   onTabChange,
@@ -46,24 +67,24 @@ export default function Sidebar({
   const [settingsOpen, setSettingsOpen] = React.useState(false);
 
   const navItems: { id: NavigationTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
-    { id: 'events', label: 'Events', icon: <CalendarDays className="w-4 h-4" /> },
-    { id: 'tickets-types', label: 'Ticket Types', icon: <LayoutGrid className="w-4 h-4" /> },
-    { id: 'create-seat', label: 'Create Seat', icon: <Armchair className="w-4 h-4" /> },
-    { id: 'counter-booking', label: 'Counter Booking', icon: <ShoppingCart className="w-4 h-4" /> },
-    { id: 'tickets', label: 'Scanner', icon: <Ticket className="w-4 h-4" /> },
-    { id: 'scan-history', label: 'Scan History', icon: <History className="w-4 h-4" /> },
-    { id: 'online-history', label: 'Online History', icon: <Globe className="w-4 h-4" /> },
-    { id: 'payments', label: 'Payments', icon: <CreditCard className="w-4 h-4" /> },
-    { id: 'customers', label: 'Customers', icon: <Users className="w-4 h-4" /> },
-    { id: 'counters', label: 'Counter Management', icon: <Store className="w-4 h-4" /> },
-    { id: 'gates', label: 'Gate Management', icon: <DoorOpen className="w-4 h-4" /> },
-    { id: 'reports', label: 'Reports & Analytics', icon: <TrendingUp className="w-4 h-4" /> },
-    { id: 'marketing', label: 'Marketing', icon: <Megaphone className="w-4 h-4" /> },
-    { id: 'settings', label: 'Settings', icon: <Settings className="w-4 h-4" /> },
-    { id: 'users', label: 'Users & Roles', icon: <ShieldCheck className="w-4 h-4" /> },
-    { id: 'logs', label: 'System Logs', icon: <FileText className="w-4 h-4" /> },
-    { id: 'support', label: 'Support', icon: <HelpCircle className="w-4 h-4" /> },
+    { id: 'dashboard', label: NAV_LABELS.dashboard, icon: <LayoutDashboard className="w-4 h-4" /> },
+    { id: 'events', label: NAV_LABELS.events, icon: <CalendarDays className="w-4 h-4" /> },
+    { id: 'tickets-types', label: NAV_LABELS['tickets-types'], icon: <LayoutGrid className="w-4 h-4" /> },
+    { id: 'create-seat', label: NAV_LABELS['create-seat'], icon: <Armchair className="w-4 h-4" /> },
+    { id: 'counter-booking', label: NAV_LABELS['counter-booking'], icon: <ShoppingCart className="w-4 h-4" /> },
+    { id: 'tickets', label: NAV_LABELS.tickets, icon: <Ticket className="w-4 h-4" /> },
+    { id: 'scan-history', label: NAV_LABELS['scan-history'], icon: <History className="w-4 h-4" /> },
+    { id: 'online-history', label: NAV_LABELS['online-history'], icon: <Globe className="w-4 h-4" /> },
+    { id: 'payments', label: NAV_LABELS.payments, icon: <CreditCard className="w-4 h-4" /> },
+    { id: 'customers', label: NAV_LABELS.customers, icon: <Users className="w-4 h-4" /> },
+    { id: 'counters', label: NAV_LABELS.counters, icon: <Store className="w-4 h-4" /> },
+    { id: 'gates', label: NAV_LABELS.gates, icon: <DoorOpen className="w-4 h-4" /> },
+    { id: 'reports', label: NAV_LABELS.reports, icon: <TrendingUp className="w-4 h-4" /> },
+    { id: 'marketing', label: NAV_LABELS.marketing, icon: <Megaphone className="w-4 h-4" /> },
+    { id: 'settings', label: NAV_LABELS.settings, icon: <Settings className="w-4 h-4" /> },
+    { id: 'users', label: NAV_LABELS.users, icon: <ShieldCheck className="w-4 h-4" /> },
+    { id: 'logs', label: NAV_LABELS.logs, icon: <FileText className="w-4 h-4" /> },
+    { id: 'support', label: NAV_LABELS.support, icon: <HelpCircle className="w-4 h-4" /> },
   ];
 
   return (

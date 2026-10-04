@@ -12,7 +12,6 @@ import {
   ShieldCheck,
   Edit2,
   Star,
-  QrCode,
   MoreVertical,
   Trash2
 } from 'lucide-react';
@@ -50,6 +49,13 @@ export default function TicketTypesView({
     document.addEventListener('mousedown', onDocMouseDown, true);
     return () => document.removeEventListener('mousedown', onDocMouseDown, true);
   }, [menuFor]);
+
+  // Story name: show the first 5 words, then dots when it's longer.
+  const eventTitle = currentEvent?.title ?? 'No event selected';
+  const titleWords = eventTitle.trim().split(/\s+/);
+  const shortEventTitle =
+    titleWords.length > 5 ? `${titleWords.slice(0, 5).join(' ')}......` : eventTitle;
+
   return (
     <div className="px-6 pt-6 pb-2 space-y-6">
       {/* Header Bar */}
@@ -62,7 +68,7 @@ export default function TicketTypesView({
             </span>
           </h2>
           <p className="text-xs text-slate-400 font-semibold mt-0.5">
-            Configured for: <span className="text-slate-700 font-bold">{currentEvent?.title ?? 'No event selected'}</span> {currentEvent?.venue ? `(${currentEvent.venue})` : ''}
+            Configured for: <span className="text-slate-700 font-bold">{shortEventTitle}</span>
           </p>
         </div>
 
@@ -79,7 +85,6 @@ export default function TicketTypesView({
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
         {ticketTypes.map((type) => {
           const soldPct = Math.round((type.sold / type.totalQuota) * 100);
-          const remaining = type.totalQuota - type.sold;
 
           return (
             <div 
@@ -192,19 +197,6 @@ export default function TicketTypesView({
                       }}
                     ></div>
                   </div>
-                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-400">
-                    <span>{soldPct}% Filled</span>
-                    <span className="text-indigo-600">{remaining} Available</span>
-                  </div>
-                </div>
-
-                {/* QR Entries inside hall */}
-                <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">QR Entry in Hall:</span>
-                  <span className="text-[10px] bg-emerald-50 text-emerald-700 font-extrabold px-2 py-0.5 rounded-md flex items-center gap-1">
-                    <QrCode className="w-2.5 h-2.5" />
-                    <span>{formatNumber(peopleEntered)} persons</span>
-                  </span>
                 </div>
 
                 {/* Perks Checklist */}

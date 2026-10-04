@@ -19,6 +19,7 @@ import {
 import { EventItem } from '@/types';
 
 interface HeaderProps {
+  sectionTitle?: string;
   currentEvent: EventItem | null;
   eventsList: EventItem[];
   onSelectEvent: (event: EventItem) => void;
@@ -35,6 +36,7 @@ interface HeaderProps {
 }
 
 export default function Header({
+  sectionTitle,
   currentEvent,
   eventsList,
   onSelectEvent,
@@ -113,7 +115,15 @@ export default function Header({
     <header className={`px-6 py-4 border-b border-slate-200/80 flex items-center justify-between sticky top-0 z-20 shadow-xs transition-colors duration-200 ${
       isBlinking ? 'animate-header-blink' : 'bg-white'
     }`}>
-      <div className="flex items-center gap-6">
+      {/* Active Section Heading (left of the search bar) */}
+      <div className="flex items-center gap-3 min-w-0">
+        {sectionTitle && (
+          <div className="min-w-0">
+            <h1 className="text-lg font-black text-slate-900 leading-tight truncate">
+              {sectionTitle}
+            </h1>
+          </div>
+        )}
       </div>
 
       {/* Top Right Controls */}

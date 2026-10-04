@@ -224,7 +224,9 @@ export function listenTicketTypes(
   return onSnapshot(
     q,
     (snap) => {
-      const types = snap.docs.map((d) => ({ id: d.id, ...d.data() } as TicketType));
+      // Firestore doc id is the source of truth — never let a stored `id` field (e.g. TT-447) override it,
+      // otherwise updates/deletes would target a non-existent document.
+      const types = snap.docs.map((d) => ({ ...d.data(), id: d.id } as TicketType));
       callback(types);
     },
     (err) => {
@@ -235,12 +237,15 @@ export function listenTicketTypes(
 }
 
 export async function addTicketType(type: Omit<TicketType, 'id'> & { eventId: string }): Promise<string> {
-  const ref = await addDoc(colRef(C.TICKET_TYPES), type);
+  // Don't persist a client-generated id (TT-xxx) — Firestore doc id is used everywhere.
+  const { id: _clientId, ...rest } = type as TicketType & { eventId: string };
+  const ref = await addDoc(colRef(C.TICKET_TYPES), rest);
   return ref.id;
 }
 
 export async function updateTicketType(id: string, data: Partial<TicketType>): Promise<void> {
-  await updateDoc(docRef(C.TICKET_TYPES, id), data);
+  // Upsert: legacy/local ticket types (e.g. TT-447) may not exist in Firestore yet.
+  await setDoc(docRef(C.TICKET_TYPES, id), data as Partial<TicketType>, { merge: true });
 }
 
 export async function deleteTicketType(id: string): Promise<void> {

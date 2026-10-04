@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  History,
   CalendarDays,
   Search,
   CheckCircle2,
@@ -12,6 +11,35 @@ import {
 } from 'lucide-react';
 import { TicketEntry, ScannerMember, BookingItem } from '@/types';
 import * as fs from '@/lib/firestore';
+
+function localDateStr(d: Date = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function dateOfEntry(e: TicketEntry): string {
+  if (e.scanDate && /^\d{4}-\d{2}-\d{2}$/.test(e.scanDate)) return e.scanDate;
+  if (e.scannedAt) {
+    try {
+      return localDateStr(new Date(e.scannedAt));
+    } catch {
+      return e.scannedAt.slice(0, 10);
+    }
+  }
+  return (e as TicketEntry & { date?: string }).date || '';
+}
+
+function todayStr(): string {
+  return localDateStr(new Date());
+}
+
+function yesterdayStr(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return localDateStr(d);
+}
 
 
 function fmt(iso?: string, scanTime?: string, scanDate?: string): string {
@@ -39,6 +67,16 @@ export default function ScanHistoryView() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [search, setSearch] = useState('');
+
+  // Filters (toggled from the header)
+  const [showFilters, setShowFilters] = useState(false);
+  const [range, setRange] = useState<'today' | 'yesterday' | 'all' | 'custom'>('all');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [scannerId, setScannerId] = useState('');
+  const [gateId, setGateId] = useState('');
+  const [resultFilter, setResultFilter] = useState('');
+  const [eventId, setEventId] = useState('');
 
   const loadData = async () => {
     try {
@@ -115,9 +153,41 @@ export default function ScanHistoryView() {
     return e.entryStatus === 'entered' || x.status === 'entered';
   };
 
+  const gateOptions = useMemo(
+    () => Array.from(new Set(entries.map((e) => (e as LegacyEntry).gate || e.gateId).filter(Boolean))) as string[],
+    [entries]
+  );
+  const eventOptions = useMemo(
+    () => Array.from(new Set(entries.map((e) => e.eventId).filter(Boolean))) as string[],
+    [entries]
+  );
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     let list = entries.filter((e) => e.scanResult !== 'INVALID');
+
+    if (range === 'today') {
+      const t = todayStr();
+      list = list.filter((e) => dateOfEntry(e) === t);
+    } else if (range === 'yesterday') {
+      const y = yesterdayStr();
+      list = list.filter((e) => dateOfEntry(e) === y);
+    } else if (range === 'custom' && customFrom && customTo) {
+      list = list.filter((e) => {
+        const d = dateOfEntry(e);
+        return d >= customFrom && d <= customTo;
+      });
+    }
+
+    if (scannerId) list = list.filter((e) => e.scannerId === scannerId);
+    if (gateId) list = list.filter((e) => ((e as LegacyEntry).gate || e.gateId) === gateId);
+    if (resultFilter) {
+      list = list.filter((e) => {
+        const r = e.scanResult || (isSuccessScan(e) ? 'SUCCESS' : '');
+        return r === resultFilter;
+      });
+    }
+    if (eventId) list = list.filter((e) => e.eventId === eventId);
 
     if (q) {
       list = list.filter(
@@ -133,7 +203,19 @@ export default function ScanHistoryView() {
       );
     }
     return list;
-  }, [entries, search, memberNameOf]);
+  }, [
+    entries,
+    search,
+    memberNameOf,
+    range,
+    customFrom,
+    customTo,
+    scannerId,
+    gateId,
+    resultFilter,
+    eventId,
+    isSuccessScan,
+  ]);
 
   // Total booked seats across all bookings (cancelled/refunded excluded).
   const bookedSeats = useMemo(
@@ -157,42 +239,22 @@ export default function ScanHistoryView() {
     };
   }, [entries, bookedSeats]);
 
-  const clearSearch = () => {
+  const clearFilters = () => {
     setSearch('');
+    setRange('all');
+    setCustomFrom('');
+    setCustomTo('');
+    setScannerId('');
+    setGateId('');
+    setResultFilter('');
+    setEventId('');
   };
+
+  const activeFilters =
+    range !== 'all' || !!scannerId || !!gateId || !!resultFilter || !!eventId || !!customFrom || !!customTo;
 
   return (
     <div className="p-6 space-y-5">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
-            <History className="w-5 h-5 text-indigo-600" />
-            Scan History
-          </h2>
-          <p className="text-xs text-slate-400 font-semibold mt-0.5">
-            Every ticket scan (successful and rejected) is recorded here.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="flex items-center gap-1.5 text-xs font-black text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-xl transition-colors disabled:opacity-50"
-            title="Refresh scan history"
-          >
-            <RotateCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
-          <button
-            onClick={clearSearch}
-            className="text-xs font-black text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl transition-colors"
-          >
-            Clear Search
-          </button>
-        </div>
-      </div>
-
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {[
@@ -210,19 +272,158 @@ export default function ScanHistoryView() {
         ))}
       </div>
 
-      {/* Search */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4">
-        <div className="relative">
+      {/* Toolbar: search + actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 self-start sm:self-auto">
+        <div className="relative w-full sm:w-72">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search ticket #, member name, scanner ID..."
-            className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
           />
         </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="flex items-center gap-1.5 text-xs font-black text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-xl transition-colors disabled:opacity-50"
+          title="Refresh scan history"
+        >
+          <RotateCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+        <button
+          onClick={() => setShowFilters((v) => !v)}
+          className={`flex items-center gap-1.5 text-xs font-black px-3 py-2 rounded-xl transition-colors border ${
+            showFilters || activeFilters
+              ? 'text-indigo-700 bg-indigo-100 border-indigo-200'
+              : 'text-slate-600 bg-slate-100 hover:bg-slate-200 border-transparent'
+          }`}
+        >
+          <Filter className="w-3.5 h-3.5" />
+          Filter
+          {activeFilters && <span className="w-1.5 h-1.5 rounded-full bg-indigo-600" />}
+        </button>
       </div>
+
+      {/* Filters */}
+      {showFilters && (
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[150px]">
+              <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Date Range</label>
+              <select
+                value={range}
+                onChange={(e) => setRange(e.target.value as typeof range)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+              >
+                <option value="all">All</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yest.</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+
+            {range === 'custom' && (
+              <>
+                <div className="flex-1 min-w-[130px]">
+                  <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">From</label>
+                  <input
+                    type="date"
+                    value={customFrom}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+                  />
+                </div>
+                <div className="flex-1 min-w-[130px]">
+                  <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">To</label>
+                  <input
+                    type="date"
+                    value={customTo}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="flex-1 min-w-[150px]">
+              <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Scanner</label>
+              <select
+                value={scannerId}
+                onChange={(e) => setScannerId(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+              >
+                <option value="">All scanners</option>
+                {members.map((m) => (
+                  <option key={m.id} value={m.scannerId}>
+                    {m.scannerId} — {m.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex-1 min-w-[130px]">
+              <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Gate</label>
+              <select
+                value={gateId}
+                onChange={(e) => setGateId(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+              >
+                <option value="">All gates</option>
+                {gateOptions.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex-1 min-w-[150px]">
+              <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Result</label>
+              <select
+                value={resultFilter}
+                onChange={(e) => setResultFilter(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+              >
+                <option value="">All results</option>
+                <option value="SUCCESS">Entry Allowed</option>
+                <option value="ALREADY_USED">Already Used</option>
+                <option value="WRONG_EVENT">Wrong Event</option>
+                <option value="CANCELLED">Cancelled</option>
+                <option value="UNPAID">Unpaid</option>
+                <option value="SCANNER_DENIED">Scanner Blocked</option>
+              </select>
+            </div>
+
+            <div className="flex-1 min-w-[150px]">
+              <label className="text-[10px] font-black uppercase text-slate-400 block mb-1">Event</label>
+              <select
+                value={eventId}
+                onChange={(e) => setEventId(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+              >
+                <option value="">All events</option>
+                {eventOptions.map((ev) => (
+                  <option key={ev} value={ev}>
+                    {ev}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex-1 min-w-[130px] flex items-end">
+              <button
+                onClick={clearFilters}
+                className="w-full text-xs font-black text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl transition-colors"
+              >
+                Reset Filters
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Table */}
       {loading ? (
