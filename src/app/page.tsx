@@ -69,7 +69,6 @@ export default function App() {
     seats,
     createSeatRow,
     deleteSeatRow,
-    updateSeatRow,
     seedDatabase,
     retryConnection,
   } = useFirestore();
@@ -182,6 +181,17 @@ export default function App() {
     await deleteTicketType(type.id);
   };
 
+  // Remove rows from their donor tiers when another category takes them over.
+  const handleReassignRows = async (transfers: { fromTypeId: string; rows: string[] }[]) => {
+    for (const { fromTypeId, rows } of transfers) {
+      const donor = ticketTypes.find((t) => t.id === fromTypeId);
+      if (!donor) continue;
+      const moved = new Set(rows.map((r) => r.toUpperCase()));
+      const remaining = (donor.rows || []).filter((r) => !moved.has(r.toUpperCase()));
+      await updateTicketType(fromTypeId, { rows: remaining });
+    }
+  };
+
   return (
     <div className="flex min-h-screen bg-[#f4f6fc] text-slate-800 antialiased font-sans">
       {/* 1. Left Sidebar Navigation */}
@@ -285,6 +295,7 @@ export default function App() {
             <TicketTypesView
               currentEvent={currentEvent}
               ticketTypes={ticketTypes}
+              seats={seats}
               onOpenAddTicketType={() => {
                 setEditingTicketType(null);
                 setAddTicketTypeOpen(true);
@@ -328,7 +339,6 @@ export default function App() {
                 onOpenRequest={() => setSeatFormOpen(true)}
                 onCreateSeatRow={createSeatRow}
                 onDeleteSeatRow={deleteSeatRow}
-                onUpdateSeatRow={updateSeatRow}
               />
             </div>
           )}
@@ -485,6 +495,7 @@ export default function App() {
         )}
         seats={seats}
         existingTypes={ticketTypes}
+        onReassignRows={handleReassignRows}
       />
 
       <BookingDetailsModal

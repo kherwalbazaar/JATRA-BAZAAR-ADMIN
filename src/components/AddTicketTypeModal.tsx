@@ -23,6 +23,11 @@ interface AddTicketTypeModalProps {
   seats?: Seat[];
   /** All ticket categories — blocks/tiers/rows already used by others are locked. */
   existingTypes?: TicketType[];
+  /**
+   * Move rows out of other tiers when this category takes them over.
+   * Only rows with no sold seats may be moved.
+   */
+  onReassignRows?: (transfers: { fromTypeId: string; rows: string[] }[]) => void;
 }
 
 export default function AddTicketTypeModal({
@@ -33,7 +38,8 @@ export default function AddTicketTypeModal({
   editingType = null,
   committeeNames = [],
   seats = [],
-  existingTypes = []
+  existingTypes = [],
+  onReassignRows
 }: AddTicketTypeModalProps) {
   const isEdit = !!editingType;
   const [committee, setCommittee] = useState('');
@@ -107,6 +113,26 @@ export default function AddTicketTypeModal({
     });
   });
 
+  // Rows owned by another tier that have ZERO sold seats can be moved here.
+  // Map of row letter -> donor type id (the tier the row will be removed from).
+  const movableRows = new Map<string, string>();
+  otherTypes.forEach((t) => {
+    (t.rows || []).forEach((r) => {
+      if (!r) return;
+      const letter = r.toUpperCase();
+      if (takenRows.has(letter) && !movableRows.has(letter)) {
+        const scope = block.trim().toUpperCase();
+        const hasSold = seats.some((s) => {
+          const base = s.rowId.replace(/[0-9]/g, '').toUpperCase();
+          if (base !== letter) return false;
+          if (scope && scope !== 'ALL' && s.blockId.toUpperCase() !== scope) return false;
+          return s.status === 'booked';
+        });
+        if (!hasSold) movableRows.set(letter, t.id);
+      }
+    });
+  });
+
   // available/total seats for a row letter — scoped to the selected block
   // ("All"/no block = across every block of the event).
   const statsFor = (letter: string) => {
@@ -135,19 +161,32 @@ export default function AddTicketTypeModal({
       alert(`Block ${block} is already used by another tier — pick a different block.`);
       return;
     }
-    const clash = selectedRows.filter((r) => takenRows.has(r.toUpperCase()));
+    // Rows owned by another tier are only allowed if they are movable (no sold seats).
+    const clash = selectedRows.filter((r) => takenRows.has(r.toUpperCase()) && !movableRows.has(r.toUpperCase()));
     if (clash.length) {
       alert(
-        `Row${clash.length > 1 ? 's' : ''} ${clash.join(', ')} already assigned to another tier — remove ${
-          clash.length > 1 ? 'them' : 'it'
-        } or pick other rows.`
+        `Row${clash.length > 1 ? 's' : ''} ${clash.join(', ')} already assigned to another tier and ${
+          clash.length > 1 ? 'have' : 'has'
+        } sold seats — remove ${clash.length > 1 ? 'them' : 'it'} or pick other rows.`
       );
       return;
     }
+    // Movable rows will be removed from their donor tiers on save.
+    const rowsToReassign = selectedRows.filter((r) => movableRows.has(r.toUpperCase()));
+    const reassignByType = new Map<string, string[]>();
+    rowsToReassign.forEach((r) => {
+      const donorId = movableRows.get(r.toUpperCase())!;
+      if (!reassignByType.has(donorId)) reassignByType.set(donorId, []);
+      reassignByType.get(donorId)!.push(r);
+    });
+
+    const moveNote = rowsToReassign.length
+      ? `\n\nRows moved from other tiers (no seats sold): ${rowsToReassign.join(', ')}`
+      : '';
 
     if (isEdit) {
       const confirmed = window.confirm(
-        `Save changes to ticket category "${name.trim()}"?\n\nCommittee: ${committee.trim()}\nBlock: ${block || 'All'}\nRows: ${selectedRows.length ? selectedRows.join(', ') : 'All'}\nPrice: ₹${Number(price) || 0}\nTotal Quota: ${Number(quota) || 0}`
+        `Save changes to ticket category "${name.trim()}"?\n\nCommittee: ${committee.trim()}\nBlock: ${block || 'All'}\nRows: ${selectedRows.length ? selectedRows.join(', ') : 'All'}\nPrice: ₹${Number(price) || 0}\nTotal Quota: ${Number(quota) || 0}${moveNote}`
       );
       if (!confirmed) return;
     }
@@ -162,6 +201,11 @@ export default function AddTicketTypeModal({
         totalQuota: Number(quota) || editingType.sold,
         color,
       });
+      if (reassignByType.size) {
+        onReassignRows?.(
+          Array.from(reassignByType.entries()).map(([fromTypeId, rows]) => ({ fromTypeId, rows }))
+        );
+      }
       onClose();
       return;
     }
@@ -183,6 +227,11 @@ export default function AddTicketTypeModal({
     };
 
     onAddTicketType(newType);
+    if (reassignByType.size) {
+      onReassignRows?.(
+        Array.from(reassignByType.entries()).map(([fromTypeId, rows]) => ({ fromTypeId, rows }))
+      );
+    }
     onClose();
   };
 
@@ -319,7 +368,11 @@ export default function AddTicketTypeModal({
                       {rowOptions.map((letter) => {
                         const stats = statsFor(letter);
                         const on = selectedRows.includes(letter);
-                        const taken = takenRows.has(letter) && !on;
+                        const movable = !on && movableRows.has(letter);
+                        const taken = takenRows.has(letter) && !on && !movable;
+                        const donorType = movable
+                          ? otherTypes.find((t) => t.id === movableRows.get(letter))
+                          : undefined;
                         return (
                           <button
                             key={letter}
@@ -327,10 +380,12 @@ export default function AddTicketTypeModal({
                             disabled={taken}
                             title={
                               taken
-                                ? `Row ${letter} already assigned to another tier`
-                                : stats
-                                  ? `Row ${letter}: ${stats.available}/${stats.total} seats`
-                                  : `Row ${letter}: no seats yet`
+                                ? `Row ${letter} already assigned to another tier and has sold seats`
+                                : movable
+                                  ? `Row ${letter} belongs to ${donorType?.name || 'another tier'} but has no sold seats — click to move it here`
+                                  : stats
+                                    ? `Row ${letter}: ${stats.available}/${stats.total} seats`
+                                    : `Row ${letter}: no seats yet`
                             }
                             onClick={() => {
                               if (taken) return;
@@ -343,7 +398,9 @@ export default function AddTicketTypeModal({
                                 ? 'bg-[#4f39f6] text-white border-[#4f39f6] shadow-[0_4px_10px_-2px_rgba(79,57,246,0.55)]'
                                 : taken
                                   ? 'bg-red-100 text-red-400 border-red-400 cursor-not-allowed shadow-[0_3px_6px_-1px_rgba(15,23,42,0.22)]'
-                                  : 'bg-white text-slate-700 border-emerald-400 hover:border-emerald-500 active:scale-95 shadow-[0_3px_6px_-1px_rgba(15,23,42,0.22)]'
+                                  : movable
+                                    ? 'bg-amber-50 text-amber-700 border-amber-400 hover:border-amber-500 active:scale-95 shadow-[0_3px_6px_-1px_rgba(15,23,42,0.22)]'
+                                    : 'bg-white text-slate-700 border-emerald-400 hover:border-emerald-500 active:scale-95 shadow-[0_3px_6px_-1px_rgba(15,23,42,0.22)]'
                             }`}
                           >
                             {on && <Check className="w-2.5 h-2.5 absolute top-0.5 right-0.5" />}
@@ -356,10 +413,12 @@ export default function AddTicketTypeModal({
                                   ? 'bg-indigo-500 text-white'
                                   : taken
                                     ? 'bg-red-200 text-red-500'
-                                    : 'bg-emerald-100 text-emerald-600'
+                                    : movable
+                                      ? 'bg-amber-200 text-amber-700'
+                                      : 'bg-emerald-100 text-emerald-600'
                               }`}
                             >
-                              {taken ? 'Used' : stats ? `${stats.available}/${stats.total}` : '—'}
+                              {taken ? 'Sold' : movable ? 'Move' : stats ? `${stats.available}/${stats.total}` : '—'}
                             </span>
                           </button>
                         );
@@ -370,9 +429,10 @@ export default function AddTicketTypeModal({
               )}
             </div>
             <p className="text-[10px] text-slate-400 font-semibold mt-1">
-              Click letters to pick rows — e.g. Star = A, VIP = B, Special = C. Rows/blocks/tiers already
-              assigned to another category show red as “Used” and can’t be picked. “All Rows” (nothing
-              picked) covers every row.
+              Click letters to pick rows — e.g. Star = A, VIP = B, Special = C. A row owned by another
+              category with <span className="text-amber-600 font-bold">no sold seats</span> shows amber
+              “Move” and can be taken over (it is removed from the other category). A row with sold seats
+              shows red “Sold” and is locked. “All Rows” (nothing picked) covers every row.
             </p>
           </div>
 

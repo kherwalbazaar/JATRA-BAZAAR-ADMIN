@@ -14,7 +14,8 @@ import {
   Trash2,
   Edit,
   MapPin,
-  Armchair
+  Armchair,
+  Star
 } from 'lucide-react';
 import { BookingItem, EventItem, TicketType, Seat } from '@/types';
 import StageDiagram, { buildSeatStats } from '@/components/StageDiagram';
@@ -96,6 +97,36 @@ export default function CounterBookingView({
       seatList.sort((a, b) => a.seatNumber - b.seatNumber);
     });
     return seatsByRow;
+  };
+
+  // Find the ticket type that owns a seat (by block + row coverage).
+  const getTicketTypeForSeat = (seat: Seat): TicketType | undefined => {
+    return ticketTypes.find(tt => {
+      const blocks = (tt.blocks || []).map(b => b.trim().toUpperCase()).filter(Boolean);
+      const blocksMatch = blocks.length === 0 || blocks.includes('ALL') || blocks.includes(seat.blockId.trim().toUpperCase());
+      const rows = (tt.rows || []).map(r => r.trim().toUpperCase()).filter(Boolean);
+      const baseRow = seat.rowId.replace(/[0-9]/g, '').toUpperCase();
+      const rowsMatch = rows.length === 0 || rows.includes('ALL') || rows.includes(seat.rowId.toUpperCase()) || rows.includes(baseRow);
+      return blocksMatch && rowsMatch;
+    });
+  };
+
+  // Group a block's seats by ticket type — each group keeps rows sorted.
+  const getBlockSeatsByTicketType = (blockId: string) => {
+    const blockSeats = seats.filter(seat => seat.blockId === blockId);
+    const groups = new Map<string, { type?: TicketType; seatsByRow: Map<string, Seat[]> }>();
+    blockSeats.forEach(seat => {
+      const tt = getTicketTypeForSeat(seat);
+      const key = tt?.id || '__standard__';
+      if (!groups.has(key)) groups.set(key, { type: tt, seatsByRow: new Map() });
+      const g = groups.get(key)!;
+      if (!g.seatsByRow.has(seat.rowId)) g.seatsByRow.set(seat.rowId, []);
+      g.seatsByRow.get(seat.rowId)!.push(seat);
+    });
+    groups.forEach(g => {
+      g.seatsByRow.forEach(list => list.sort((a, b) => a.seatNumber - b.seatNumber));
+    });
+    return groups;
   };
 
   // Handle block selection
@@ -221,9 +252,8 @@ export default function CounterBookingView({
 
             <div className="p-3 overflow-x-auto">
               {(() => {
-                const seatsByRow = getBlockSeats(activeBlock);
-                const rows = Array.from(seatsByRow.keys()).sort();
-                if (rows.length === 0) {
+                const typeGroups = getBlockSeatsByTicketType(activeBlock);
+                if (typeGroups.size === 0) {
                   return (
                     <p className="text-xs text-gray-400 font-semibold text-center py-4">
                       No seats created for this block yet
@@ -231,32 +261,55 @@ export default function CounterBookingView({
                   );
                 }
                 return (
-                  <div className="space-y-2">
-                    {rows.map((rowId) => (
-                      <div key={rowId} className="flex items-center gap-2">
-                        <span className="w-14 text-right text-[10px] font-bold text-gray-400 flex-shrink-0">
-                          Row {rowId}
-                        </span>
-                        <div className="flex gap-1.5 flex-wrap">
-                          {seatsByRow.get(rowId)?.map((seat) => {
-                            const isBooked = seat.status === 'booked';
-                            return (
-                              <span
-                                key={seat.id}
-                                className={`h-7 w-7 rounded text-[10px] font-bold flex items-center justify-center ${
-                                  isBooked
-                                    ? 'bg-rose-950/60 border border-rose-800/80 text-rose-400'
-                                    : 'bg-gray-800 border border-gray-700 text-gray-300'
-                                }`}
-                                title={`Row ${rowId}, Seat ${seat.seatLabel || seat.seatNumber} - ${isBooked ? 'Booked' : 'Available'}`}
-                              >
-                                {seat.seatLabel || seat.seatNumber}
-                              </span>
-                            );
-                          })}
+                  <div className="space-y-3">
+                    {Array.from(typeGroups.entries()).map(([key, group]) => {
+                      const rows = Array.from(group.seatsByRow.keys()).sort();
+                      const typeName = group.type?.name || 'Standard';
+                      const groupColor = group.type?.color || '#38bdf8';
+                      return (
+                        <div key={key} className="rounded-lg border border-gray-800 bg-gray-900/40 overflow-hidden">
+                          <div className="flex items-center gap-2 px-2.5 py-1.5 bg-gray-800/60 border-b border-gray-800">
+                            <Star className="w-3.5 h-3.5 flex-shrink-0" style={{ color: groupColor }} fill={groupColor} />
+                            <span className="text-[11px] font-black text-gray-200">{typeName} Group</span>
+                            <span className="text-[10px] font-semibold text-gray-500">— {activeBlock}: {rows.join(', ')}</span>
+                            <span
+                              className="ml-auto flex items-center gap-0.5 text-[11px] font-black flex-shrink-0"
+                              style={{ color: groupColor }}
+                            >
+                              <IndianRupee className="w-3 h-3" />
+                              {group.type?.price ?? 100}
+                            </span>
+                          </div>
+                          <div className="p-2.5 space-y-2">
+                            {rows.map((rowId) => (
+                              <div key={rowId} className="flex items-center gap-2">
+                                <span className="w-14 text-right text-[10px] font-bold text-gray-400 flex-shrink-0">
+                                  Row {rowId}
+                                </span>
+                                <div className="flex gap-1.5 flex-wrap">
+                                  {group.seatsByRow.get(rowId)?.map((seat) => {
+                                    const isBooked = seat.status === 'booked';
+                                    return (
+                                      <span
+                                        key={seat.id}
+                                        className={`h-7 w-7 rounded text-[10px] font-bold flex items-center justify-center ${
+                                          isBooked
+                                            ? 'bg-rose-950/60 border border-rose-800/80 text-rose-400'
+                                            : 'bg-gray-800 border border-gray-700 text-gray-300'
+                                        }`}
+                                        title={`${typeName} — Row ${rowId}, Seat ${seat.seatLabel || seat.seatNumber} - ${isBooked ? 'Booked' : 'Available'}`}
+                                      >
+                                        {seat.seatLabel || seat.seatNumber}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 );
               })()}

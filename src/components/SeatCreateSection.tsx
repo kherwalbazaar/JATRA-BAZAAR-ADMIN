@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Trash2, LayoutGrid, Plus, ChevronDown, Check, MoreVertical, Edit, AlertTriangle, X } from 'lucide-react';
+import { Trash2, LayoutGrid, Plus, Minus, ChevronDown, Check, MoreVertical, Edit, AlertTriangle, X } from 'lucide-react';
 import { Seat, TicketType } from '@/types';
 
 const BLOCK_OPTIONS = [
@@ -9,6 +9,27 @@ const BLOCK_OPTIONS = [
   'B1', 'B2', 'B3',
   'C1', 'C2', 'C3',
 ];
+
+function nextRowLabel(current: string): string {
+  const s = (current || '').toUpperCase().trim() || 'A';
+  if (!/^[A-Z]+$/.test(s)) return 'A';
+  const chars = s.split('');
+  for (let i = chars.length - 1; i >= 0; i--) {
+    if (chars[i] !== 'Z') {
+      chars[i] = String.fromCharCode(chars[i].charCodeAt(0) + 1);
+      return chars.join('');
+    }
+    chars[i] = 'A';
+  }
+  return 'A' + chars.join('');
+}
+
+interface SeatFormRow {
+  id: string;
+  block: string;
+  row: string;
+  seats: string;
+}
 
 interface SeatCreateSectionProps {
   currentEventId?: string;
@@ -27,13 +48,6 @@ interface SeatCreateSectionProps {
     price?: number;
   }) => Promise<number>;
   onDeleteSeatRow: (params: { eventId: string; blockId: string; rowId: string }) => Promise<void>;
-  /** Update an existing row (price) without touching booked seats. */
-  onUpdateSeatRow: (params: {
-    eventId: string;
-    blockId: string;
-    rowId: string;
-    price?: number;
-  }) => Promise<number>;
 }
 
 export default function SeatCreateSection({
@@ -45,59 +59,17 @@ export default function SeatCreateSection({
   onOpenRequest,
   onCreateSeatRow,
   onDeleteSeatRow,
-  onUpdateSeatRow,
 }: SeatCreateSectionProps) {
-  const [block, setBlock] = useState('');
-  const [blockOpen, setBlockOpen] = useState(false);
-  const [row, setRow] = useState('');
-  const [rowOpen, setRowOpen] = useState(false);
-  const [total, setTotal] = useState(0);
-  const [price, setPrice] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState('');
+  const [msg, setMsg] = useState<{ type: 'error' | 'success' | 'info'; text: string } | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ blockId: string; rowId: string } | null>(null);
   const [editMode, setEditMode] = useState<{ blockId: string; rowId: string; oldTotal: number } | null>(null);
-  const blockWrapRef = useRef<HTMLDivElement>(null);
-  const rowWrapRef = useRef<HTMLDivElement>(null);
-
-  // Close the Row alphabet dropdown on outside click / Esc
-  useEffect(() => {
-    if (!rowOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (rowWrapRef.current && !rowWrapRef.current.contains(e.target as Node)) {
-        setRowOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setRowOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [rowOpen]);
-
-  useEffect(() => {
-    if (!blockOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (blockWrapRef.current && !blockWrapRef.current.contains(e.target as Node)) {
-        setBlockOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setBlockOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [blockOpen]);
+  const [formRows, setFormRows] = useState<SeatFormRow[]>([]);
+  const [fieldMenu, setFieldMenu] = useState<{ id: string; type: 'block' | 'row' } | null>(null);
+  const formIdRef = useRef(1);
+  const seatInputRefs = useRef(new Map<string, HTMLInputElement | null>());
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -136,6 +108,44 @@ export default function SeatCreateSection({
     };
   }, [deleteConfirm]);
 
+  useEffect(() => {
+    if (!fieldMenu) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.field-dropdown') && !target.closest('.field-trigger')) {
+        setFieldMenu(null);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFieldMenu(null);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [fieldMenu]);
+
+  useEffect(() => {
+    setFieldMenu(null);
+    if (!isOpen) {
+      setFormRows([]);
+      setMsg(null);
+      setEditMode(null);
+    } else if (!formRows.length) {
+      setFormRows([
+        {
+          id: String(formIdRef.current++),
+          block: '',
+          row: '',
+          seats: '',
+        },
+      ]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
   // Popup: focus the first field as soon as it opens; Esc closes it
   useEffect(() => {
     if (!isOpen) return;
@@ -144,14 +154,14 @@ export default function SeatCreateSection({
       el?.focus();
     }, 60);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !blockOpen && !rowOpen) onClose();
+      if (e.key === 'Escape' && !fieldMenu) onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => {
       clearTimeout(t);
       document.removeEventListener('keydown', onKey);
     };
-  }, [isOpen, onClose, blockOpen, rowOpen]);
+  }, [isOpen, onClose, fieldMenu]);
 
   const blockFromTypes = useMemo(() => {
     const set = new Set<string>(BLOCK_OPTIONS);
@@ -195,8 +205,8 @@ export default function SeatCreateSection({
 
   // Seats already created for a letter in the selected block — matches the
   // exact rowId ("A") and row groups sharing the base letter ("A1", "A2"…).
-  const rowStatsFor = (letter: string) => {
-    const rows = rowsByBlock.get(block.trim().toUpperCase());
+  const rowStatsFor = (blockId: string, letter: string) => {
+    const rows = rowsByBlock.get(blockId.trim().toUpperCase());
     if (!rows) return null;
     const list: Seat[] = [];
     const matchedRows: string[] = [];
@@ -215,75 +225,236 @@ export default function SeatCreateSection({
     };
   };
 
+  const makeFormRow = (partial?: Partial<SeatFormRow>): SeatFormRow => ({
+    id: String(formIdRef.current++),
+    block: '',
+    row: '',
+    seats: '',
+    ...partial,
+  });
+
+  const emptyFormRows = (): SeatFormRow[] => [makeFormRow()];
+
+  const isRowUsed = (blockId: string, rowLabel: string): boolean => {
+    const rows = rowsByBlock.get(blockId.trim().toUpperCase());
+    if (!rows) return false;
+    const target = rowLabel.trim().toUpperCase();
+    if (rows.has(target)) return true;
+    let hit = false;
+    rows.forEach((_, rowId) => {
+      if (rowId.replace(/[0-9]/g, '') === target) hit = true;
+    });
+    return hit;
+  };
+
+  const firstFreeRow = (blockId: string): string => {
+    for (let i = 0; i < 26; i++) {
+      const letter = String.fromCharCode(65 + i);
+      if (!isRowUsed(blockId, letter)) return letter;
+    }
+    return 'A';
+  };
+
+  const existingSeatCount = (blockId: string, rowLabel: string): number => {
+    const rows = rowsByBlock.get(blockId.trim().toUpperCase());
+    if (!rows) return 0;
+    const list = rows.get(rowLabel.trim().toUpperCase());
+    return list ? list.length : 0;
+  };
+
+  const addFormRow = () => {
+    if (editMode || busy) return;
+    const last = formRows[formRows.length - 1];
+    const blockId = (last?.block || '').trim().toUpperCase();
+    const usedConfig = new Set(formRows.map((l) => l.row.trim().toUpperCase()).filter(Boolean));
+    let candidate = last && last.row.trim() ? nextRowLabel(last.row) : firstFreeRow(blockId);
+    let guard = 0;
+    while (guard++ < 600 && (usedConfig.has(candidate) || isRowUsed(blockId, candidate))) {
+      candidate = nextRowLabel(candidate);
+    }
+    const line = makeFormRow({
+      block: blockId,
+      row: candidate,
+    });
+    setFormRows((prev) => [...prev, line]);
+    if (msg?.type === 'error') setMsg(null);
+    setTimeout(() => seatInputRefs.current.get(line.id)?.focus(), 60);
+  };
+
+  const removeFormRow = (id: string) => {
+    if (formRows.length <= 1 || busy) return;
+    setFormRows((prev) => {
+      const next = prev.filter((l) => l.id !== id);
+      return next.length ? next : prev;
+    });
+    if (msg?.type === 'error') setMsg(null);
+  };
+
+  const updateFormRow = (id: string, patch: { block?: string; row?: string; seats?: string }) => {
+    setFormRows((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+    if (msg?.type === 'error') setMsg(null);
+  };
+
+  const formSeatTotal = formRows.reduce((sum, l) => {
+    const n = Math.floor(Number(l.seats));
+    if (!Number.isFinite(n) || n < 1) return sum;
+    return sum + Math.max(0, n - existingSeatCount(l.block, l.row));
+  }, 0);
+
+  const seatIdPreview = (() => {
+    const configured = formRows.filter((l) => {
+      const n = Number(l.seats);
+      return !!l.block.trim() && !!l.row.trim() && Number.isInteger(n) && n >= 1;
+    });
+    if (!configured.length) return '';
+    const idOf = (l: SeatFormRow) => `${l.block.trim().toUpperCase()}-${l.row.trim().toUpperCase()}`;
+    const first = configured[0];
+    const n = Math.floor(Number(first.seats));
+    const head = [`${idOf(first)}-1`];
+    if (n >= 2) head.push(`${idOf(first)}-2`);
+    if (configured.length > 1) {
+      return `${head.join(', ')} … ${idOf(configured[configured.length - 1])}-1`;
+    }
+    return n > 2 ? `${head.join(', ')} … ${idOf(first)}-${n}` : head.join(', ');
+  })();
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (busy) return;
     if (!currentEventId) {
-      setMsg('Select an event first.');
+      setMsg({ type: 'error', text: 'Select an event first.' });
       return;
     }
-    const b = block.trim().toUpperCase();
-    const r = row.trim().toUpperCase();
-    const n = Number(total);
-    if (!b || !r || !n) {
-      setMsg('Block, Row and Total seats are required.');
-      return;
+
+    const seen = new Map<string, number>();
+    for (let i = 0; i < formRows.length; i++) {
+      const line = formRows[i];
+      const no = i + 1;
+      const b = line.block.trim().toUpperCase();
+      const r = line.row.trim().toUpperCase();
+      const seatsRaw = line.seats.trim();
+      if (!b) {
+        setMsg({ type: 'error', text: `Row ${no}: select a block category.` });
+        return;
+      }
+      if (!r) {
+        setMsg({ type: 'error', text: `Row ${no}: select a row letter.` });
+        return;
+      }
+      const key = `${b}|${r}`;
+      const dup = seen.get(key);
+      if (dup !== undefined) {
+        setMsg({ type: 'error', text: `Row ${no}: Block ${b} Row ${r} duplicates Row ${dup} — each block/row pair must be unique.` });
+        return;
+      }
+      seen.set(key, no);
+      if (!seatsRaw) {
+        setMsg({ type: 'error', text: `Row ${no} (Block ${b}, Row ${r}): enter total seats.` });
+        return;
+      }
+      const n = Number(seatsRaw);
+      if (!Number.isInteger(n) || n < 1) {
+        setMsg({ type: 'error', text: `Row ${no} (Block ${b}, Row ${r}): total seats must be a whole number of at least 1.` });
+        return;
+      }
+      if (n > 500) {
+        setMsg({ type: 'error', text: `Row ${no} (Block ${b}, Row ${r}): total seats cannot exceed 500.` });
+        return;
+      }
+      if (editMode) {
+        if (n < editMode.oldTotal) {
+          setMsg({ type: 'error', text: `Row ${no} (Block ${b}, Row ${r}): total seats must be at least ${editMode.oldTotal} (current count).` });
+          return;
+        }
+      } else {
+        const existing = existingSeatCount(b, r);
+        if (n <= existing) {
+          setMsg({
+            type: 'error',
+            text: `Row ${no} (Block ${b}, Row ${r}): row already has ${existing} seat${existing === 1 ? '' : 's'} — enter more than ${existing} to add seats, or remove this row.`,
+          });
+          return;
+        }
+      }
     }
-    if (n < 1) {
-      setMsg('Total seats must be at least 1.');
-      return;
-    }
+
     setBusy(true);
-    setMsg('');
-    const seatPrice = Number(price) > 0 ? Number(price) : ticketTypes[0]?.price || 100;
+    setMsg(null);
+    const freshRows: { block: string; row: string }[] = [];
+    let totalCreated = 0;
+
     try {
       if (editMode) {
-        // Update mode: keep every existing seat as-is (bookings preserved),
-        // only append missing seat numbers up to the new total + apply price.
+        const line = formRows[0];
+        const b = line.block.trim().toUpperCase();
+        const r = line.row.trim().toUpperCase();
+        const n = Number(line.seats);
         const created = await onCreateSeatRow({
           eventId: currentEventId,
           blockId: b,
           rowId: r,
           totalSeats: n,
-          price: seatPrice,
+          price: ticketTypes[0]?.price,
         });
-        const priced = await onUpdateSeatRow({
-          eventId: currentEventId,
-          blockId: b,
-          rowId: r,
-          price: seatPrice,
+        setMsg({
+          type: 'success',
+          text: created > 0
+            ? `Updated Block ${b}, Row ${r} — added ${created} new seat${created > 1 ? 's' : ''} (Total: ${n}).`
+            : `Block ${b}, Row ${r} already has ${n} seats — nothing to add.`,
         });
-        const parts: string[] = [];
-        parts.push(created > 0 ? `added ${created} new seat${created > 1 ? 's' : ''}` : 'no new seats needed');
-        parts.push(`price updated on ${priced} seat${priced === 1 ? '' : 's'} (₹${seatPrice})`);
-        setMsg(`Updated Block ${b}, Row ${r} — ${parts.join(', ')} (Total: ${n}).`);
         setEditMode(null);
-        setBlock('');
-        setRow('');
-        setTotal(0);
-        setPrice(0);
+        setFormRows(emptyFormRows());
       } else {
-        // Create mode: seats that already exist in this row are skipped by
-        // createSeatRow (never re-created, so booked status is untouched).
-        const created = await onCreateSeatRow({
-          eventId: currentEventId,
-          blockId: b,
-          rowId: r,
-          totalSeats: n,
-          price: seatPrice,
-        });
-        setMsg(
-          created === n
-            ? `Created ${created} seats — Block ${b}, Row ${r} (1…${n}) at ₹${seatPrice}.`
-            : `Block ${b}, Row ${r}: created ${created} new seat${created === 1 ? '' : 's'}, skipped ${n - created} already existing (Total: ${n}).`
-        );
-        setBlock('');
-        setRow('');
-        setTotal(0);
-        setPrice(0);
+        for (const line of formRows) {
+          const b = line.block.trim().toUpperCase();
+          const r = line.row.trim().toUpperCase();
+          const n = Number(line.seats);
+          const existedBefore = rowsByBlock.get(b)?.has(r) ?? false;
+          const created = await onCreateSeatRow({
+            eventId: currentEventId,
+            blockId: b,
+            rowId: r,
+            totalSeats: n,
+            price: ticketTypes[0]?.price,
+          });
+          totalCreated += created;
+          if (!existedBefore && created > 0) freshRows.push({ block: b, row: r });
+        }
+        if (formRows.length === 1) {
+          const line = formRows[0];
+          const b = line.block.trim().toUpperCase();
+          const r = line.row.trim().toUpperCase();
+          const n = Number(line.seats);
+          setMsg({
+            type: 'success',
+            text:
+              totalCreated === n
+                ? `Created ${totalCreated} seats — Block ${b}, Row ${r} (1…${n}).`
+                : `Block ${b}, Row ${r}: created ${totalCreated} new seat${totalCreated === 1 ? '' : 's'}, skipped ${n - totalCreated} already existing (Total: ${n}).`,
+          });
+        } else {
+          setMsg({
+            type: 'success',
+            text: `Created ${totalCreated} seat${totalCreated === 1 ? '' : 's'} across ${formRows.length} rows — seats that already existed were kept, never duplicated.`,
+          });
+        }
+        setFormRows(emptyFormRows());
       }
     } catch (err) {
       console.error('createSeatRow failed:', err);
-      setMsg('Failed to create seats. Try again.');
+      let rolledBack = 0;
+      for (const fresh of freshRows) {
+        try {
+          await onDeleteSeatRow({ eventId: currentEventId, blockId: fresh.block, rowId: fresh.row });
+          rolledBack++;
+        } catch (rbErr) {
+          console.warn('rollback failed:', rbErr);
+        }
+      }
+      setMsg({
+        type: 'error',
+        text: `Seat creation stopped. ${rolledBack > 0 ? `Rolled back ${rolledBack} newly created row${rolledBack === 1 ? '' : 's'}. ` : ''}Fix the invalid row and retry — seats already saved are never duplicated.`,
+      });
     } finally {
       setBusy(false);
     }
@@ -292,7 +463,7 @@ export default function SeatCreateSection({
   const handleDeleteRow = async (blockId: string, rowId: string, hasBookedSeats: boolean) => {
     if (!currentEventId) return;
     if (hasBookedSeats) {
-      setMsg('Cannot delete row with booked seats. Delete booked tickets first.');
+      setMsg({ type: 'error', text: 'Cannot delete row with booked seats. Delete booked tickets first.' });
       setOpenMenuId(null);
       setMenuPosition(null);
       return;
@@ -307,40 +478,51 @@ export default function SeatCreateSection({
     setBusy(true);
     try {
       await onDeleteSeatRow({ eventId: currentEventId, blockId: deleteConfirm.blockId, rowId: deleteConfirm.rowId });
-      setMsg(`Deleted Block ${deleteConfirm.blockId} Row ${deleteConfirm.rowId}.`);
+      setMsg({ type: 'success', text: `Deleted Block ${deleteConfirm.blockId} Row ${deleteConfirm.rowId}.` });
       setDeleteConfirm(null);
     } catch (err) {
       console.error('deleteSeatRow failed:', err);
-      setMsg('Failed to delete row.');
+      setMsg({ type: 'error', text: 'Failed to delete row.' });
     } finally {
       setBusy(false);
     }
   };
 
   const handleEditRow = (blockId: string, rowId: string, currentSeats: Seat[]) => {
-    setBlock(blockId);
-    setRow(rowId);
-    setTotal(currentSeats.length);
-    setPrice(Number(currentSeats[0]?.price) || ticketTypes[0]?.price || 100);
+    setFormRows([
+      {
+        id: String(formIdRef.current++),
+        block: blockId,
+        row: rowId,
+        seats: String(currentSeats.length),
+      },
+    ]);
     setEditMode({ blockId, rowId, oldTotal: currentSeats.length });
     setOpenMenuId(null);
     setMenuPosition(null);
-    setMsg(`Editing Block ${blockId} Row ${rowId}. Change the price or raise the seat count to add seats — existing seats are never overwritten.`);
+    setMsg({ type: 'info', text: `Editing Block ${blockId} Row ${rowId}. Raise the seat count to add seats — existing seats are never overwritten.` });
     onOpenRequest?.();
   };
 
   const handleCancelEdit = () => {
     setEditMode(null);
-    setBlock('');
-    setRow('');
-    setTotal(0);
-    setPrice(0);
-    setMsg('');
+    setFormRows(emptyFormRows());
+    setMsg(null);
+  };
+
+  const formRowValid = (l: SeatFormRow) => {
+    const n = Number(l.seats);
+    return (
+      !!l.block.trim() &&
+      !!l.row.trim() &&
+      Number.isInteger(n) &&
+      n >= 1
+    );
   };
 
   const canSubmit =
-    !!currentEventId && !busy && !!block.trim() && !!row.trim() && Number(total) > 0 &&
-    (!editMode || Number(total) >= editMode.oldTotal);
+    !!currentEventId && !busy && formRows.length > 0 && formRows.every(formRowValid) &&
+    (!editMode || Number(formRows[0]?.seats) >= editMode.oldTotal);
 
   return (
     <section className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden relative">
@@ -356,7 +538,7 @@ export default function SeatCreateSection({
               <div>
                 <h3 className="text-sm font-black text-slate-900 tracking-tight">CREATE SEATS</h3>
                 <p className="text-[11px] font-semibold text-slate-400">
-                  Block, row, count and price — seats that already exist are never re-created.
+                  Block, row and count — seats that already exist are never re-created.
                 </p>
               </div>
               <button
@@ -368,7 +550,7 @@ export default function SeatCreateSection({
                 <X className="w-4 h-4" />
               </button>
             </div>
-            {(blockOpen || rowOpen) && (
+            {fieldMenu && (
               <div
                 className="fixed inset-0 z-20 bg-slate-900/15 backdrop-blur-[2px]"
                 aria-hidden="true"
@@ -377,217 +559,294 @@ export default function SeatCreateSection({
             <form
               id="create-seat-form"
               onSubmit={handleCreate}
-              className="px-5 py-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end"
+              className="px-5 py-4 space-y-3"
             >
-        {editMode && (
-          <div className="sm:col-span-2 lg:col-span-5 mb-2">
-            <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2 flex items-center justify-between">
-              <span className="text-[11px] font-bold text-indigo-800">
-                Editing Block {editMode.blockId} Row {editMode.rowId} (Current: {editMode.oldTotal} seats) — existing seats stay untouched; only new seats are added.
-              </span>
-              <button
-                type="button"
-                onClick={handleCancelEdit}
-                className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800"
-              >
-                Cancel Edit
-              </button>
-            </div>
-          </div>
-        )}
-        <div>
-          <label className="text-[10px] font-black uppercase text-slate-500 block mb-1.5">Block Category *</label>
-          <div ref={blockWrapRef} className="relative">
-            <button
-              type="button"
-              onClick={() => setBlockOpen((o) => !o)}
-              className={`w-full px-3 py-2.5 border rounded-xl text-xs font-bold outline-none text-left flex items-center justify-between gap-2 transition-colors ${
-                block
-                  ? 'bg-indigo-50 border-indigo-300 text-indigo-800'
-                  : 'bg-slate-50 border-slate-200 text-slate-400'
-              } ${blockOpen ? 'border-indigo-500 ring-2 ring-indigo-100' : ''}`}
-            >
-              <span className="truncate">{block || 'Select block'}</span>
-              <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${blockOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {blockOpen && (
-              <div className="absolute z-30 left-0 sm:left-6 right-0 sm:right-auto sm:w-[min(92vw,560px)] mt-1.5 bg-slate-500 border border-slate-600 rounded-xl shadow-lg shadow-slate-300/60 p-2">
-                <div className="grid grid-cols-7 gap-1.5">
-                  {blockFromTypes.map((b) => {
-                    const selected = block === b;
-                    return (
-                      <button
-                        key={b}
-                        type="button"
-                        onClick={() => {
-                          setBlock(b);
-                          setBlockOpen(false);
-                        }}
-                        className={`relative px-1 py-1.5 rounded-lg text-[11px] font-black border transition-all active:scale-95 ${
-                          selected
-                            ? 'bg-[#4f39f6] text-white border-[#4f39f6] shadow-md shadow-indigo-600/30'
-                            : 'bg-white/95 text-slate-700 border-white hover:bg-white'
-                        }`}
-                      >
-                        {selected && (
-                          <Check className="w-2.5 h-2.5 absolute top-0.5 right-0.5" />
-                        )}
-                        {b}
-                      </button>
-                    );
-                  })}
+              {editMode && (
+                <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2 flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-indigo-800">
+                    Editing Block {editMode.blockId} Row {editMode.rowId} (Current: {editMode.oldTotal} seats) — existing seats stay untouched; only new seats are added.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800"
+                  >
+                    Cancel Edit
+                  </button>
                 </div>
-              </div>
-            )}
-          </div>
-        </div>
-        <div>
-          <label className="text-[10px] font-black uppercase text-slate-500 block mb-1">Row *</label>
-          <div ref={rowWrapRef} className="relative">
-            <button
-              type="button"
-              onClick={() => setRowOpen((o) => !o)}
-              className={`w-full px-3 py-2.5 border rounded-xl text-xs font-bold outline-none text-left flex items-center justify-between gap-2 transition-colors ${
-                row
-                  ? 'bg-indigo-50 border-indigo-300 text-indigo-800'
-                  : 'bg-slate-50 border-slate-200 text-slate-400'
-              } ${rowOpen ? 'border-indigo-500 ring-2 ring-indigo-100' : ''}`}
-            >
-              <span className="truncate">{row || 'Select row'}</span>
-              <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${rowOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {rowOpen && (
-              <div className="absolute z-30 left-0 sm:left-6 right-0 sm:right-auto sm:w-[min(92vw,560px)] mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl shadow-slate-300/60 p-2">
-                {!block && (
-                  <p className="text-[10px] font-bold text-amber-600 px-1 pb-1.5">
-                    Select a block first — existing rows of that block will be locked here.
-                  </p>
-                )}
-                <div className="grid grid-cols-5 sm:grid-cols-8 lg:grid-cols-10 gap-1.5">
-                  {ROW_OPTIONS.map((letter) => {
-                    const stats = rowStatsFor(letter);
-                    const editingThis =
-                      !!editMode &&
-                      (editMode.rowId === letter || editMode.rowId.replace(/[0-9]/g, '') === letter);
-                    const disabled = !!stats && !editingThis;
-                    const selected = row === letter;
-                    return (
-                      <button
-                        key={letter}
-                        type="button"
-                        disabled={disabled}
-                        title={
-                          disabled
-                            ? `Row ${letter} already created — ${stats!.available}/${stats!.total} seats`
-                            : stats
-                              ? `Row ${letter}: ${stats.available}/${stats.total} seats`
-                              : `Create row ${letter}`
-                        }
-                        onClick={() => {
-                          if (disabled) return;
-                          setRow(letter);
-                          setRowOpen(false);
-                        }}
-                        className={`relative rounded-lg text-[11px] font-black border-2 overflow-hidden transition-all ${
-                          selected
-                            ? 'bg-[#4f39f6] text-white border-[#4f39f6] shadow-[0_4px_10px_-2px_rgba(79,57,246,0.55)]'
-                            : disabled
-                              ? 'bg-red-100 text-red-400 border-red-400 cursor-not-allowed shadow-[0_3px_6px_-1px_rgba(15,23,42,0.22)]'
-                              : 'bg-white text-slate-700 border-emerald-400 hover:border-emerald-500 active:scale-95 shadow-[0_3px_6px_-1px_rgba(15,23,42,0.22)]'
-                        }`}
-                      >
-                        {selected && <Check className="w-2.5 h-2.5 absolute top-0.5 right-0.5" />}
-                        <span className={`block leading-none pt-1.5 px-1 ${disabled ? 'line-through' : ''}`}>
-                          {letter}
-                        </span>
-                        <span
-                          className={`block text-[8px] font-bold px-1 py-0.5 mt-1 rounded-t-none ${
-                            selected
-                              ? 'bg-indigo-500 text-white'
-                              : disabled
-                                ? 'bg-red-200 text-red-500'
-                                : 'bg-emerald-100 text-emerald-600'
+              )}
+
+              {formRows.map((line, index) => {
+                const existing = existingSeatCount(line.block, line.row);
+                return (
+                  <div key={line.id} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto] gap-3 items-end">
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-slate-500 block mb-1.5">Block Category *</label>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          aria-label={`Block category for row ${index + 1}`}
+                          onClick={() =>
+                            setFieldMenu((m) =>
+                              m?.id === line.id && m.type === 'block' ? null : { id: line.id, type: 'block' }
+                            )
+                          }
+                          className={`field-trigger w-full px-3 py-2.5 border rounded-xl text-xs font-bold outline-none text-left flex items-center justify-between gap-2 transition-colors disabled:opacity-60 ${
+                            line.block
+                              ? 'bg-indigo-50 border-indigo-300 text-indigo-800'
+                              : 'bg-slate-50 border-slate-200 text-slate-400'
+                          } ${
+                            fieldMenu?.id === line.id && fieldMenu.type === 'block'
+                              ? 'border-indigo-500 ring-2 ring-indigo-100'
+                              : ''
                           }`}
                         >
-                          {stats ? `${stats.available}/${stats.total}` : 'New'}
+                          <span className="truncate">{line.block || 'Select block'}</span>
+                          <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${fieldMenu?.id === line.id && fieldMenu.type === 'block' ? 'rotate-180' : ''}`} />
+                        </button>
+                        {fieldMenu?.id === line.id && fieldMenu.type === 'block' && (
+                          <div className="field-dropdown absolute z-30 left-0 right-0 sm:right-auto sm:w-[340px] mt-1.5 bg-slate-500 border border-slate-600 rounded-xl shadow-lg shadow-slate-300/60 p-2.5">
+                            <div className="grid grid-cols-3 gap-2">
+                              {blockFromTypes.map((b) => {
+                                const selected = line.block === b;
+                                return (
+                                  <button
+                                    key={b}
+                                    type="button"
+                                    onClick={() => {
+                                      updateFormRow(line.id, { block: b });
+                                      setFieldMenu(null);
+                                    }}
+                                    className={`relative px-2 py-2 rounded-lg text-xs font-black border transition-all active:scale-95 ${
+                                      selected
+                                        ? 'bg-[#4f39f6] text-white border-[#4f39f6] shadow-md shadow-indigo-600/30'
+                                        : 'bg-white/95 text-slate-700 border-white hover:bg-white'
+                                    }`}
+                                  >
+                                    {selected && <Check className="w-2.5 h-2.5 absolute top-0.5 right-0.5" />}
+                                    {b}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-slate-500 block mb-1.5">Row *</label>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          aria-label={`Row letter for row ${index + 1}`}
+                          onClick={() =>
+                            setFieldMenu((m) =>
+                              m?.id === line.id && m.type === 'row' ? null : { id: line.id, type: 'row' }
+                            )
+                          }
+                          className={`field-trigger w-full px-3 py-2.5 border rounded-xl text-xs font-bold outline-none text-left flex items-center justify-between gap-2 transition-colors disabled:opacity-60 ${
+                            line.row
+                              ? 'bg-indigo-50 border-indigo-300 text-indigo-800'
+                              : 'bg-slate-50 border-slate-200 text-slate-400'
+                          } ${
+                            fieldMenu?.id === line.id && fieldMenu.type === 'row'
+                              ? 'border-indigo-500 ring-2 ring-indigo-100'
+                              : ''
+                          }`}
+                        >
+                          <span className="truncate">{line.row || 'Select row'}</span>
+                          <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${fieldMenu?.id === line.id && fieldMenu.type === 'row' ? 'rotate-180' : ''}`} />
+                        </button>
+                        {fieldMenu?.id === line.id && fieldMenu.type === 'row' && (
+                          <div className="field-dropdown absolute z-30 left-0 right-0 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-[400px] mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl shadow-slate-300/60 p-2.5">
+                            {!line.block && (
+                              <p className="text-[10px] font-bold text-amber-600 px-1 pb-1.5">
+                                Select a block first — existing rows of that block will be locked here.
+                              </p>
+                            )}
+                            <div className="grid grid-cols-9 gap-1">
+                              {ROW_OPTIONS.map((letter) => {
+                                const stats = rowStatsFor(line.block, letter);
+                                const editingThis =
+                                  !!editMode &&
+                                  (editMode.rowId === letter || editMode.rowId.replace(/[0-9]/g, '') === letter);
+                                const disabled = !!stats && !editingThis;
+                                const selected = line.row === letter;
+                                return (
+                                  <button
+                                    key={letter}
+                                    type="button"
+                                    disabled={disabled}
+                                    title={
+                                      disabled
+                                        ? `Row ${letter} already created — ${stats!.available}/${stats!.total} seats`
+                                        : stats
+                                          ? `Row ${letter}: ${stats.available}/${stats.total} seats`
+                                          : `Create row ${letter}`
+                                    }
+                                    onClick={() => {
+                                      if (disabled) return;
+                                      updateFormRow(line.id, { row: letter });
+                                      setFieldMenu(null);
+                                    }}
+                                    className={`relative rounded-lg text-[11px] font-black border-2 overflow-hidden transition-all ${
+                                      selected
+                                        ? 'bg-[#4f39f6] text-white border-[#4f39f6] shadow-[0_4px_10px_-2px_rgba(79,57,246,0.55)]'
+                                        : disabled
+                                          ? 'bg-red-100 text-red-400 border-red-400 cursor-not-allowed shadow-[0_3px_6px_-1px_rgba(15,23,42,0.22)]'
+                                          : 'bg-white text-slate-700 border-emerald-400 hover:border-emerald-500 active:scale-95 shadow-[0_3px_6px_-1px_rgba(15,23,42,0.22)]'
+                                    }`}
+                                  >
+                                    {selected && <Check className="w-2.5 h-2.5 absolute top-0.5 right-0.5" />}
+                                    <span className={`block leading-none pt-1.5 px-1 ${disabled ? 'line-through' : ''}`}>
+                                      {letter}
+                                    </span>
+                                    <span
+                                      className={`block text-[8px] font-bold px-1 py-0.5 mt-1 rounded-t-none ${
+                                        selected
+                                          ? 'bg-indigo-500 text-white'
+                                          : disabled
+                                            ? 'bg-red-200 text-red-500'
+                                            : 'bg-emerald-100 text-emerald-600'
+                                      }`}
+                                    >
+                                      {stats ? `${stats.available}/${stats.total}` : 'New'}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-slate-500 block mb-1.5">
+                        {editMode ? `Total Seats (Current: ${editMode.oldTotal}) *` : 'Total Seats *'}
+                      </label>
+                      <input
+                        type="number"
+                        min={editMode ? editMode.oldTotal : 1}
+                        max={500}
+                        value={line.seats}
+                        onChange={(e) => updateFormRow(line.id, { seats: e.target.value })}
+                        disabled={busy}
+                        placeholder={editMode ? `≥ ${editMode.oldTotal}` : 'Enter total seats'}
+                        aria-label={`Total seats for row ${index + 1}`}
+                        ref={(el) => {
+                          seatInputRefs.current.set(line.id, el);
+                        }}
+                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 disabled:opacity-60"
+                      />
+                      {!!line.block.trim() && !!line.row.trim() && existing > 0 && (
+                        <span className="mt-1 inline-block text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">
+                          {editMode
+                            ? `${existing} exist`
+                            : `+${Math.max(0, Number(line.seats) - existing)} new · ${existing} exist`}
                         </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-end justify-end gap-1.5">
+                      {editMode ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={handleCancelEdit}
+                            disabled={busy}
+                            className="h-[38px] px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={!canSubmit}
+                            className={`h-[38px] px-4 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-2 ${
+                              canSubmit
+                                ? 'bg-[#4f39f6] hover:bg-[#432ee0] text-white shadow-md active:scale-95'
+                                : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                            }`}
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                            {busy ? 'Updating…' : 'Update Seats'}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {index > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => removeFormRow(line.id)}
+                              disabled={busy || formRows.length <= 1}
+                              title="Remove row"
+                              aria-label="Remove row"
+                              className="w-[38px] h-[38px] rounded-xl bg-red-100 border-2 border-red-400 text-red-600 hover:bg-red-200 flex items-center justify-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              <Minus className="w-4 h-4" />
+                            </button>
+                          )}
+                          {index === 0 && (
+                            <>
+                              <button
+                                type="submit"
+                                disabled={!canSubmit}
+                                className={`h-[38px] px-4 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-2 ${
+                                  canSubmit
+                                    ? 'bg-[#4f39f6] hover:bg-[#432ee0] text-white shadow-md active:scale-95'
+                                    : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                                }`}
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                {busy ? 'Creating…' : formRows.length > 1 ? 'Create All Seats' : 'Create Seats'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={addFormRow}
+                                disabled={busy}
+                                title="Add Row"
+                                aria-label="Add row"
+                                className="w-[38px] h-[38px] rounded-xl bg-green-100 border-2 border-green-400 text-green-600 hover:bg-green-200 flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2">
+                <span className="text-[11px] font-black text-indigo-800">
+                  {formRows.length} row{formRows.length === 1 ? '' : 's'} · {formSeatTotal} seat{formSeatTotal === 1 ? '' : 's'} to create
+                </span>
+                {seatIdPreview && (
+                  <span className="text-[10px] font-bold text-indigo-500 font-mono">{seatIdPreview}</span>
+                )}
+              </div>
+            </form>
+
+            {msg && (
+              <div className="px-5 pb-3">
+                <p
+                  className={`text-[11px] font-bold rounded-lg px-3 py-2 border ${
+                    msg.type === 'error'
+                      ? 'text-red-700 bg-red-50 border-red-200'
+                      : msg.type === 'success'
+                        ? 'text-green-700 bg-green-50 border-green-200'
+                        : 'text-indigo-700 bg-indigo-50 border-indigo-100'
+                  }`}
+                >
+                  {msg.text}
+                </p>
               </div>
             )}
-          </div>
-        </div>
-        <div>
-          <label className="text-[10px] font-black uppercase text-slate-500 block mb-1">
-            {editMode ? `Total Seats (Current: ${editMode.oldTotal}) *` : 'Total Seats *'}
-          </label>
-          <input
-            type="number"
-            required
-            min={editMode ? editMode.oldTotal : 1}
-            max={200}
-            value={total}
-            onChange={(e) => setTotal(Number(e.target.value))}
-            placeholder={editMode ? `≥ ${editMode.oldTotal}` : 'Enter total seats'}
-            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
-          />
-        </div>
-        <div>
-          <label className="text-[10px] font-black uppercase text-slate-500 block mb-1">Price (₹) *</label>
-          <input
-            type="number"
-            required
-            min={1}
-            value={price || ''}
-            onChange={(e) => setPrice(Number(e.target.value))}
-            placeholder={String(ticketTypes[0]?.price || 100)}
-            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
-          />
-        </div>
-        <div className="flex items-end gap-2">
-          {editMode && (
-            <button
-              type="button"
-              onClick={handleCancelEdit}
-              disabled={busy}
-              className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Cancel
-            </button>
-          )}
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className={`flex-1 py-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-2 ${
-              canSubmit
-                ? 'bg-[#4f39f6] hover:bg-[#432ee0] text-white shadow-md active:scale-95'
-                : 'bg-slate-300 text-slate-500 cursor-not-allowed'
-            }`}
-          >
-            {editMode ? (
-              <>
-                <Edit className="w-3.5 h-3.5" />
-                {busy ? 'Updating…' : 'Update Seats'}
-              </>
-            ) : (
-              <>
-                <Plus className="w-3.5 h-3.5" />
-                {busy ? 'Creating…' : 'Create Seats'}
-              </>
-            )}
-          </button>
-        </div>
-      </form>
-
-      {msg && (
-        <div className="px-5 pb-3">
-          <p className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
-            {msg}
-          </p>
-        </div>
-      )}
     </div>
     </div>
     )}
@@ -741,12 +1000,14 @@ export default function SeatCreateSection({
                     });
 
                     return sortedGroups.map(([baseRowId, group]) => (
-                      <div key={baseRowId} className="px-3 py-2 flex items-center justify-between gap-3">
-                        <div className="min-w-0 flex items-center gap-2 flex-wrap">
-                          <span className="text-[11px] font-black text-slate-700">Row {baseRowId} {group.rowIds.map(id => {
+                      <div key={baseRowId} className="px-3 py-2 flex items-center gap-3">
+                        <span className="flex-shrink-0 inline-flex items-center bg-indigo-600 text-white text-[11px] font-black px-2.5 py-1 rounded-md shadow-sm">
+                          Row {baseRowId} {group.rowIds.map(id => {
                             const parts = id.match(/([A-Za-z]+)(\d*)/);
                             return parts && parts[2] ? parts[2] : '';
-                          }).join(',')}</span>
+                          }).join(',')}
+                        </span>
+                        <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
                           {group.allSeats.map((s) => (
                             <span
                               key={s.id}

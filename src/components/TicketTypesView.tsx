@@ -15,12 +15,13 @@ import {
   MoreVertical,
   Trash2
 } from 'lucide-react';
-import { TicketType, EventItem } from '@/types';
+import { TicketType, EventItem, Seat } from '@/types';
 import { formatINR, formatNumber } from '@/lib/utils';
 
 interface TicketTypesViewProps {
   currentEvent: EventItem | null;
   ticketTypes: TicketType[];
+  seats: Seat[];
   onOpenAddTicketType: () => void;
   onEditTicketType: (type: TicketType) => void;
   onDeleteTicketType: (type: TicketType) => void;
@@ -31,6 +32,7 @@ interface TicketTypesViewProps {
 export default function TicketTypesView({
   currentEvent,
   ticketTypes,
+  seats,
   onOpenAddTicketType,
   onEditTicketType,
   onDeleteTicketType,
@@ -86,7 +88,12 @@ export default function TicketTypesView({
         {[...ticketTypes]
           .sort((a, b) => (Number(b.price) || 0) - (Number(a.price) || 0))
           .map((type) => {
-          const soldPct = Math.round((type.sold / type.totalQuota) * 100);
+          const typeBlocks = (type.blocks || []).map((b) => b.trim().toUpperCase()).filter(Boolean);
+          const coversAll = typeBlocks.length === 0 || typeBlocks.includes('ALL');
+          const createdSeats = coversAll
+            ? seats.length
+            : seats.filter((s) => typeBlocks.includes(s.blockId.trim().toUpperCase())).length;
+          const soldPct = createdSeats > 0 ? Math.min(100, Math.round((type.sold / createdSeats) * 100)) : 0;
 
           return (
             <div 
@@ -188,7 +195,7 @@ export default function TicketTypesView({
                 <div className="mt-2 space-y-1">
                   <div className="flex items-center justify-between text-xs font-bold">
                     <span className="text-slate-500">Sold vs Quota</span>
-                    <span className="text-slate-900">{formatNumber(type.sold)} / {formatNumber(type.totalQuota)}</span>
+                    <span className="text-slate-900">{formatNumber(type.sold)} / {formatNumber(createdSeats)}</span>
                   </div>
                   <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                     <div 
