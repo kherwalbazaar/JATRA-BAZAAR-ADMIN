@@ -3,6 +3,7 @@ export type NavigationTab =
   | 'events'
   | 'tickets-types'
   | 'create-seat'
+  | 'diagram'
   | 'counter-booking'
   | 'bookings'
   | 'tickets'
@@ -27,6 +28,8 @@ export interface EventActor {
 
 export interface EventItem {
   id: string;
+  showId?: string;
+  eventId?: string;
   title: string;
   subtitle: string;
   date: string;
@@ -90,6 +93,8 @@ export interface TicketType {
   name: string;
   committeeName?: string;
   blocks?: string[];
+  /** Row letters (A, B, C…) this tier covers — empty/omitted = every row. */
+  rows?: string[];
   badgeText?: string;
   price: number;
   totalQuota: number;
@@ -187,6 +192,7 @@ export interface TicketItem {
 export interface BookingItem {
   id: string;
   bookingId?: string;
+  showId?: string;
   eventId: string;
   eventName?: string;
   ticketNumber: string;

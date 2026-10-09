@@ -15,10 +15,12 @@ import {
   writeBatch,
   collectionGroup,
   arrayUnion,
+  serverTimestamp,
   Unsubscribe,
   DocumentSnapshot,
 } from 'firebase/firestore';
 import { db, FIRESTORE_COLLECTIONS } from './firebase';
+import { BlockCategory } from '@/lib/blockCategories';
 import {
   EventItem,
   TicketType,
@@ -149,9 +151,62 @@ export async function getEventFormFormat(): Promise<Record<string, unknown> | nu
   return snap.exists() ? (snap.data() as Record<string, unknown>) : null;
 }
 
+// ─── Diagram block categories ─────────────────────────────────────
+// Live list of block categories (name / enabled / channel flags).
+export function listenBlockCategories(
+  callback: (blocks: BlockCategory[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    colRef(C.BLOCK_CATEGORIES),
+    (snap) => {
+      const blocks = snap.docs.map((d) => ({ ...d.data(), id: d.id } as BlockCategory));
+      blocks.sort((a, b) => {
+        const ao = typeof (a as BlockCategory & { order?: number }).order === 'number'
+          ? (a as BlockCategory & { order?: number }).order!
+          : 999;
+        const bo = typeof (b as BlockCategory & { order?: number }).order === 'number'
+          ? (b as BlockCategory & { order?: number }).order!
+          : 999;
+        return ao - bo;
+      });
+      callback(blocks);
+    },
+    (err) => {
+      console.warn('listenBlockCategories error:', err);
+      onError?.(err);
+    }
+  );
+}
+
+// Replace the whole block category set (upsert current, delete removed).
+export async function saveBlockCategories(blocks: BlockCategory[]): Promise<void> {
+  const snap = await getDocs(colRef(C.BLOCK_CATEGORIES));
+  const keep = new Set(blocks.map((b) => b.id));
+  const batch = writeBatch(db);
+  for (const d of snap.docs) {
+    if (!keep.has(d.id)) batch.delete(d.ref);
+  }
+  blocks.forEach((b, index) => {
+    const { id, ...rest } = b;
+    batch.set(docRef(C.BLOCK_CATEGORIES, id), { ...rest, order: index });
+  });
+  await batch.commit();
+}
+
 export async function getEventsOnce(): Promise<EventItem[]> {
+  try {
+    const snap = await getDocs(colRef('shows'));
+    if (!snap.empty) {
+      const events = snap.docs.map((d) => ({ ...d.data(), id: d.id, showId: d.id, eventId: d.id } as unknown as EventItem));
+      events.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+      return events;
+    }
+  } catch (err) {
+    console.warn('getEventsOnce shows failed, checking events:', err);
+  }
   const snap = await getDocs(colRef(C.EVENTS));
-  const events = snap.docs.map((d) => ({ ...d.data(), id: d.id } as EventItem));
+  const events = snap.docs.map((d) => ({ ...d.data(), id: d.id, showId: d.id, eventId: d.id } as unknown as EventItem));
   events.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
   return events;
 }
@@ -160,57 +215,105 @@ export function listenEvents(
   callback: (events: EventItem[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  const q = colRef(C.EVENTS);
-  return onSnapshot(
-    q,
+  // Primary uniform schema: shows/{showId}
+  const showsQuery = colRef('shows');
+  let fallbackUnsub: Unsubscribe | null = null;
+  let active = true;
+
+  const unsub = onSnapshot(
+    showsQuery,
     (snap) => {
-      // Doc id wins: some payloads stored a stale `id` field (EVT-…)
-      // that does not match the document, which broke update/delete.
-      const events = snap.docs.map((d) => ({ ...d.data(), id: d.id } as EventItem));
-      events.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
-      callback(events);
+      if (!active) return;
+      if (!snap.empty) {
+        if (fallbackUnsub) {
+          fallbackUnsub();
+          fallbackUnsub = null;
+        }
+        const events = snap.docs.map((d) => ({ ...d.data(), id: d.id, showId: d.id, eventId: d.id } as unknown as EventItem));
+        events.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+        callback(events);
+      } else {
+        // Fallback to legacy events if shows is empty
+        if (!fallbackUnsub) {
+          fallbackUnsub = onSnapshot(
+            colRef(C.EVENTS),
+            (evSnap) => {
+              if (!active || !snap.empty) return;
+              const events = evSnap.docs.map((d) => ({ ...d.data(), id: d.id, showId: d.id, eventId: d.id } as unknown as EventItem));
+              events.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+              callback(events);
+            },
+            onError
+          );
+        }
+      }
     },
     (err) => {
-      console.error('listenEvents error:', err);
-      onError?.(err);
+      console.warn('listenEvents shows error, trying events fallback:', err);
+      if (!fallbackUnsub) {
+        fallbackUnsub = onSnapshot(
+          colRef(C.EVENTS),
+          (evSnap) => {
+            const events = evSnap.docs.map((d) => ({ ...d.data(), id: d.id, showId: d.id, eventId: d.id } as unknown as EventItem));
+            events.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+            callback(events);
+          },
+          onError
+        );
+      }
     }
   );
+
+  return () => {
+    active = false;
+    unsub();
+    if (fallbackUnsub) fallbackUnsub();
+  };
 }
 
 export async function addEvent(event: Omit<EventItem, 'id'>): Promise<string> {
   const payload: Record<string, unknown> = { ...event };
   delete payload.id;
-  const ref = await addDoc(colRef(C.EVENTS), payload as Omit<EventItem, 'id'>);
-  return ref.id;
+  // Write to shows/{showId} as primary uniform schema
+  const ref = await addDoc(colRef('shows'), payload as Omit<EventItem, 'id'>);
+  const showId = ref.id;
+
+  // Dual-write to events/{showId} for backwards compatibility
+  try {
+    await setDoc(docRef(C.EVENTS, showId), { ...payload, id: showId, showId, eventId: showId }, { merge: true });
+    await updateDoc(docRef('shows', showId), { id: showId, showId, eventId: showId });
+  } catch (e) {
+    console.warn('Dual-sync notice:', e);
+  }
+
+  return showId;
 }
 
 export async function updateEvent(id: string, data: Partial<EventItem>): Promise<void> {
   const payload: Record<string, unknown> = { ...data };
   delete payload.id;
-  await updateDoc(docRef(C.EVENTS, id), payload as Partial<EventItem>);
+  // Update both shows and events
+  await setDoc(docRef('shows', id), payload, { merge: true });
+  try {
+    await setDoc(docRef(C.EVENTS, id), payload, { merge: true });
+  } catch (e) {
+    console.warn('Dual-update notice:', e);
+  }
 }
 
 export async function deleteEvent(id: string): Promise<void> {
-  console.log('Attempting to delete event with ID:', id);
-  const docRefToDelete = docRef(C.EVENTS, id);
-  console.log('Document reference:', docRefToDelete);
-  
+  console.log('Attempting to delete show/event with ID:', id);
   try {
-    await deleteDoc(docRefToDelete);
-    console.log('Successfully deleted event:', id);
-    
-    // Verify deletion by checking if document still exists
-    const checkSnap = await getDoc(docRef(C.EVENTS, id));
-    if (checkSnap.exists()) {
-      console.error('ERROR: Document still exists after deletion!', id);
-      throw new Error('Document deletion failed - document still exists');
-    } else {
-      console.log('Verification passed: Document no longer exists in database');
-    }
-  } catch (error) {
-    console.error('Error during event deletion:', error);
-    throw error;
+    await deleteDoc(docRef('shows', id));
+  } catch (e) {
+    console.warn('Delete from shows notice:', e);
   }
+  try {
+    await deleteDoc(docRef(C.EVENTS, id));
+  } catch (e) {
+    console.warn('Delete from events notice:', e);
+  }
+  console.log('Successfully deleted show/event:', id);
 }
 
 // ─── Ticket Types ─────────────────────────────────────────────────
@@ -255,24 +358,51 @@ export async function deleteTicketType(id: string): Promise<void> {
 // ─── Bookings ─────────────────────────────────────────────────────
 
 export function listenBookings(
-  eventId: string,
+  showIdOrEventId: string,
   callback: (bookings: BookingItem[]) => void,
   onError?: (error: Error) => void
 ): Unsubscribe {
-  // NOTE: do not combine where('eventId') with orderBy('date') in Firestore query,
-  // as it requires a composite index that will fail if the index hasn't been built.
-  // Instead, filter by eventId in query and sort in memory.
-  const q = query(colRef(C.BOOKINGS), where('eventId', '==', eventId));
+  const targetId = String(showIdOrEventId || '').trim();
+  const bookingsCol = colRef(C.BOOKINGS);
+
+  // Active Firestore onSnapshot listener on bookings filtered by showId and sorted by createdAt desc
+  const q = query(
+    bookingsCol,
+    where('showId', '==', targetId),
+    orderBy('createdAt', 'desc')
+  );
+
   return onSnapshot(
     q,
     (snap) => {
       const bookings = snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingItem));
-      bookings.sort((a, b) => (b.time || '').localeCompare(a.time || ''));
+      bookings.sort((a, b) => {
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return timeB - timeA;
+      });
       callback(bookings);
     },
     (err) => {
-      console.warn('listenBookings error:', err);
-      onError?.(err);
+      console.warn('listenBookings primary query error, using eventId fallback:', err);
+      // Fallback query in case documents carry legacy eventId
+      const fallbackQ = query(bookingsCol, where('eventId', '==', targetId));
+      return onSnapshot(
+        fallbackQ,
+        (snap) => {
+          const bookings = snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingItem));
+          bookings.sort((a, b) => {
+            const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return timeB - timeA;
+          });
+          callback(bookings);
+        },
+        (fallbackErr) => {
+          console.error('listenBookings error:', fallbackErr);
+          onError?.(fallbackErr);
+        }
+      );
     }
   );
 }
@@ -303,8 +433,23 @@ export async function getAllBookingsOnce(): Promise<BookingItem[]> {
   return bookings;
 }
 
-export async function addBooking(booking: Omit<BookingItem, 'id'> & { eventId: string }): Promise<string> {
-  const batch = writeBatch(db);
+export type SeatGroup = { block: string; seats: string[] };
+
+// Legacy seat doc ids live at seats/{showId}/{block}/{ROW}-{n} ("A-1").
+function legacySeatDocId(seatKey: string): string {
+  const raw = String(seatKey || '').trim().toUpperCase();
+  if (raw.includes('-')) {
+    const [row, num] = raw.split('-');
+    return `${row}-${num}`;
+  }
+  const m = raw.match(/^([A-Z]+)(\d+)$/);
+  return m ? `${m[1]}-${m[2]}` : raw;
+}
+
+export async function addBooking(
+  booking: Omit<BookingItem, 'id'> & { eventId: string },
+  seatGroups?: SeatGroup[]
+): Promise<string> {
   const bookingRef = doc(colRef(C.BOOKINGS));
   const bookingId = bookingRef.id;
 
@@ -312,18 +457,48 @@ export async function addBooking(booking: Omit<BookingItem, 'id'> & { eventId: s
   const seats = Array.isArray(booking.seats) ? booking.seats.filter(Boolean) : [];
   const baseTicketNumber = booking.ticketNumber;
 
+  const nowIso = new Date().toISOString();
+  const showId = (booking as any).showId || booking.eventId;
+
   const fullBooking: Omit<BookingItem, 'id'> = {
     ...booking,
+    showId,
+    eventId: booking.eventId || showId,
     bookingId: baseTicketNumber,
     enteredCount: 0,
     remainingCount: count,
     usedTickets: [],
     usedSeats: [],
+    createdAt: (booking as any).createdAt || nowIso,
   };
 
-  batch.set(bookingRef, fullBooking);
+  // Seat targets this booking must claim: explicit groups (multi-block counter
+  // selection) or every seat under the booking's single block.
+  const primaryBlock = (booking.block || '').trim().toUpperCase();
+  const groups: SeatGroup[] =
+    seatGroups && seatGroups.length
+      ? seatGroups.map((g) => ({ block: String(g.block || '').trim().toUpperCase(), seats: g.seats }))
+      : seats.length && primaryBlock
+        ? [{ block: primaryBlock, seats }]
+        : [];
 
-  const nowIso = new Date().toISOString();
+  const targets: { key: string; liveRef: ReturnType<typeof doc>; legacyRef: ReturnType<typeof doc> }[] = [];
+  for (const group of groups) {
+    if (!group.block) continue;
+    for (const seatKey of group.seats) {
+      const cleanKey = String(seatKey || '').trim().toUpperCase();
+      if (!cleanKey) continue;
+      // Full doc ids ("B1-A-1") keep their id; short keys ("A-1") get the block prefix.
+      const liveId = cleanKey.split('-').length >= 3 ? cleanKey : `${group.block}-${cleanKey}`;
+      targets.push({
+        key: cleanKey,
+        liveRef: doc(collection(db, 'shows', showId, 'seats'), liveId),
+        legacyRef: doc(collection(db, C.SEATS, showId, group.block), legacySeatDocId(cleanKey)),
+      });
+    }
+  }
+
+  const ticketItems: { ref: ReturnType<typeof doc>; item: TicketItem }[] = [];
 
   for (let i = 0; i < count; i++) {
     const ticketId = count === 1 ? baseTicketNumber : `${baseTicketNumber}-${i + 1}`;
@@ -341,7 +516,7 @@ export async function addBooking(booking: Omit<BookingItem, 'id'> & { eventId: s
       bookingDocId: bookingId,
       ticketIndex: i + 1,
       totalTickets: count,
-      eventId: booking.eventId,
+      eventId: booking.eventId || showId,
       eventName: booking.eventName || '',
       ticketTypeId: booking.ticketTypeId,
       ticketTypeName: booking.ticketTypeName,
@@ -363,10 +538,55 @@ export async function addBooking(booking: Omit<BookingItem, 'id'> & { eventId: s
       createdAt: nowIso,
     };
 
-    batch.set(ticketDocRef, ticketItem);
+    ticketItems.push({ ref: ticketDocRef, item: ticketItem });
   }
 
-  await batch.commit();
+  // Atomic booking: verify seat availability AND write booking + tickets +
+  // seat status in one transaction, so two counters can never sell the same
+  // seat (Firestore retries the transaction automatically on contention).
+  try {
+    await runTransaction(db, async (tx) => {
+      const seatWrites: { ref: ReturnType<typeof doc> }[] = [];
+      const taken: string[] = [];
+
+      for (const target of targets) {
+        let snap = await tx.get(target.liveRef);
+        let ref = target.liveRef;
+        if (!snap.exists()) {
+          const legacySnap = await tx.get(target.legacyRef);
+          if (legacySnap.exists()) {
+            snap = legacySnap;
+            ref = target.legacyRef;
+          }
+        }
+        if (snap.exists()) {
+          const status = String((snap.data() as { status?: string }).status || '').toLowerCase();
+          if (status === 'booked') {
+            taken.push(target.key);
+          } else {
+            seatWrites.push({ ref });
+          }
+        }
+      }
+
+      if (taken.length > 0) {
+        throw new Error(
+          `Seat ${taken.join(', ')} ${taken.length > 1 ? 'were' : 'was'} just booked by someone else.`
+        );
+      }
+
+      tx.set(bookingRef, fullBooking);
+      for (const t of ticketItems) tx.set(t.ref, t.item);
+      for (const w of seatWrites) {
+        tx.set(w.ref, { status: 'booked', bookedAt: nowIso, bookingId: baseTicketNumber }, { merge: true });
+      }
+    });
+  } catch (err) {
+    if (err instanceof Error && /just booked by someone else/.test(err.message)) throw err;
+    console.error('addBooking failed:', err);
+    throw new Error('Failed to save booking');
+  }
+
   return bookingId;
 }
 
@@ -424,12 +644,10 @@ export async function resetGate(gateId: string): Promise<void> {
   await updateDoc(docRef(C.GATES, gateId), { entered: 0, percentage: 0, status: 'normal' });
 }
 
-// ─── Seats (Seat Create → user booking seat grid) ────────────────
-// Path matches user app: seats/{eventId}/{blockId}/{rowId}-{seatNumber}
-// Seat docs live in per-block subcollections (collection ID = blockId),
-// so collectionGroup('seats') does NOT match them — subscribe via seatMeta.
+// ─── Seats (Uniform Data Model: shows/{showId}/seats/{seatId}) ──
+// Direct subcollection listener on shows/{showId}/seats with fallback to legacy path.
 
-export function listenSeats(
+function listenLegacySeats(
   eventId: string,
   callback: (seats: Seat[]) => void,
   onError?: (error: Error) => void
@@ -463,7 +681,7 @@ export function listenSeats(
       },
       (err) => {
         pendingBlocks = Math.max(0, pendingBlocks - 1);
-        console.warn(`listenSeats block ${block} error:`, err);
+        console.warn(`listenLegacySeats block ${block} error:`, err);
         onError?.(err);
         emit();
       }
@@ -497,7 +715,7 @@ export function listenSeats(
       if (pendingBlocks === 0) emit();
     },
     (err) => {
-      console.warn('listenSeats seatMeta error:', err);
+      console.warn('listenLegacySeats seatMeta error:', err);
       onError?.(err);
       emit();
     }
@@ -511,62 +729,304 @@ export function listenSeats(
   };
 }
 
+export function listenSeats(
+  showIdOrEventId: string,
+  callback: (seats: Seat[]) => void,
+  onError?: (error: Error) => void
+): Unsubscribe {
+  const showId = String(showIdOrEventId || '').trim();
+  if (!showId) {
+    callback([]);
+    return () => {};
+  }
+
+  // Primary: Live onSnapshot listener on shows/{showId}/seats
+  const seatsRef = collection(db, 'shows', showId, 'seats');
+  let fallbackUnsub: Unsubscribe | null = null;
+  let active = true;
+
+  const unsub = onSnapshot(
+    seatsRef,
+    (snap) => {
+      if (!active) return;
+      if (!snap.empty) {
+        if (fallbackUnsub) {
+          fallbackUnsub();
+          fallbackUnsub = null;
+        }
+        const seats = snap.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            seatId: d.id,
+            eventId: showId,
+            showId: showId,
+            blockId: data.block || data.blockId || '',
+            block: data.block || data.blockId || '',
+            rowId: data.row || data.rowId || '',
+            row: data.row || data.rowId || '',
+            seatNumber: Number(data.seatNumber) || 0,
+            seatLabel: data.seatLabel || `${data.row || data.rowId}${data.seatNumber}`,
+            status: data.status || 'available',
+            price: Number(data.price) || 100,
+            createdAt: data.createdAt ? (typeof data.createdAt === 'object' && data.createdAt.toDate ? data.createdAt.toDate().toISOString() : String(data.createdAt)) : '',
+            bookedAt: data.bookedAt || null,
+          } as Seat;
+        });
+
+        seats.sort((a, b) => {
+          if (a.blockId !== b.blockId) return a.blockId.localeCompare(b.blockId);
+          if (a.rowId !== b.rowId) return a.rowId.localeCompare(b.rowId);
+          return a.seatNumber - b.seatNumber;
+        });
+
+        callback(seats);
+      } else {
+        // Fallback to legacy path if shows subcollection has no docs
+        if (!fallbackUnsub) {
+          fallbackUnsub = listenLegacySeats(
+            showId,
+            (legacySeats) => {
+              if (active && snap.empty) {
+                callback(legacySeats);
+              }
+            },
+            onError
+          );
+        }
+      }
+    },
+    (err) => {
+      console.warn('listenSeats shows/{showId}/seats error, using fallback:', err);
+      if (!fallbackUnsub) {
+        fallbackUnsub = listenLegacySeats(showId, callback, onError);
+      }
+    }
+  );
+
+  return () => {
+    active = false;
+    unsub();
+    if (fallbackUnsub) fallbackUnsub();
+  };
+}
+
 export async function createSeatRow(params: {
-  eventId: string;
+  showId?: string;
+  eventId?: string;
   blockId: string;
   rowId: string;
+  /** Target seat numbers 1…totalSeats. Seats that already exist are SKIPPED. */
   totalSeats: number;
   price?: number;
 }): Promise<number> {
-  const { eventId, blockId, rowId, totalSeats, price = 100 } = params;
-  const count = Math.max(1, Math.floor(totalSeats));
-  const batch = writeBatch(db);
-  const now = new Date().toISOString();
+  const showId = params.showId || params.eventId || '';
+  if (!showId) throw new Error('showId or eventId is required to create seats.');
+  const { blockId, rowId, totalSeats, price = 100 } = params;
+  const target = Math.max(1, Math.floor(totalSeats));
   const block = blockId.trim().toUpperCase();
   const row = rowId.trim().toUpperCase();
 
-  for (let n = 1; n <= count; n++) {
-    const docId = `${row}-${n}`;
-    const seatRef = doc(collection(db, C.SEATS, eventId, block), docId);
-    batch.set(seatRef, {
-      eventId,
-      blockId: block,
-      rowId: row,
-      seatNumber: n,
-      seatId: docId,
-      seatLabel: `${row}${n}`,
-      status: 'available',
-      price,
-      createdAt: now,
+  // ── Duplicate protection ──────────────────────────────────────────
+  // Seats that already exist must never be written again: a re-write would
+  // reset `status` to "available" and destroy live bookings. Collect the
+  // seat numbers already present (live path + legacy path) and only create
+  // the missing ones.
+  const existing = new Set<number>();
+
+  try {
+    const liveSnap = await getDocs(
+      query(
+        collection(db, 'shows', showId, 'seats'),
+        where('blockId', '==', block),
+        where('rowId', '==', row)
+      )
+    );
+    liveSnap.docs.forEach((d) => {
+      const n = Number((d.data() as { seatNumber?: number }).seatNumber);
+      if (Number.isFinite(n)) existing.add(n);
     });
+  } catch (err) {
+    console.warn('createSeatRow live lookup failed:', err);
   }
 
-  const metaRef = doc(db, C.SEAT_META, eventId);
-  batch.set(metaRef, { blocks: arrayUnion(block) }, { merge: true });
+  try {
+    const legacySnap = await getDocs(collection(db, C.SEATS, showId, block));
+    legacySnap.docs.forEach((d) => {
+      const data = d.data() as { seatNumber?: number; rowId?: string };
+      const parts = d.id.split('-');
+      const docRow = String(data.rowId || parts[0] || '').toUpperCase();
+      if (docRow !== row) return;
+      const n = Number(data.seatNumber) || Number(parts[1]);
+      if (Number.isFinite(n)) existing.add(n);
+    });
+  } catch (err) {
+    // Legacy path may not exist for new shows.
+  }
 
-  await batch.commit();
-  return count;
+  const missing: number[] = [];
+  for (let n = 1; n <= target; n++) {
+    if (!existing.has(n)) missing.push(n);
+  }
+  if (missing.length === 0) return 0;
+
+  // Write only the missing seats — chunks of up to 450 to stay under
+  // Firestore's 500 operation limit per batch.
+  const CHUNK_SIZE = 450;
+  for (let start = 0; start < missing.length; start += CHUNK_SIZE) {
+    const chunk = missing.slice(start, start + CHUNK_SIZE);
+    const batch = writeBatch(db);
+
+    for (const n of chunk) {
+      const seatDocId = `${block}-${row}-${n}`;
+      const seatRef = doc(collection(db, 'shows', showId, 'seats'), seatDocId);
+
+      const seatData = {
+        seatId: seatDocId,
+        seatNumber: n,
+        block: block,
+        blockId: block,
+        row: row,
+        rowId: row,
+        seatLabel: `${row}${n}`,
+        price: Number(price) || 100,
+        status: 'available',
+        createdAt: serverTimestamp(),
+        showId: showId,
+        eventId: showId,
+      };
+
+      batch.set(seatRef, seatData);
+
+      // Also dual-write to legacy path for backward compatibility
+      const legacyRef = doc(collection(db, C.SEATS, showId, block), `${row}-${n}`);
+      batch.set(legacyRef, { ...seatData, createdAt: new Date().toISOString() });
+    }
+
+    const metaRef = doc(db, C.SEAT_META, showId);
+    batch.set(metaRef, { blocks: arrayUnion(block) }, { merge: true });
+
+    await batch.commit();
+  }
+
+  return missing.length;
+}
+
+/**
+ * Update an existing row without touching seat availability/booking state.
+ * Currently updates the seat price on every seat of the row (both paths).
+ * Returns the number of seat documents updated.
+ */
+export async function updateSeatRow(params: {
+  showId?: string;
+  eventId?: string;
+  blockId: string;
+  rowId: string;
+  price?: number;
+}): Promise<number> {
+  const showId = params.showId || params.eventId || '';
+  if (!showId) throw new Error('showId or eventId is required to update seats.');
+  const block = params.blockId.trim().toUpperCase();
+  const row = params.rowId.trim().toUpperCase();
+  const price = Number(params.price);
+  if (!Number.isFinite(price) || price <= 0) throw new Error('A valid price is required.');
+  if (!block || !row) throw new Error('blockId and rowId are required.');
+
+  let updated = 0;
+  const CHUNK = 450;
+
+  // Live path: shows/{showId}/seats — price only, never status.
+  try {
+    const liveSnap = await getDocs(
+      query(
+        collection(db, 'shows', showId, 'seats'),
+        where('blockId', '==', block),
+        where('rowId', '==', row)
+      )
+    );
+    const docs = liveSnap.docs;
+    for (let i = 0; i < docs.length; i += CHUNK) {
+      const batch = writeBatch(db);
+      docs.slice(i, i + CHUNK).forEach((d) => {
+        batch.update(d.ref, { price });
+        updated++;
+      });
+      await batch.commit();
+    }
+  } catch (err) {
+    console.warn('updateSeatRow live path failed:', err);
+  }
+
+  // Legacy path: seats/{showId}/{block}/{row}-{n} — price only.
+  try {
+    const legacySnap = await getDocs(collection(db, C.SEATS, showId, block));
+    const docs = legacySnap.docs.filter((d) => {
+      const data = d.data() as { rowId?: string };
+      const docRow = String(data.rowId || d.id.split('-')[0] || '').toUpperCase();
+      return docRow === row;
+    });
+    for (let i = 0; i < docs.length; i += CHUNK) {
+      const batch = writeBatch(db);
+      docs.slice(i, i + CHUNK).forEach((d) => {
+        batch.update(d.ref, { price });
+        updated++;
+      });
+      await batch.commit();
+    }
+  } catch (err) {
+    console.warn('updateSeatRow legacy path failed:', err);
+  }
+
+  return updated;
 }
 
 export async function deleteSeatRow(params: {
-  eventId: string;
+  showId?: string;
+  eventId?: string;
   blockId: string;
   rowId: string;
 }): Promise<void> {
-  const { eventId, blockId, rowId } = params;
-  const block = blockId.trim().toUpperCase();
-  const row = rowId.trim().toUpperCase();
-  const snap = await getDocs(collection(db, C.SEATS, eventId, block));
-  const batch = writeBatch(db);
-  let n = 0;
-  snap.docs.forEach((d) => {
-    const data = d.data() as Partial<Seat>;
-    if ((data.rowId || '').toUpperCase() === row) {
-      batch.delete(d.ref);
-      n++;
+  const showId = params.showId || params.eventId || '';
+  if (!showId) return;
+  const block = params.blockId.trim().toUpperCase();
+  const row = params.rowId.trim().toUpperCase();
+
+  // 1. Delete from shows/{showId}/seats
+  try {
+    const snap = await getDocs(
+      query(
+        collection(db, 'shows', showId, 'seats'),
+        where('block', '==', block),
+        where('row', '==', row)
+      )
+    );
+    if (!snap.empty) {
+      const batch = writeBatch(db);
+      snap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
     }
-  });
-  if (n > 0) await batch.commit();
+  } catch (err) {
+    console.warn('deleteSeatRow shows/seats error:', err);
+  }
+
+  // 2. Also delete from legacy path
+  try {
+    const legacySnap = await getDocs(collection(db, C.SEATS, showId, block));
+    if (!legacySnap.empty) {
+      const batch = writeBatch(db);
+      let n = 0;
+      legacySnap.docs.forEach((d) => {
+        const data = d.data() as Partial<Seat>;
+        if ((data.rowId || '').toUpperCase() === row) {
+          batch.delete(d.ref);
+          n++;
+        }
+      });
+      if (n > 0) await batch.commit();
+    }
+  } catch (err) {
+    console.warn('deleteSeatRow legacy cleanup error:', err);
+  }
 }
 
 export async function listSeatBlocks(eventId: string): Promise<string[]> {

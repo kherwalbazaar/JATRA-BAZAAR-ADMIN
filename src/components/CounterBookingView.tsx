@@ -17,14 +17,15 @@ import {
   Armchair
 } from 'lucide-react';
 import { BookingItem, EventItem, TicketType, Seat } from '@/types';
-import StageDiagram from '@/components/StageDiagram';
+import StageDiagram, { buildSeatStats } from '@/components/StageDiagram';
+import { useBlockCategories } from '@/hooks/useBlockCategories';
 
 interface CounterBookingViewProps {
   currentEvent: EventItem | null;
   bookings: BookingItem[];
   ticketTypes: TicketType[];
   seats: Seat[];
-  onOpenNewBooking: () => void;
+  onOpenNewBooking: (selection?: { block: string; seats: string[] }[]) => void;
   onPrintTicket: (booking: BookingItem) => void;
 }
 
@@ -42,6 +43,8 @@ export default function CounterBookingView({
   const [activeBlock, setActiveBlock] = useState<string | null>(null);
   const [selectedSeats, setSelectedSeats] = useState<string[]>([]);
   const [showSeatMap, setShowSeatMap] = useState(false);
+  const { labels: blockLabels, channelLabels, disabledBlocks } = useBlockCategories();
+  const seatStats = useMemo(() => buildSeatStats(seats), [seats]);
 
   // Filter bookings for counter sales
   const counterBookings = bookings.filter(booking => booking.source === 'Counter');
@@ -181,6 +184,10 @@ export default function CounterBookingView({
             className="w-full max-w-[460px]"
             activeBlock={activeBlock}
             onBlockClick={handleDiagramBlockSelect}
+            labels={blockLabels}
+            channelLabels={channelLabels}
+            seatStats={seatStats}
+            disabledBlocks={disabledBlocks}
           />
         </div>
 
@@ -557,7 +564,21 @@ export default function CounterBookingView({
                     Clear Selection
                   </button>
                   <button
-                    onClick={onOpenNewBooking}
+                    onClick={() => {
+                      // Group the picked seats by block and hand them to the
+                      // booking modal — addBooking claims them atomically.
+                      const groups = new Map<string, string[]>();
+                      getSelectedSeatObjects().forEach((s) => {
+                        const block = (s.blockId || activeBlock || '').trim().toUpperCase();
+                        if (!block) return;
+                        if (!groups.has(block)) groups.set(block, []);
+                        groups.get(block)!.push(s.id);
+                      });
+                      const selection = Array.from(groups.entries()).map(([block, seats]) => ({ block, seats }));
+                      onOpenNewBooking(selection);
+                      setSelectedSeats([]);
+                      setActiveBlock(null);
+                    }}
                     disabled={selectedSeats.length === 0}
                     className="px-6 py-2 bg-sky-500 hover:bg-sky-400 disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed text-slate-950 text-xs font-bold rounded-xl transition-colors shadow-lg shadow-sky-500/20"
                   >

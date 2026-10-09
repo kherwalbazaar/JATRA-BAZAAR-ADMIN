@@ -55,6 +55,7 @@ export const FIRESTORE_COLLECTIONS = {
   AUDIT_LOGS: 'auditLogs',
   SEATS: 'seats',
   SEAT_META: 'seatMeta',
+  BLOCK_CATEGORIES: 'blockCategories',
 } as const;
 
 export default app;

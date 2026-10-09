@@ -32,11 +32,28 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
-    // ─── 2. Events ─────────────────────────────────────────────
-    // Admin creates/edits, customer app subscribes (read-only).
+    // ─── 2. Shows & Events ─────────────────────────────────────
+    // Admin creates/edits, customer app subscribes (read/write).
+    match /shows/{showId} {
+      allow read, write: if true;
+
+      match /seats/{seatId} {
+        allow read, write: if true;
+      }
+
+      match /ticketTypes/{typeId} {
+        allow read, write: if true;
+      }
+    }
+
     match /events/{eventId} {
       allow read: if true;
       allow write: if true;
+
+      // Seats subcollection under events (compatibility)
+      match /seats/{seatId} {
+        allow read, write: if true;
+      }
 
       // Ticket types also exist as an event subcollection
       // (legacy path — kept so old docs stay readable).

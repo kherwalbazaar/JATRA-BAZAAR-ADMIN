@@ -23,6 +23,7 @@ import {
 import confetti from 'canvas-confetti';
 import { BookingItem, EventItem, EntryResult, TicketItem } from '@/types';
 import { identifyBookingForEntry, validateAndRecordBatchEntry, validateAndRecordEntry } from '@/lib/firestore';
+import { useBlockCategories } from '@/hooks/useBlockCategories';
 
 interface TicketScannerModalProps {
   isOpen: boolean;
@@ -46,6 +47,7 @@ export default function TicketScannerModal({
   // Multi-ticket selection view state
   const [identifiedBooking, setIdentifiedBooking] = useState<BookingItem | null>(null);
   const [identifiedTickets, setIdentifiedTickets] = useState<TicketItem[]>([]);
+  const { labels: blockLabels } = useBlockCategories();
   const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
   const [admittingTickets, setAdmittingTickets] = useState(false);
 
@@ -251,7 +253,7 @@ export default function TicketScannerModal({
                       {identifiedBooking.customerName || 'Customer'}
                     </h4>
                     <p className="text-xs font-semibold text-slate-500 mt-0.5">
-                      {identifiedBooking.block ? `${identifiedBooking.block} • ` : ''}
+                      {identifiedBooking.block ? `${blockLabels[identifiedBooking.block] || identifiedBooking.block} • ` : ''}
                       {identifiedBooking.ticketTypeName || 'General'}
                     </p>
                   </div>
@@ -527,7 +529,7 @@ export default function TicketScannerModal({
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold text-slate-400 uppercase">Seat / Tier</span>
                     <span className="font-bold text-slate-800">
-                      {scanResult.block ? `${scanResult.block} • ` : ''}
+                      {scanResult.block ? `${blockLabels[scanResult.block] || scanResult.block} • ` : ''}
                       {scanResult.seat ? `Seat ${scanResult.seat}` : scanResult.ticketType || 'General'}
                     </span>
                   </div>

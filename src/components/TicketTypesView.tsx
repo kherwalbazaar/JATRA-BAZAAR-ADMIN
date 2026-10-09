@@ -81,9 +81,11 @@ export default function TicketTypesView({
         </button>
       </div>
 
-      {/* Ticket Cards Grid */}
+      {/* Ticket Cards Grid — highest price first */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
-        {ticketTypes.map((type) => {
+        {[...ticketTypes]
+          .sort((a, b) => (Number(b.price) || 0) - (Number(a.price) || 0))
+          .map((type) => {
           const soldPct = Math.round((type.sold / type.totalQuota) * 100);
 
           return (
@@ -175,7 +177,7 @@ export default function TicketTypesView({
                   </div>
 
                   <div className="text-right flex-shrink-0">
-                    <span className="text-xl font-black text-slate-900">
+                    <span className="text-xl font-black text-emerald-700">
                       ₹{type.price}
                     </span>
                     <span className="text-[9px] text-slate-400 block font-bold">per seat</span>

@@ -112,14 +112,14 @@ export default function Header({
   }, []);
 
   return (
-    <header className={`px-6 py-4 border-b border-slate-200/80 flex items-center justify-between sticky top-0 z-20 shadow-xs transition-colors duration-200 ${
-      isBlinking ? 'animate-header-blink' : 'bg-white'
+    <header className={`px-6 py-4 border-b border-white/10 flex items-center justify-between sticky top-0 z-20 shadow-md relative transition-colors duration-200 ${
+      isBlinking ? 'animate-header-blink' : 'bg-[#12193b]'
     }`}>
       {/* Active Section Heading (left of the search bar) */}
       <div className="flex items-center gap-3 min-w-0">
         {sectionTitle && (
           <div className="min-w-0">
-            <h1 className="text-lg font-black text-slate-900 leading-tight truncate">
+            <h1 className="text-lg font-black text-white leading-tight truncate">
               {sectionTitle}
             </h1>
           </div>
@@ -130,44 +130,44 @@ export default function Header({
       <div className="flex items-center gap-3">
         {/* Global Search Bar */}
         <div className="hidden xl:flex items-center relative flex-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+          <Search className="w-4 h-4 text-slate-300 absolute left-3 pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search booking ID, customer, ticket..."
-            className="w-full pl-9 pr-3 py-1.5 bg-slate-100/80 hover:bg-slate-100 focus:bg-white text-xs font-semibold rounded-xl border border-slate-200/80 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all"
+            className="w-full pl-9 pr-3 py-1.5 bg-white/10 hover:bg-white/15 focus:bg-white/15 text-xs font-semibold text-white placeholder:text-slate-300 rounded-xl border border-white/10 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/30 outline-none transition-all"
           />
         </div>
 
         {/* Firebase Live Status Badge */}
         {isLoading ? (
-          <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 border border-indigo-200/80 rounded-xl text-xs font-bold text-indigo-600 select-none">
+          <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500/20 border border-indigo-400/30 rounded-xl text-xs font-bold text-indigo-200 select-none">
             <RefreshCw className="w-3 h-3 animate-spin" />
             <span>Syncing...</span>
           </div>
         ) : isConnectionLost ? (
-          <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-200/80 rounded-xl text-xs font-bold text-red-600 select-none animate-pulse">
+          <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-red-500/20 border border-red-400/30 rounded-xl text-xs font-bold text-red-300 select-none animate-pulse">
             <RefreshCw className="w-3 h-3 animate-spin" />
             <span>Reconnecting...</span>
           </div>
         ) : isSyncing ? (
-          <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200/80 rounded-xl text-xs font-bold text-blue-600 select-none">
+          <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/20 border border-blue-400/30 rounded-xl text-xs font-bold text-blue-300 select-none">
             <RefreshCw className="w-3 h-3 animate-spin" />
             <span>Syncing...</span>
           </div>
         ) : isLiveConnected ? (
-          <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200/80 rounded-xl text-xs font-bold text-emerald-700 select-none">
+          <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/20 border border-emerald-400/30 rounded-xl text-xs font-bold text-emerald-300 select-none">
             <Check className="w-3 h-3" />
             <span>Up to date</span>
           </div>
         ) : (
           <button
             onClick={onRefresh}
-            className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl text-xs font-bold text-amber-800 transition-colors select-none"
+            className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 rounded-xl text-xs font-bold text-amber-300 transition-colors select-none"
             title="Click to reconnect to Firebase"
           >
-            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
             <span>Cached / Demo Data</span>
             <span className="text-[10px] underline ml-0.5">Sync</span>
           </button>
@@ -175,8 +175,8 @@ export default function Header({
 
         {/* Date Selector Pill */}
         {currentEvent && (
-        <div className="hidden sm:flex items-center gap-2 bg-slate-100/90 border border-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-700 select-none">
-          <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+        <div className="hidden sm:flex items-center gap-2 bg-white/10 border border-white/10 px-3 py-2 rounded-xl text-xs font-bold text-white select-none">
+          <Calendar className="w-3.5 h-3.5 text-amber-400" />
           <span>{currentEvent.date} ({currentEvent.day.slice(0, 3)})</span>
         </div>
         )}
@@ -185,21 +185,21 @@ export default function Header({
         <div className="relative" ref={eventMenuRef}>
           <button
             onClick={() => setEventDropdownOpen(!eventDropdownOpen)}
-            className="flex items-center gap-2.5 bg-slate-100/90 hover:bg-slate-200/70 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800 transition-colors"
+            className="flex items-center gap-2.5 bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-colors"
           >
             {currentEvent ? (
               <>
                 <img 
                   src={currentEvent.poster} 
                   alt="Icon" 
-                  className="w-6 h-6 rounded-lg object-cover ring-1 ring-slate-200"
+                  className="w-6 h-6 rounded-lg object-cover ring-1 ring-white/20"
                 />
                 <span className="max-w-[140px] truncate">{currentEvent.title}</span>
               </>
             ) : (
-              <span className="text-slate-400">Select Event</span>
+              <span className="text-slate-300">Select Event</span>
             )}
-            <ChevronDown className="w-3 h-3 text-slate-400 ml-1" />
+            <ChevronDown className="w-3 h-3 text-slate-300 ml-1" />
           </button>
 
           {eventDropdownOpen && (
@@ -239,10 +239,10 @@ export default function Header({
         <div className="relative" ref={notifMenuRef}>
           <button 
             onClick={() => setNotificationsOpen(!notificationsOpen)}
-            className="w-9 h-9 rounded-xl bg-slate-100/90 hover:bg-slate-200/70 border border-slate-200 text-slate-700 flex items-center justify-center relative transition-colors"
+            className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-white flex items-center justify-center relative transition-colors"
           >
             <Bell className="w-4 h-4" />
-            <span className="w-2 h-2 rounded-full bg-rose-500 absolute top-2 right-2 ring-2 ring-white"></span>
+            <span className="w-2 h-2 rounded-full bg-rose-500 absolute top-2 right-2 ring-2 ring-[#12193b]"></span>
           </button>
 
           {notificationsOpen && (
@@ -275,15 +275,15 @@ export default function Header({
         <div className="relative" ref={profileMenuRef}>
           <button
             onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
-            className="flex items-center gap-2.5 pl-2 border-l border-slate-200 hover:opacity-80 transition-opacity"
+            className="flex items-center gap-2.5 pl-2 border-l border-white/10 hover:opacity-80 transition-opacity"
           >
-            <div className="w-9 h-9 rounded-full bg-slate-900 text-white flex items-center justify-center text-sm ring-2 ring-indigo-500/40 relative">
+            <div className="w-9 h-9 rounded-full bg-white/10 text-white flex items-center justify-center text-sm ring-2 ring-indigo-400/40 relative">
               <User className="w-4 h-4" />
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white absolute bottom-0 right-0"></span>
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#12193b] absolute bottom-0 right-0"></span>
             </div>
             <div className="leading-tight text-left hidden sm:block">
-              <span className="text-xs font-black text-slate-900 block flex items-center gap-1">
-                Admin <ChevronDown className="w-2.5 h-2.5 text-slate-400" />
+              <span className="text-xs font-black text-white block flex items-center gap-1">
+                Admin <ChevronDown className="w-2.5 h-2.5 text-slate-300" />
               </span>
               <span className="text-[10px] text-slate-400 font-bold">Super Admin</span>
             </div>

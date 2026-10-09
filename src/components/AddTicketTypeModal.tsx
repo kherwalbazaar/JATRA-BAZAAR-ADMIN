@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
-import { X, PlusCircle, Tag, Layers, CheckCircle, ChevronUp, ChevronDown } from 'lucide-react';
-import { TicketType } from '@/types';
+import React, { useEffect, useRef, useState } from 'react';
+import { X, PlusCircle, Tag, Layers, CheckCircle, ChevronUp, ChevronDown, Check } from 'lucide-react';
+import { Seat, TicketType } from '@/types';
 
 const BLOCK_OPTIONS = [
   'A1', 'A2', 'A3',
@@ -19,6 +19,10 @@ interface AddTicketTypeModalProps {
   onUpdateTicketType?: (typeId: string, data: Partial<TicketType>) => void;
   editingType?: TicketType | null;
   committeeNames?: string[];
+  /** Seat map used for the row dropdown counts (available/total). */
+  seats?: Seat[];
+  /** All ticket categories — blocks/tiers/rows already used by others are locked. */
+  existingTypes?: TicketType[];
 }
 
 export default function AddTicketTypeModal({
@@ -27,15 +31,39 @@ export default function AddTicketTypeModal({
   onAddTicketType,
   onUpdateTicketType,
   editingType = null,
-  committeeNames = []
+  committeeNames = [],
+  seats = [],
+  existingTypes = []
 }: AddTicketTypeModalProps) {
   const isEdit = !!editingType;
   const [committee, setCommittee] = useState('');
   const [name, setName] = useState('');
   const [block, setBlock] = useState('');
+  const [selectedRows, setSelectedRows] = useState<string[]>([]);
+  const [rowOpen, setRowOpen] = useState(false);
   const [price, setPrice] = useState(100);
   const [quota, setQuota] = useState(500);
   const [color, setColor] = useState('#8b5cf6');
+  const rowWrapRef = useRef<HTMLDivElement>(null);
+
+  // Close the Row dropdown on outside click / Esc
+  useEffect(() => {
+    if (!rowOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (rowWrapRef.current && !rowWrapRef.current.contains(e.target as Node)) {
+        setRowOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setRowOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [rowOpen]);
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -43,6 +71,7 @@ export default function AddTicketTypeModal({
       setCommittee(editingType.committeeName || '');
       setName(editingType.name || '');
       setBlock(editingType.blocks?.[0] || '');
+      setSelectedRows(editingType.rows || []);
       setPrice(editingType.price);
       setQuota(editingType.totalQuota);
       setColor(editingType.color || '#8b5cf6');
@@ -50,6 +79,7 @@ export default function AddTicketTypeModal({
       setCommittee('');
       setName('');
       setBlock('');
+      setSelectedRows([]);
       setPrice(100);
       setQuota(500);
       setColor('#8b5cf6');
@@ -57,6 +87,39 @@ export default function AddTicketTypeModal({
   }, [isOpen, editingType]);
 
   if (!isOpen) return null;
+
+  // Always show every alphabet A–Z — letters with seats show available/total,
+  // letters without seats show "—".
+  const rowOptions = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
+
+  // Already-used values from OTHER categories (the one being edited is exempt),
+  // so a tier / block / row can only belong to a single category.
+  const otherTypes = existingTypes.filter((t) => t.id !== editingType?.id);
+  const takenNames = new Set(otherTypes.map((t) => t.name).filter(Boolean));
+  const takenBlocks = new Set<string>();
+  const takenRows = new Set<string>();
+  otherTypes.forEach((t) => {
+    (t.blocks || []).forEach((b) => {
+      if (b && b.toUpperCase() !== 'ALL') takenBlocks.add(b.toUpperCase());
+    });
+    (t.rows || []).forEach((r) => {
+      if (r) takenRows.add(r.toUpperCase());
+    });
+  });
+
+  // available/total seats for a row letter — scoped to the selected block
+  // ("All"/no block = across every block of the event).
+  const statsFor = (letter: string) => {
+    const scope = block.trim().toUpperCase();
+    const list = seats.filter((s) => {
+      const base = s.rowId.replace(/[0-9]/g, '');
+      if (base !== letter) return false;
+      if (scope && scope !== 'ALL' && s.blockId.toUpperCase() !== scope) return false;
+      return true;
+    });
+    if (!list.length) return null;
+    return { total: list.length, available: list.filter((s) => s.status === 'available').length };
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,10 +131,23 @@ export default function AddTicketTypeModal({
       alert('Please enter tier name');
       return;
     }
+    if (block && takenBlocks.has(block.toUpperCase())) {
+      alert(`Block ${block} is already used by another tier — pick a different block.`);
+      return;
+    }
+    const clash = selectedRows.filter((r) => takenRows.has(r.toUpperCase()));
+    if (clash.length) {
+      alert(
+        `Row${clash.length > 1 ? 's' : ''} ${clash.join(', ')} already assigned to another tier — remove ${
+          clash.length > 1 ? 'them' : 'it'
+        } or pick other rows.`
+      );
+      return;
+    }
 
     if (isEdit) {
       const confirmed = window.confirm(
-        `Save changes to ticket category "${name.trim()}"?\n\nCommittee: ${committee.trim()}\nBlock: ${block || 'All'}\nPrice: ₹${Number(price) || 0}\nTotal Quota: ${Number(quota) || 0}`
+        `Save changes to ticket category "${name.trim()}"?\n\nCommittee: ${committee.trim()}\nBlock: ${block || 'All'}\nRows: ${selectedRows.length ? selectedRows.join(', ') : 'All'}\nPrice: ₹${Number(price) || 0}\nTotal Quota: ${Number(quota) || 0}`
       );
       if (!confirmed) return;
     }
@@ -81,6 +157,7 @@ export default function AddTicketTypeModal({
         name: name.trim(),
         committeeName: committee.trim(),
         blocks: block ? [block] : [],
+        rows: [...selectedRows],
         price: Number(price) || 100,
         totalQuota: Number(quota) || editingType.sold,
         color,
@@ -94,6 +171,7 @@ export default function AddTicketTypeModal({
       name: name.trim(),
       committeeName: committee.trim(),
       blocks: block ? [block] : [],
+      rows: [...selectedRows],
       price: Number(price) || 100,
       totalQuota: Number(quota) || 500,
       sold: 0,
@@ -110,8 +188,8 @@ export default function AddTicketTypeModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150">
-        <div className="px-6 py-4 bg-[#0f1430] text-white flex items-center justify-between">
+      <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150">
+        <div className="px-6 py-4 bg-[#0f1430] text-white flex items-center justify-between rounded-t-3xl overflow-hidden">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center">
               <PlusCircle className="w-5 h-5" />
@@ -157,12 +235,22 @@ export default function AddTicketTypeModal({
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
             >
               <option value="" disabled>🎫 Select tier</option>
-              <option value="Star">⭐ Star</option>
-              <option value="VIP">👑 VIP</option>
-              <option value="Special">✨ Special</option>
-              <option value="3rd Class">🎟️ 3rd Class</option>
-              <option value="Ground">🌿 Ground</option>
-              <option value="Standing">🧍 Standing</option>
+              {[
+                { v: 'Star', l: '⭐ Star' },
+                { v: 'VIP', l: '👑 VIP' },
+                { v: 'Special', l: '✨ Special' },
+                { v: '3rd Class', l: '🎟️ 3rd Class' },
+                { v: 'Ground', l: '🌿 Ground' },
+                { v: 'Standing', l: '🧍 Standing' },
+              ].map(({ v, l }) => {
+                const used = takenNames.has(v);
+                return (
+                  <option key={v} value={v} disabled={used}>
+                    {l}
+                    {used ? ' (already used)' : ''}
+                  </option>
+                );
+              })}
             </select>
           </div>
 
@@ -177,10 +265,115 @@ export default function AddTicketTypeModal({
             >
               <option value="" disabled>Select block</option>
               <option value="All">All</option>
-              {BLOCK_OPTIONS.map((b) => (
-                <option key={b} value={b}>{b}</option>
-              ))}
+              {BLOCK_OPTIONS.map((b) => {
+                const used = takenBlocks.has(b.toUpperCase()) && block !== b;
+                return (
+                  <option key={b} value={b} disabled={used}>
+                    {b}
+                    {used ? ' (used)' : ''}
+                  </option>
+                );
+              })}
             </select>
+          </div>
+
+          {/* Row selection — dropdown with A–Z grid + available/total counts */}
+          <div>
+            <label className="text-[11px] font-black uppercase text-slate-500 block mb-1">
+              Select Row {selectedRows.length > 0 && `(${selectedRows.length} selected)`}
+            </label>
+            <div ref={rowWrapRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setRowOpen((o) => !o)}
+                className={`w-full px-3 py-2 border rounded-xl text-xs font-bold outline-none text-left flex items-center justify-between gap-2 transition-colors ${
+                  selectedRows.length
+                    ? 'bg-indigo-50 border-indigo-300 text-indigo-800'
+                    : 'bg-slate-50 border-slate-200 text-slate-400'
+                } ${rowOpen ? 'border-indigo-500 ring-2 ring-indigo-100' : ''}`}
+              >
+                <span className="truncate">
+                  {selectedRows.length ? selectedRows.join(', ') : 'All Rows'}
+                </span>
+                <ChevronDown
+                  className={`w-4 h-4 flex-shrink-0 transition-transform ${rowOpen ? 'rotate-180' : ''}`}
+                />
+              </button>
+
+              {rowOpen && (
+                <div className="absolute z-40 left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl shadow-slate-300/60 p-2">
+                  <div className="flex items-center justify-between px-1 pb-1.5">
+                    <span className="text-[10px] font-black uppercase text-slate-400">
+                      Rows {block && block !== 'All' ? `· Block ${block}` : '· All blocks'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRows([])}
+                      className="text-[10px] font-black text-indigo-600 hover:text-indigo-800"
+                    >
+                      Reset to All Rows
+                    </button>
+                  </div>
+                  <div className="max-h-44 overflow-y-auto pr-0.5">
+                    <div className="grid grid-cols-5 sm:grid-cols-8 lg:grid-cols-10 gap-1.5">
+                      {rowOptions.map((letter) => {
+                        const stats = statsFor(letter);
+                        const on = selectedRows.includes(letter);
+                        const taken = takenRows.has(letter) && !on;
+                        return (
+                          <button
+                            key={letter}
+                            type="button"
+                            disabled={taken}
+                            title={
+                              taken
+                                ? `Row ${letter} already assigned to another tier`
+                                : stats
+                                  ? `Row ${letter}: ${stats.available}/${stats.total} seats`
+                                  : `Row ${letter}: no seats yet`
+                            }
+                            onClick={() => {
+                              if (taken) return;
+                              setSelectedRows((prev) =>
+                                on ? prev.filter((r) => r !== letter) : [...prev, letter]
+                              );
+                            }}
+                            className={`relative rounded-lg text-[11px] font-black border-2 overflow-hidden transition-all ${
+                              on
+                                ? 'bg-[#4f39f6] text-white border-[#4f39f6] shadow-[0_4px_10px_-2px_rgba(79,57,246,0.55)]'
+                                : taken
+                                  ? 'bg-red-100 text-red-400 border-red-400 cursor-not-allowed shadow-[0_3px_6px_-1px_rgba(15,23,42,0.22)]'
+                                  : 'bg-white text-slate-700 border-emerald-400 hover:border-emerald-500 active:scale-95 shadow-[0_3px_6px_-1px_rgba(15,23,42,0.22)]'
+                            }`}
+                          >
+                            {on && <Check className="w-2.5 h-2.5 absolute top-0.5 right-0.5" />}
+                            <span className={`block leading-none pt-1.5 px-1 ${taken ? 'line-through' : ''}`}>
+                              {letter}
+                            </span>
+                            <span
+                              className={`block text-[8px] font-bold px-1 py-0.5 mt-1 ${
+                                on
+                                  ? 'bg-indigo-500 text-white'
+                                  : taken
+                                    ? 'bg-red-200 text-red-500'
+                                    : 'bg-emerald-100 text-emerald-600'
+                              }`}
+                            >
+                              {taken ? 'Used' : stats ? `${stats.available}/${stats.total}` : '—'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-400 font-semibold mt-1">
+              Click letters to pick rows — e.g. Star = A, VIP = B, Special = C. Rows/blocks/tiers already
+              assigned to another category show red as “Used” and can’t be picked. “All Rows” (nothing
+              picked) covers every row.
+            </p>
           </div>
 
           <div>

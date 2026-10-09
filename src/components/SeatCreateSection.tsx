@@ -5,18 +5,20 @@ import { Trash2, LayoutGrid, Plus, ChevronDown, Check, MoreVertical, Edit, Alert
 import { Seat, TicketType } from '@/types';
 
 const BLOCK_OPTIONS = [
-  'A', 'B', 'C', 'D',
   'A1', 'A2', 'A3',
   'B1', 'B2', 'B3',
   'C1', 'C2', 'C3',
-  'D1', 'D2', 'D3',
-  'Gallery', 'Standing', 'Ground',
 ];
 
 interface SeatCreateSectionProps {
   currentEventId?: string;
   seats: Seat[];
   ticketTypes: TicketType[];
+  /** Popup visibility — controlled by the page's "Create Seat" button. */
+  isOpen: boolean;
+  onClose: () => void;
+  /** Called when a row's Edit action should open the popup too. */
+  onOpenRequest?: () => void;
   onCreateSeatRow: (params: {
     eventId: string;
     blockId: string;
@@ -25,19 +27,32 @@ interface SeatCreateSectionProps {
     price?: number;
   }) => Promise<number>;
   onDeleteSeatRow: (params: { eventId: string; blockId: string; rowId: string }) => Promise<void>;
+  /** Update an existing row (price) without touching booked seats. */
+  onUpdateSeatRow: (params: {
+    eventId: string;
+    blockId: string;
+    rowId: string;
+    price?: number;
+  }) => Promise<number>;
 }
 
 export default function SeatCreateSection({
   currentEventId,
   seats,
   ticketTypes,
+  isOpen,
+  onClose,
+  onOpenRequest,
   onCreateSeatRow,
   onDeleteSeatRow,
+  onUpdateSeatRow,
 }: SeatCreateSectionProps) {
   const [block, setBlock] = useState('');
   const [blockOpen, setBlockOpen] = useState(false);
   const [row, setRow] = useState('');
+  const [rowOpen, setRowOpen] = useState(false);
   const [total, setTotal] = useState(0);
+  const [price, setPrice] = useState(0);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -45,6 +60,26 @@ export default function SeatCreateSection({
   const [deleteConfirm, setDeleteConfirm] = useState<{ blockId: string; rowId: string } | null>(null);
   const [editMode, setEditMode] = useState<{ blockId: string; rowId: string; oldTotal: number } | null>(null);
   const blockWrapRef = useRef<HTMLDivElement>(null);
+  const rowWrapRef = useRef<HTMLDivElement>(null);
+
+  // Close the Row alphabet dropdown on outside click / Esc
+  useEffect(() => {
+    if (!rowOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (rowWrapRef.current && !rowWrapRef.current.contains(e.target as Node)) {
+        setRowOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setRowOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [rowOpen]);
 
   useEffect(() => {
     if (!blockOpen) return;
@@ -101,9 +136,30 @@ export default function SeatCreateSection({
     };
   }, [deleteConfirm]);
 
+  // Popup: focus the first field as soon as it opens; Esc closes it
+  useEffect(() => {
+    if (!isOpen) return;
+    const t = setTimeout(() => {
+      const el = document.querySelector<HTMLInputElement>('#create-seat-form input, #create-seat-form button');
+      el?.focus();
+    }, 60);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !blockOpen && !rowOpen) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isOpen, onClose, blockOpen, rowOpen]);
+
   const blockFromTypes = useMemo(() => {
     const set = new Set<string>(BLOCK_OPTIONS);
-    ticketTypes.forEach((t) => (t.blocks || []).forEach((b) => set.add(b)));
+    ticketTypes.forEach((t) =>
+      (t.blocks || []).forEach((b) => {
+        if (b && b.toUpperCase() !== 'ALL') set.add(b);
+      })
+    );
     return Array.from(set);
   }, [ticketTypes]);
 
@@ -121,16 +177,43 @@ export default function SeatCreateSection({
     return map;
   }, [seats]);
 
-  const preview = useMemo(() => {
-    const n = Math.max(0, Math.min(200, Number(total) || 0));
-    if (editMode) {
-      const seatsToAdd = n - editMode.oldTotal;
-      if (seatsToAdd <= 0) return [];
-      const start = editMode.oldTotal + 1;
-      return Array.from({ length: seatsToAdd }, (_, i) => start + i);
-    }
-    return Array.from({ length: n }, (_, i) => i + 1);
-  }, [total, editMode]);
+  // Only the 9 catalog blocks are listed in the popup — legacy blocks like
+  // "ALL" (or anything else outside A1–C3) are hidden from the Created Rows view.
+  const visibleBlocks = useMemo(
+    () =>
+      Array.from(rowsByBlock.entries()).filter(([blockId]) =>
+        BLOCK_OPTIONS.includes(blockId.toUpperCase())
+      ),
+    [rowsByBlock]
+  );
+
+  // Alphabet grid A…Z for the Row dropdown
+  const ROW_OPTIONS = useMemo(
+    () => Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i)),
+    []
+  );
+
+  // Seats already created for a letter in the selected block — matches the
+  // exact rowId ("A") and row groups sharing the base letter ("A1", "A2"…).
+  const rowStatsFor = (letter: string) => {
+    const rows = rowsByBlock.get(block.trim().toUpperCase());
+    if (!rows) return null;
+    const list: Seat[] = [];
+    const matchedRows: string[] = [];
+    rows.forEach((seatsOfRow, rowId) => {
+      const base = rowId.replace(/[0-9]/g, '');
+      if (rowId === letter || base === letter) {
+        matchedRows.push(rowId);
+        list.push(...seatsOfRow);
+      }
+    });
+    if (!list.length) return null;
+    return {
+      total: list.length,
+      available: list.filter((s) => s.status === 'available').length,
+      matchedRows,
+    };
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,40 +234,52 @@ export default function SeatCreateSection({
     }
     setBusy(true);
     setMsg('');
+    const seatPrice = Number(price) > 0 ? Number(price) : ticketTypes[0]?.price || 100;
     try {
       if (editMode) {
-        // Update mode: Add seats to existing row
-        const seatsToAdd = n - editMode.oldTotal;
-        if (seatsToAdd <= 0) {
-          setMsg('Total seats must be greater than current seats.');
-          setBusy(false);
-          return;
-        }
-        const created = await onCreateSeatRow({
-          eventId: currentEventId,
-          blockId: b,
-          rowId: r,
-          totalSeats: seatsToAdd,
-          price: ticketTypes[0]?.price || 100,
-        });
-        setMsg(`Updated ${created} seats — Block ${b}, Row ${r} (Total: ${n}).`);
-        setEditMode(null);
-        setBlock('');
-        setRow('');
-        setTotal(0);
-      } else {
-        // Create mode: Create new row
+        // Update mode: keep every existing seat as-is (bookings preserved),
+        // only append missing seat numbers up to the new total + apply price.
         const created = await onCreateSeatRow({
           eventId: currentEventId,
           blockId: b,
           rowId: r,
           totalSeats: n,
-          price: ticketTypes[0]?.price || 100,
+          price: seatPrice,
         });
-        setMsg(`Created ${created} seats — Block ${b}, Row ${r} (1…${created}).`);
+        const priced = await onUpdateSeatRow({
+          eventId: currentEventId,
+          blockId: b,
+          rowId: r,
+          price: seatPrice,
+        });
+        const parts: string[] = [];
+        parts.push(created > 0 ? `added ${created} new seat${created > 1 ? 's' : ''}` : 'no new seats needed');
+        parts.push(`price updated on ${priced} seat${priced === 1 ? '' : 's'} (₹${seatPrice})`);
+        setMsg(`Updated Block ${b}, Row ${r} — ${parts.join(', ')} (Total: ${n}).`);
+        setEditMode(null);
         setBlock('');
         setRow('');
         setTotal(0);
+        setPrice(0);
+      } else {
+        // Create mode: seats that already exist in this row are skipped by
+        // createSeatRow (never re-created, so booked status is untouched).
+        const created = await onCreateSeatRow({
+          eventId: currentEventId,
+          blockId: b,
+          rowId: r,
+          totalSeats: n,
+          price: seatPrice,
+        });
+        setMsg(
+          created === n
+            ? `Created ${created} seats — Block ${b}, Row ${r} (1…${n}) at ₹${seatPrice}.`
+            : `Block ${b}, Row ${r}: created ${created} new seat${created === 1 ? '' : 's'}, skipped ${n - created} already existing (Total: ${n}).`
+        );
+        setBlock('');
+        setRow('');
+        setTotal(0);
+        setPrice(0);
       }
     } catch (err) {
       console.error('createSeatRow failed:', err);
@@ -226,10 +321,12 @@ export default function SeatCreateSection({
     setBlock(blockId);
     setRow(rowId);
     setTotal(currentSeats.length);
+    setPrice(Number(currentSeats[0]?.price) || ticketTypes[0]?.price || 100);
     setEditMode({ blockId, rowId, oldTotal: currentSeats.length });
     setOpenMenuId(null);
     setMenuPosition(null);
-    setMsg(`Editing Block ${blockId} Row ${rowId}. Add seats to update this row.`);
+    setMsg(`Editing Block ${blockId} Row ${rowId}. Change the price or raise the seat count to add seats — existing seats are never overwritten.`);
+    onOpenRequest?.();
   };
 
   const handleCancelEdit = () => {
@@ -237,31 +334,56 @@ export default function SeatCreateSection({
     setBlock('');
     setRow('');
     setTotal(0);
+    setPrice(0);
     setMsg('');
   };
 
   const canSubmit =
     !!currentEventId && !busy && !!block.trim() && !!row.trim() && Number(total) > 0 &&
-    (!editMode || Number(total) > editMode.oldTotal);
+    (!editMode || Number(total) >= editMode.oldTotal);
 
   return (
     <section className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden relative">
-      {blockOpen && (
-        <div
-          className="fixed inset-0 z-20 bg-slate-900/15 backdrop-blur-[2px]"
-          aria-hidden="true"
-        />
-      )}
-      <form
-        id="create-seat-form"
-        onSubmit={handleCreate}
-        className="px-5 py-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end"
-      >
+      {isOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div
+            className="fixed inset-0 bg-slate-900/55 backdrop-blur-sm"
+            onClick={onClose}
+            aria-hidden="true"
+          />
+          <div className="relative mx-auto my-6 w-[min(96vw,760px)] bg-white rounded-2xl border border-slate-200 shadow-2xl">
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-slate-100 sticky top-0 bg-white rounded-t-2xl z-10">
+              <div>
+                <h3 className="text-sm font-black text-slate-900 tracking-tight">CREATE SEATS</h3>
+                <p className="text-[11px] font-semibold text-slate-400">
+                  Block, row, count and price — seats that already exist are never re-created.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors"
+                aria-label="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {(blockOpen || rowOpen) && (
+              <div
+                className="fixed inset-0 z-20 bg-slate-900/15 backdrop-blur-[2px]"
+                aria-hidden="true"
+              />
+            )}
+            <form
+              id="create-seat-form"
+              onSubmit={handleCreate}
+              className="px-5 py-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end"
+            >
         {editMode && (
-          <div className="sm:col-span-2 lg:col-span-4 mb-2">
+          <div className="sm:col-span-2 lg:col-span-5 mb-2">
             <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2 flex items-center justify-between">
               <span className="text-[11px] font-bold text-indigo-800">
-                Editing Block {editMode.blockId} Row {editMode.rowId} (Current: {editMode.oldTotal} seats)
+                Editing Block {editMode.blockId} Row {editMode.rowId} (Current: {editMode.oldTotal} seats) — existing seats stay untouched; only new seats are added.
               </span>
               <button
                 type="button"
@@ -321,15 +443,81 @@ export default function SeatCreateSection({
         </div>
         <div>
           <label className="text-[10px] font-black uppercase text-slate-500 block mb-1">Row *</label>
-          <input
-            type="text"
-            required
-            value={row}
-            onChange={(e) => setRow(e.target.value)}
-            placeholder="Select row"
-            maxLength={4}
-            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 uppercase"
-          />
+          <div ref={rowWrapRef} className="relative">
+            <button
+              type="button"
+              onClick={() => setRowOpen((o) => !o)}
+              className={`w-full px-3 py-2.5 border rounded-xl text-xs font-bold outline-none text-left flex items-center justify-between gap-2 transition-colors ${
+                row
+                  ? 'bg-indigo-50 border-indigo-300 text-indigo-800'
+                  : 'bg-slate-50 border-slate-200 text-slate-400'
+              } ${rowOpen ? 'border-indigo-500 ring-2 ring-indigo-100' : ''}`}
+            >
+              <span className="truncate">{row || 'Select row'}</span>
+              <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${rowOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {rowOpen && (
+              <div className="absolute z-30 left-0 sm:left-6 right-0 sm:right-auto sm:w-[min(92vw,560px)] mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl shadow-slate-300/60 p-2">
+                {!block && (
+                  <p className="text-[10px] font-bold text-amber-600 px-1 pb-1.5">
+                    Select a block first — existing rows of that block will be locked here.
+                  </p>
+                )}
+                <div className="grid grid-cols-5 sm:grid-cols-8 lg:grid-cols-10 gap-1.5">
+                  {ROW_OPTIONS.map((letter) => {
+                    const stats = rowStatsFor(letter);
+                    const editingThis =
+                      !!editMode &&
+                      (editMode.rowId === letter || editMode.rowId.replace(/[0-9]/g, '') === letter);
+                    const disabled = !!stats && !editingThis;
+                    const selected = row === letter;
+                    return (
+                      <button
+                        key={letter}
+                        type="button"
+                        disabled={disabled}
+                        title={
+                          disabled
+                            ? `Row ${letter} already created — ${stats!.available}/${stats!.total} seats`
+                            : stats
+                              ? `Row ${letter}: ${stats.available}/${stats.total} seats`
+                              : `Create row ${letter}`
+                        }
+                        onClick={() => {
+                          if (disabled) return;
+                          setRow(letter);
+                          setRowOpen(false);
+                        }}
+                        className={`relative rounded-lg text-[11px] font-black border-2 overflow-hidden transition-all ${
+                          selected
+                            ? 'bg-[#4f39f6] text-white border-[#4f39f6] shadow-[0_4px_10px_-2px_rgba(79,57,246,0.55)]'
+                            : disabled
+                              ? 'bg-red-100 text-red-400 border-red-400 cursor-not-allowed shadow-[0_3px_6px_-1px_rgba(15,23,42,0.22)]'
+                              : 'bg-white text-slate-700 border-emerald-400 hover:border-emerald-500 active:scale-95 shadow-[0_3px_6px_-1px_rgba(15,23,42,0.22)]'
+                        }`}
+                      >
+                        {selected && <Check className="w-2.5 h-2.5 absolute top-0.5 right-0.5" />}
+                        <span className={`block leading-none pt-1.5 px-1 ${disabled ? 'line-through' : ''}`}>
+                          {letter}
+                        </span>
+                        <span
+                          className={`block text-[8px] font-bold px-1 py-0.5 mt-1 rounded-t-none ${
+                            selected
+                              ? 'bg-indigo-500 text-white'
+                              : disabled
+                                ? 'bg-red-200 text-red-500'
+                                : 'bg-emerald-100 text-emerald-600'
+                          }`}
+                        >
+                          {stats ? `${stats.available}/${stats.total}` : 'New'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         <div>
           <label className="text-[10px] font-black uppercase text-slate-500 block mb-1">
@@ -338,11 +526,23 @@ export default function SeatCreateSection({
           <input
             type="number"
             required
-            min={editMode ? editMode.oldTotal + 1 : 1}
+            min={editMode ? editMode.oldTotal : 1}
             max={200}
             value={total}
             onChange={(e) => setTotal(Number(e.target.value))}
-            placeholder={editMode ? `Must be > ${editMode.oldTotal}` : 'Enter total seats'}
+            placeholder={editMode ? `≥ ${editMode.oldTotal}` : 'Enter total seats'}
+            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] font-black uppercase text-slate-500 block mb-1">Price (₹) *</label>
+          <input
+            type="number"
+            required
+            min={1}
+            value={price || ''}
+            onChange={(e) => setPrice(Number(e.target.value))}
+            placeholder={String(ticketTypes[0]?.price || 100)}
             className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500"
           />
         </div>
@@ -379,34 +579,6 @@ export default function SeatCreateSection({
             )}
           </button>
         </div>
-        <div className="sm:col-span-2 lg:col-span-4">
-          <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 min-h-[42px] flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <span className="text-[9px] font-black uppercase text-slate-400 block">
-                {editMode ? 'Update Preview' : 'Preview'}
-              </span>
-              <span className="text-[10px] font-bold text-slate-700 break-all">
-                {block.toUpperCase() || '—'} / Row {row.toUpperCase() || '—'} →{' '}
-                {editMode ? (
-                  <>
-                    {editMode.oldTotal} existing + {preview.length} new = {Number(total)} total
-                  </>
-                ) : (
-                  <>
-                    {preview.length
-                      ? preview.slice(0, 8).join(', ') + (preview.length > 8 ? ` … ${preview[preview.length - 1]}` : '')
-                      : '—'}
-                  </>
-                )}
-              </span>
-            </div>
-            <span className={`flex-shrink-0 text-[10px] px-2.5 py-0.5 rounded-full font-extrabold ${
-              editMode ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'
-            }`}>
-              {editMode ? 'Update Mode' : `${seats.length} Seats`}
-            </span>
-          </div>
-        </div>
       </form>
 
       {msg && (
@@ -416,6 +588,9 @@ export default function SeatCreateSection({
           </p>
         </div>
       )}
+    </div>
+    </div>
+    )}
 
       {/* Existing rows */}
       <div className="px-5 pb-0">
@@ -423,6 +598,9 @@ export default function SeatCreateSection({
           <div className="flex items-center gap-2">
             <LayoutGrid className="w-3.5 h-3.5 text-slate-400" />
             <span className="text-[10px] font-black uppercase text-slate-400">Created Rows</span>
+            <span className="text-sm font-medium text-white bg-indigo-600 px-3 py-1 rounded-lg shadow-md shadow-indigo-600/30">
+              Total Seat: <span className="font-black">{seats.length}</span>
+            </span>
           </div>
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500">
@@ -443,11 +621,11 @@ export default function SeatCreateSection({
             </span>
           </div>
         </div>
-        {rowsByBlock.size === 0 ? (
+        {visibleBlocks.length === 0 ? (
           <p className="text-xs font-semibold text-slate-400 py-3">No seats created yet for this event.</p>
         ) : (
           <div className="space-y-3">
-            {Array.from(rowsByBlock.entries()).sort(([a], [b]) => {
+            {[...visibleBlocks].sort(([a], [b]) => {
               // Natural alphanumeric sort for block IDs
               const aParts = a.match(/([A-Za-z]+)(\d*)/);
               const bParts = b.match(/([A-Za-z]+)(\d*)/);
@@ -466,9 +644,9 @@ export default function SeatCreateSection({
               return a.localeCompare(b);
             }).map(([blockId, rows]) => (
               <div key={blockId} className="border border-slate-200 rounded-xl overflow-hidden">
-                <div className="bg-indigo-50 border-b border-indigo-100 px-3 py-2 flex items-center justify-between">
-                  <span className="text-xs font-black text-indigo-800">Block {blockId}</span>
-                  <span className="inline-block bg-indigo-600 text-white border border-indigo-700 rounded px-2 py-0.5 text-[10px] font-bold leading-none">
+                <div className="bg-indigo-600 border-b border-indigo-700 px-3 py-2 flex items-center justify-between">
+                  <span className="text-xs font-black text-white">Block {blockId}</span>
+                  <span className="inline-block bg-white text-indigo-700 border border-white rounded px-2 py-0.5 text-[10px] font-bold leading-none">
                     {Array.from(rows.values()).reduce((s, list) => s + list.length, 0)}
                   </span>
                 </div>

@@ -9,9 +9,11 @@ import EventsView from '@/components/EventsView';
 import TicketTypesView from '@/components/TicketTypesView';
 import SeatCreateSection from '@/components/SeatCreateSection';
 import BookingsView from '@/components/BookingsView';
+import AdminBookings from '@/components/AdminBookings';
 import GateManagementView from '@/components/GateManagementView';
 import CounterManagementView from '@/components/CounterManagementView';
 import CounterBookingView from '@/components/CounterBookingView';
+import DiagramSettingsView from '@/components/DiagramSettingsView';
 import ReportsView from '@/components/ReportsView';
 import SettingsView from '@/components/SettingsView';
 import ScannerMembersView from '@/components/ScannerMembersView';
@@ -31,7 +33,7 @@ import BookingDetailsModal from '@/components/BookingDetailsModal';
 
 import { NavigationTab, BookingItem, EventItem, TicketType } from '@/types';
 import { useFirestore } from '@/hooks/useFirestore';
-import { UserPlus } from 'lucide-react';
+import { UserPlus, Plus } from 'lucide-react';
 
 export default function App() {
   const router = useRouter();
@@ -67,6 +69,7 @@ export default function App() {
     seats,
     createSeatRow,
     deleteSeatRow,
+    updateSeatRow,
     seedDatabase,
     retryConnection,
   } = useFirestore();
@@ -74,6 +77,7 @@ export default function App() {
   // UI State (active tab persisted so Back from edit/details restores the same section)
   const [currentTab, setCurrentTabState] = useState<NavigationTab>('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const setCurrentTab = (tab: NavigationTab) => {
     setCurrentTabState(tab);
@@ -93,9 +97,34 @@ export default function App() {
     }
   }, []);
 
+  // Sidebar hide/show state persisted across sessions
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('jatra_sidebar_collapsed') === '1') {
+        setSidebarCollapsed(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('jatra_sidebar_collapsed', next ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
   // Modal Visibility States
   const [scannerOpen, setScannerOpen] = useState(false);
   const [newBookingOpen, setNewBookingOpen] = useState(false);
+  const [seatFormOpen, setSeatFormOpen] = useState(false);
+  const [counterSelection, setCounterSelection] = useState<{ block: string; seats: string[] }[] | null>(null);
   const [createEventOpen, setCreateEventOpen] = useState(false);
   const [addTicketTypeOpen, setAddTicketTypeOpen] = useState(false);
   const [printTicketTarget, setPrintTicketTarget] = useState<BookingItem | null>(null);
@@ -105,12 +134,18 @@ export default function App() {
   const [editingEvent, setEditingEvent] = useState<EventItem | null>(null);
 
   // Handlers: Add Booking (from POS Counter or Online)
-  const handleAddBooking = async (newBooking: BookingItem) => {
+  const handleAddBooking = async (
+    newBooking: BookingItem,
+    seatGroups?: { block: string; seats: string[] }[]
+  ) => {
     if (!currentEvent) return;
-    await addBooking({
-      ...newBooking,
-      eventId: currentEvent.id,
-    });
+    await addBooking(
+      {
+        ...newBooking,
+        eventId: currentEvent.id,
+      },
+      seatGroups
+    );
   };
 
   // Handlers: Check-in ticket scan
@@ -155,6 +190,8 @@ export default function App() {
         onTabChange={setCurrentTab}
         currentEvent={currentEvent}
         onViewEventDetails={(evt) => setSelectedEventForModal(evt)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebar}
       />
 
       {/* 2. Main Content Area */}
@@ -264,20 +301,34 @@ export default function App() {
 
           {currentTab === 'create-seat' && (
             <div className="px-6 pt-6 pb-6 space-y-4">
-              <div>
-                <h2 className="text-xl font-black text-slate-900">Create Seat</h2>
-                <p className="text-xs text-slate-400 font-semibold mt-0.5">
-                  {currentEvent
-                    ? `Configured for: ${currentEvent.title}`
-                    : 'Select an event first from the Events section.'}
-                </p>
+              <div className="flex items-end justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900">Create Seat</h2>
+                  <p className="text-xs text-slate-400 font-semibold mt-0.5">
+                    {currentEvent
+                      ? `Configured for: ${currentEvent.title}`
+                      : 'Select an event first from the Events section.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSeatFormOpen(true)}
+                  className="flex items-center gap-2 bg-[#4f39f6] hover:bg-[#432ee0] text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-md shadow-indigo-600/30 transition-all active:scale-95 flex-shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Create Seat</span>
+                </button>
               </div>
               <SeatCreateSection
                 currentEventId={currentEvent?.id}
                 seats={seats}
                 ticketTypes={ticketTypes}
+                isOpen={seatFormOpen}
+                onClose={() => setSeatFormOpen(false)}
+                onOpenRequest={() => setSeatFormOpen(true)}
                 onCreateSeatRow={createSeatRow}
                 onDeleteSeatRow={deleteSeatRow}
+                onUpdateSeatRow={updateSeatRow}
               />
             </div>
           )}
@@ -288,24 +339,24 @@ export default function App() {
               bookings={bookings}
               ticketTypes={ticketTypes}
               seats={seats}
-              onOpenNewBooking={() => setNewBookingOpen(true)}
+              onOpenNewBooking={(selection) => {
+                setCounterSelection(selection && selection.length ? selection : null);
+                setNewBookingOpen(true);
+              }}
               onPrintTicket={(b) => setPrintTicketTarget(b)}
             />
           )}
 
+          {currentTab === 'diagram' && <DiagramSettingsView seats={seats} />}
+
           {currentTab === 'bookings' && (
-            <div className="p-6 space-y-6">
-              <h2 className="text-xl font-black text-slate-900">Bookings & Transactions</h2>
-              <p className="text-xs text-slate-400 font-semibold -mt-4">
-                {bookings.length} Listed — Search, verify, reprint receipts, and track all ticket orders across online and counter channels.
-              </p>
-              <BookingsView
-                bookings={bookings}
-                onOpenNewBooking={() => setNewBookingOpen(true)}
-                onSelectBooking={(b) => setBookingDetailsTarget(b)}
-                onPrintTicket={(b) => setPrintTicketTarget(b)}
-              />
-            </div>
+            <AdminBookings
+              currentShowId={currentEvent?.id}
+              initialBookings={bookings}
+              onOpenNewBooking={() => setNewBookingOpen(true)}
+              onSelectBooking={(b) => setBookingDetailsTarget(b)}
+              onPrintTicket={(b) => setPrintTicketTarget(b)}
+            />
           )}
 
           {currentTab === 'tickets' && (
@@ -396,10 +447,16 @@ export default function App() {
 
       <NewBookingModal
         isOpen={newBookingOpen}
-        onClose={() => setNewBookingOpen(false)}
+        onClose={() => {
+          setNewBookingOpen(false);
+          setCounterSelection(null);
+        }}
         currentEvent={currentEvent}
         ticketTypes={ticketTypes}
+        seats={seats}
+        counterSelection={counterSelection}
         onAddBooking={handleAddBooking}
+        onBooked={() => setCounterSelection(null)}
         onPrintDirect={(b) => setPrintTicketTarget(b)}
       />
 
@@ -426,6 +483,8 @@ export default function App() {
         committeeNames={Array.from(
           new Set(eventsList.map((e) => (e.committeeName || '').trim()).filter(Boolean))
         )}
+        seats={seats}
+        existingTypes={ticketTypes}
       />
 
       <BookingDetailsModal

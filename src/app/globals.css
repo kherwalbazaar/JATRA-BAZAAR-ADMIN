@@ -52,14 +52,14 @@ body {
 
 /* Header blink on external data change */
 @keyframes headerBlink {
-  0%   { background-color: #ffffff; }
-  15%  { background-color: #fef2f2; }
-  30%  { background-color: #ffffff; }
-  45%  { background-color: #fefce8; }
-  60%  { background-color: #ffffff; }
-  75%  { background-color: #fef2f2; }
-  90%  { background-color: #fefce8; }
-  100% { background-color: #ffffff; }
+  0%   { background-color: #12193b; }
+  15%  { background-color: #4a161c; }
+  30%  { background-color: #12193b; }
+  45%  { background-color: #4a3a10; }
+  60%  { background-color: #12193b; }
+  75%  { background-color: #4a161c; }
+  90%  { background-color: #4a3a10; }
+  100% { background-color: #12193b; }
 }
 
 .animate-header-blink {

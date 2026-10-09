@@ -17,9 +17,10 @@ import {
   Plus,
   AlertCircle
 } from 'lucide-react';
-import { TicketType, BookingItem, EventItem } from '@/types';
-import StageDiagram from '@/components/StageDiagram';
+import { TicketType, BookingItem, EventItem, Seat } from '@/types';
+import StageDiagram, { buildSeatStats } from '@/components/StageDiagram';
 import { generateBookingId, formatINR } from '@/lib/utils';
+import { useBlockCategories } from '@/hooks/useBlockCategories';
 import confetti from 'canvas-confetti';
 
 interface NewBookingModalProps {
@@ -27,7 +28,14 @@ interface NewBookingModalProps {
   onClose: () => void;
   currentEvent: EventItem | null;
   ticketTypes: TicketType[];
-  onAddBooking: (newBooking: BookingItem) => void;
+  seats?: Seat[];
+  /** Seats picked on the counter seat grid — booked atomically with this order. */
+  counterSelection?: { block: string; seats: string[] }[] | null;
+  onAddBooking: (
+    newBooking: BookingItem,
+    seatGroups?: { block: string; seats: string[] }[]
+  ) => void | Promise<void>;
+  onBooked?: () => void;
   onPrintDirect: (booking: BookingItem) => void;
 }
 
@@ -53,7 +61,10 @@ export default function NewBookingModal({
   onClose,
   currentEvent,
   ticketTypes,
+  seats = [],
+  counterSelection = null,
   onAddBooking,
+  onBooked,
   onPrintDirect
 }: NewBookingModalProps) {
   const [customerName, setCustomerName] = useState('');
@@ -62,6 +73,9 @@ export default function NewBookingModal({
   const [quantity, setQuantity] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'UPI' | 'Card'>('Cash');
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const { labels: blockLabels, channelLabels, disabledBlocks } = useBlockCategories();
+  const seatStats = React.useMemo(() => buildSeatStats(seats), [seats]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -76,7 +90,9 @@ export default function NewBookingModal({
 
   const selectedTier = ticketTypes.find((t) => t.id === selectedTypeId) || ticketTypes[0];
   const unitPrice = selectedTier ? selectedTier.price : 50;
-  const totalAmount = unitPrice * quantity;
+  const counterSeats = (counterSelection || []).flatMap((g) => g.seats);
+  const effQuantity = counterSeats.length > 0 ? counterSeats.length : quantity;
+  const totalAmount = unitPrice * effQuantity;
   const assignedGate = selectedTier?.gateAccess[0] || 'Gate C';
   const tierBlocks: string[] = selectedTier?.blocks ?? [];
   const blockLabel = tierBlocks.includes('All')
@@ -85,8 +101,9 @@ export default function NewBookingModal({
       ? tierBlocks.join(', ')
       : '—';
 
-  const handleSubmit = (e: React.FormEvent, shouldPrint: boolean = false) => {
+  const handleSubmit = async (e: React.FormEvent, shouldPrint: boolean = false) => {
     e.preventDefault();
+    if (saving) return;
     if (!customerName.trim()) {
       setError('Please enter customer name');
       return;
@@ -96,6 +113,7 @@ export default function NewBookingModal({
       return;
     }
     setError('');
+    setSaving(true);
 
     const newBooking: BookingItem = {
       id: `BK-${Date.now().toString().slice(-4)}`,
@@ -105,7 +123,7 @@ export default function NewBookingModal({
       customerPhone: customerPhone.trim() || '+91 98000 00000',
       ticketTypeId: selectedTier.id,
       ticketTypeName: selectedTier.name,
-      quantity,
+      quantity: effQuantity,
       unitPrice,
       amount: totalAmount,
       ticketAmount: totalAmount,
@@ -121,19 +139,36 @@ export default function NewBookingModal({
       time: currentEvent?.time || currentEvent?.startTime || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       date: currentEvent?.date ?? new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
       status: 'Confirmed',
-      assignedGate
+      assignedGate,
+      ...(counterSeats.length > 0
+        ? {
+            seats: counterSeats,
+            block: (counterSelection![0]?.block || '').toUpperCase(),
+            seatCount: counterSeats.length,
+          }
+        : {})
     };
 
-    onAddBooking(newBooking);
+    try {
+      await onAddBooking(newBooking, counterSelection && counterSelection.length ? counterSelection : undefined);
+    } catch (err) {
+      console.error('Counter booking failed:', err);
+      setError(err instanceof Error ? err.message : 'Failed to save booking. Please try again.');
+      setSaving(false);
+      return;
+    }
+
     confetti({ particleCount: 40, spread: 50 });
 
     if (shouldPrint) {
       onPrintDirect(newBooking);
     }
 
+    onBooked?.();
     setCustomerName('');
     setCustomerPhone('');
     setQuantity(1);
+    setSaving(false);
     onClose();
   };
 
@@ -162,6 +197,22 @@ export default function NewBookingModal({
 
         {/* Scrollable Body */}
         <form onSubmit={(e) => handleSubmit(e, false)} className="p-4 sm:p-5 space-y-6 flex-1 overflow-y-auto">
+          {/* Seats picked on the counter seat grid — booked atomically below */}
+          {counterSeats.length > 0 && (
+            <div className="flex items-start justify-between gap-3 p-3 rounded-2xl border border-emerald-200 bg-emerald-50">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase text-emerald-700">Counter seat selection</p>
+                <p className="text-xs font-bold text-slate-800 break-words">
+                  {(counterSelection || [])
+                    .map((g) => `${(g.block || '').toUpperCase()}: ${g.seats.join(', ')}`)
+                    .join('  •  ')}
+                </p>
+              </div>
+              <span className="text-xs font-black text-emerald-700 whitespace-nowrap">
+                {counterSeats.length} seat{counterSeats.length > 1 ? 's' : ''}
+              </span>
+            </div>
+          )}
           {/* STEP 1 — TICKET & QUANTITY */}
           <div className="space-y-3">
             <StepHeading number={1} title="Ticket & Quantity" />
@@ -226,7 +277,14 @@ export default function NewBookingModal({
                   {selectedTier?.name}: {blockLabel}
                 </span>
               </div>
-              <StageDiagram highlightBlocks={tierBlocks} gradientIdPrefix="nbStage" />
+              <StageDiagram
+                highlightBlocks={tierBlocks}
+                gradientIdPrefix="nbStage"
+                labels={blockLabels}
+                channelLabels={channelLabels}
+                seatStats={seatStats}
+                disabledBlocks={disabledBlocks}
+              />
             </div>
           </div>
 
@@ -349,20 +407,22 @@ export default function NewBookingModal({
         <div className="p-4 border-t border-slate-100 bg-white sticky bottom-0 z-20 space-y-2.5">
           <button
             type="button"
+            disabled={saving}
             onClick={(e) => handleSubmit(e, true)}
-            className="w-full bg-gradient-to-r from-purple-700 to-indigo-800 hover:from-purple-800 hover:to-indigo-900 text-white font-extrabold text-xs py-3.5 rounded-2xl shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
+            className="w-full bg-gradient-to-r from-purple-700 to-indigo-800 hover:from-purple-800 hover:to-indigo-900 disabled:opacity-60 text-white font-extrabold text-xs py-3.5 rounded-2xl shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
           >
             <Printer className="w-4 h-4" />
-            <span>Book & Print Slip &bull; {formatINR(totalAmount)}</span>
+            <span>{saving ? 'Booking…' : <>Book & Print Slip &bull; {formatINR(totalAmount)}</>}</span>
             <ChevronRight className="w-3 h-3" />
           </button>
 
           <button
             type="button"
+            disabled={saving}
             onClick={(e) => handleSubmit(e as unknown as React.FormEvent, false)}
-            className="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs py-3 rounded-2xl flex items-center justify-center gap-1.5 transition-colors"
+            className="w-full bg-slate-100 hover:bg-slate-200 disabled:opacity-60 text-slate-800 font-extrabold text-xs py-3 rounded-2xl flex items-center justify-center gap-1.5 transition-colors"
           >
-            Save Booking
+            {saving ? 'Booking…' : 'Save Booking'}
           </button>
 
           <div className="flex items-center justify-between text-[10px] text-slate-400 font-semibold px-1">
