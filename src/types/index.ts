@@ -107,10 +107,13 @@ export interface Seat {
   rowId: string;
   seatNumber: number;
   seatLabel: string;
-  status: 'available' | 'booked';
+  status: 'available' | 'booked' | 'reserved' | 'locked' | 'sold';
   price?: number;
   createdAt?: string;
   bookedAt?: string | null;
+  reservedAt?: string | null;
+  reservedBy?: string | null;
+  bookingId?: string | null;
 }
 
 export type TicketStatus = 'ACTIVE' | 'ENTERED' | 'CANCELLED';

@@ -480,6 +480,16 @@ function legacySeatDocId(seatKey: string): string {
   return m ? `${m[1]}-${m[2]}` : raw;
 }
 
+// Customer-app holds: a seat "reserved" by a live checkout blocks the counter
+// only for the hold TTL — after that it becomes sellable again.
+const RESERVE_TTL_MS = 10 * 60 * 1000;
+function isFreshReserved(data: { status?: string; reservedAt?: unknown } | undefined): boolean {
+  if (String(data?.status || '').toLowerCase() !== 'reserved') return false;
+  const at = Date.parse(String(data?.reservedAt || ''));
+  if (Number.isNaN(at)) return false;
+  return Date.now() - at < RESERVE_TTL_MS;
+}
+
 export async function addBooking(
   booking: Omit<BookingItem, 'id'> & { eventId: string },
   seatGroups?: SeatGroup[]
@@ -589,9 +599,15 @@ export async function addBooking(
         // "booked" on either side means the seat is gone.
         const liveSnap = await tx.get(target.liveRef);
         const legacySnap = await tx.get(target.legacyRef);
-        const liveStatus = String((liveSnap.data() as { status?: string } | undefined)?.status || '').toLowerCase();
-        const legacyStatus = String((legacySnap.data() as { status?: string } | undefined)?.status || '').toLowerCase();
-        const blocked = liveStatus === 'booked' || legacyStatus === 'booked';
+        const liveData = liveSnap.data() as { status?: string; reservedAt?: unknown } | undefined;
+        const legacyData = legacySnap.data() as { status?: string; reservedAt?: unknown } | undefined;
+        const liveStatus = String(liveData?.status || '').toLowerCase();
+        const legacyStatus = String(legacyData?.status || '').toLowerCase();
+        const blocked =
+          liveStatus === 'booked' ||
+          legacyStatus === 'booked' ||
+          isFreshReserved(liveData) ||
+          isFreshReserved(legacyData);
 
         if (blocked) {
           taken.push(target.key);
@@ -607,18 +623,18 @@ export async function addBooking(
 
       if (taken.length > 0) {
         throw new Error(
-          `Seat ${taken.join(', ')} ${taken.length > 1 ? 'were' : 'was'} just booked by someone else.`
+          `Seat ${taken.join(', ')} ${taken.length > 1 ? 'are' : 'is'} currently held or booked by someone else.`
         );
       }
 
       tx.set(bookingRef, fullBooking);
       for (const t of ticketItems) tx.set(t.ref, t.item);
       for (const w of seatWrites) {
-        tx.set(w.ref, { status: 'booked', bookedAt: nowIso, bookingId: baseTicketNumber }, { merge: true });
+        tx.set(w.ref, { status: 'booked', bookedAt: nowIso, bookingId: baseTicketNumber, reservedBy: null, reservedAt: null }, { merge: true });
       }
     });
   } catch (err) {
-    if (err instanceof Error && /just booked by someone else/.test(err.message)) throw err;
+    if (err instanceof Error && /held or booked by someone else/.test(err.message)) throw err;
     console.error('addBooking failed:', err);
     throw new Error('Failed to save booking');
   }
@@ -891,6 +907,11 @@ export function listenSeats(
     legacyUnsubs.set(block, unsub);
   };
 
+  // Which protected status is stronger when both paths disagree
+  // (booked/sold beat a fresh customer-app hold of "reserved").
+  const statusPriority = (s: string) =>
+    s === 'booked' ? 3 : s === 'sold' ? 2 : PROTECTED.has(s) ? 1 : 0;
+
   const emit = () => {
     if (!active || liveSeats === null) return;
     const seen = new Set<string>();
@@ -901,24 +922,23 @@ export function listenSeats(
       const lg = legacyMap.get(key);
       const liveStatus = String(seat.status || 'available').toLowerCase();
       const legacyStatus = String((lg && lg.status) || 'available').toLowerCase();
-      if (PROTECTED.has(legacyStatus) && !PROTECTED.has(liveStatus)) {
+      if (statusPriority(legacyStatus) > statusPriority(liveStatus)) {
         return {
           ...seat,
-          status: 'booked',
+          status: legacyStatus as Seat['status'],
           bookedAt: (lg && (lg.bookedAt as string)) || seat.bookedAt || null,
+          reservedAt: legacyStatus === 'reserved' ? ((lg && (lg.reservedAt as string)) || null) : null,
+          reservedBy: legacyStatus === 'reserved' ? ((lg && (lg.reservedBy as string)) || null) : null,
         } as Seat;
-      }
-      if (PROTECTED.has(liveStatus) && seat.status !== 'booked') {
-        return { ...seat, status: 'booked' } as Seat;
       }
       return seat;
     });
 
-    // Legacy-only booked seats (booking never reached the live path).
+    // Legacy-only protected seats (booking/hold never reached the live path).
     legacyMap.forEach((data, key) => {
       if (seen.has(key)) return;
       const legacyStatus = String(data.status || 'available').toLowerCase();
-      if (!PROTECTED.has(legacyStatus)) return;
+      if (statusPriority(legacyStatus) === 0) return;
       const [block, docId] = key.split('/');
       const parts = docId.split('-');
       const row = (String(data.rowId || data.row || parts[0] || '')).toUpperCase();
@@ -934,9 +954,11 @@ export function listenSeats(
         row,
         seatNumber,
         seatLabel: String(data.seatLabel || `${row}${seatNumber}`),
-        status: 'booked',
+        status: legacyStatus as Seat['status'],
         price: Number(data.price) || 0,
         bookedAt: (data.bookedAt as string) || null,
+        reservedAt: legacyStatus === 'reserved' ? ((data.reservedAt as string) || null) : null,
+        reservedBy: legacyStatus === 'reserved' ? ((data.reservedBy as string) || null) : null,
       } as Seat);
     });
 
@@ -989,6 +1011,8 @@ export function listenSeats(
             price: Number(data.price) || 100,
             createdAt: data.createdAt ? (typeof data.createdAt === 'object' && data.createdAt.toDate ? data.createdAt.toDate().toISOString() : String(data.createdAt)) : '',
             bookedAt: data.bookedAt || null,
+            reservedAt: data.reservedAt || null,
+            reservedBy: data.reservedBy || null,
           } as Seat;
         });
 

@@ -74,14 +74,25 @@ export default function CounterBookingView({
     return matchesSearch && matchesStatus;
   });
 
+  // Seats the customer app has reserved while a user is selecting/paying.
+  // Fresh holds (10 min TTL) block the counter; stale ones sellable again.
+  const RESERVE_TTL_MS = 10 * 60 * 1000;
+  const isSeatReserved = (seat: Seat): boolean => {
+    if (String(seat.status || '').toLowerCase() !== 'reserved') return false;
+    const at = Date.parse(seat.reservedAt || '');
+    if (Number.isNaN(at)) return false;
+    return Date.now() - at < RESERVE_TTL_MS;
+  };
+
   // Calculate stats (all bookings for the current event, not just counter)
   const eventBookings = currentEvent
     ? bookings.filter(b => b.eventId === currentEvent.id)
     : bookings;
   const activeBookings = eventBookings.filter(b => b.status !== 'Cancelled' && b.status !== 'Refunded');
   const totalBookings = seats.filter(seat => seat.status === 'booked').length;
+  const reservedSeatCount = seats.filter(seat => isSeatReserved(seat)).length;
   const totalSeatCount = seats.length;
-  const availableSeatCount = Math.max(0, totalSeatCount - totalBookings);
+  const availableSeatCount = Math.max(0, totalSeatCount - totalBookings - reservedSeatCount);
   const totalRevenue = activeBookings.reduce((sum, b) => sum + (b.amount || 0), 0);
 
   // Venue Map Blocks - only show blocks that have seats in the database
@@ -157,9 +168,9 @@ export default function CounterBookingView({
     handleBlockSelect(blockId);
   };
 
-  // Handle seat selection
-  const handleSeatToggle = (seatId: string, isBooked: boolean) => {
-    if (isBooked) return;
+  // Handle seat selection — booked OR freshly reserved (online hold) are blocked
+  const handleSeatToggle = (seatId: string, isBlocked: boolean) => {
+    if (isBlocked) return;
     setSelectedSeats(prev =>
       prev.includes(seatId)
         ? prev.filter(s => s !== seatId)
@@ -391,6 +402,10 @@ export default function CounterBookingView({
                   <span className="w-3 h-3 rounded bg-rose-900 border border-rose-700"></span>
                   <span className="text-rose-400">Booked</span>
                 </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded bg-yellow-500/30 border border-yellow-500/80"></span>
+                  <span className="text-yellow-400">Reserved</span>
+                </span>
                 <button
                   onClick={() => {
                     setActiveBlock(null);
@@ -442,20 +457,24 @@ export default function CounterBookingView({
                                 <div className="flex gap-1.5 flex-wrap">
                                   {group.seatsByRow.get(rowId)?.map((seat) => {
                                     const isBooked = seat.status === 'booked';
+                                    const isReserved = isSeatReserved(seat);
+                                    const isBlocked = isBooked || isReserved;
                                     const isSelected = selectedSeats.includes(seat.id);
                                     return (
                                       <button
                                         key={seat.id}
-                                        onClick={() => handleSeatToggle(seat.id, isBooked)}
-                                        disabled={isBooked}
+                                        onClick={() => handleSeatToggle(seat.id, isBlocked)}
+                                        disabled={isBlocked}
                                         className={`h-7 w-7 rounded text-[10px] font-bold flex items-center justify-center transition-all ${
                                           isBooked
                                             ? 'bg-rose-950/60 border border-rose-800/80 text-rose-400 cursor-not-allowed'
+                                            : isReserved
+                                            ? 'bg-yellow-500/20 border border-yellow-500/80 text-yellow-300 cursor-not-allowed'
                                             : isSelected
                                             ? 'bg-emerald-500 text-gray-950 scale-110 shadow-md shadow-emerald-500/30'
                                             : 'bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 hover:border-gray-500'
                                         }`}
-                                        title={`${typeName} — Row ${rowId}, Seat ${seat.seatLabel || seat.seatNumber} — ${isBooked ? 'Booked (online or counter)' : isSelected ? 'Selected' : 'Available'} • ₹${seatPrice(seat)}`}
+                                        title={`${typeName} — Row ${rowId}, Seat ${seat.seatLabel || seat.seatNumber} — ${isBooked ? 'Booked (online or counter)' : isReserved ? 'Reserved — customer checkout in progress' : isSelected ? 'Selected' : 'Available'} • ₹${seatPrice(seat)}`}
                                       >
                                         {seat.seatLabel || seat.seatNumber}
                                       </button>
