@@ -8,17 +8,8 @@ import {
   Ticket, 
   CreditCard, 
   Users, 
-  Store, 
-  DoorOpen, 
-  TrendingUp, 
-  Megaphone, 
   Settings, 
-  ShieldCheck, 
   FileText, 
-  HelpCircle, 
-  MapPin, 
-  Calendar,
-  ArrowRight,
   Sparkles,
   ChevronLeft,
   History,
@@ -27,13 +18,11 @@ import {
   Globe,
   Layers
 } from 'lucide-react';
-import { NavigationTab, EventItem } from '@/types';
+import { NavigationTab } from '@/types';
 
 interface SidebarProps {
   currentTab: NavigationTab;
   onTabChange: (tab: NavigationTab) => void;
-  currentEvent: EventItem | null;
-  onViewEventDetails: (event: EventItem) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
 }
@@ -50,21 +39,13 @@ export const NAV_LABELS: Record<string, string> = {
   'online-history': 'Online History',
   payments: 'Payments',
   customers: 'Customers',
-  counters: 'Counter Management',
-  gates: 'Gate Management',
-  reports: 'Reports & Analytics',
-  marketing: 'Marketing',
   settings: 'Settings',
-  users: 'Users & Roles',
   logs: 'System Logs',
-  support: 'Support',
 };
 
 export default function Sidebar({
   currentTab,
   onTabChange,
-  currentEvent,
-  onViewEventDetails,
   collapsed,
   onToggleCollapse
 }: SidebarProps) {
@@ -80,18 +61,12 @@ export default function Sidebar({
     { id: 'online-history', label: NAV_LABELS['online-history'], Icon: Globe },
     { id: 'payments', label: NAV_LABELS.payments, Icon: CreditCard },
     { id: 'customers', label: NAV_LABELS.customers, Icon: Users },
-    { id: 'counters', label: NAV_LABELS.counters, Icon: Store },
-    { id: 'gates', label: NAV_LABELS.gates, Icon: DoorOpen },
-    { id: 'reports', label: NAV_LABELS.reports, Icon: TrendingUp },
-    { id: 'marketing', label: NAV_LABELS.marketing, Icon: Megaphone },
     { id: 'settings', label: NAV_LABELS.settings, Icon: Settings },
-    { id: 'users', label: NAV_LABELS.users, Icon: ShieldCheck },
     { id: 'logs', label: NAV_LABELS.logs, Icon: FileText },
-    { id: 'support', label: NAV_LABELS.support, Icon: HelpCircle },
   ];
 
   return (
-    <aside className={`${collapsed ? 'w-[68px]' : 'w-64'} relative bg-[#0f1430] text-slate-300 flex flex-col justify-between flex-shrink-0 z-30 select-none border-r border-indigo-950/60 min-h-screen transition-[width] duration-300 ease-in-out`}>
+    <aside className={`${collapsed ? 'w-[68px]' : 'w-64'} relative bg-[#0f1430] text-slate-300 flex flex-col flex-shrink-0 z-30 select-none border-r border-indigo-950/60 h-screen transition-[width] duration-300 ease-in-out`}>
       {/* Collapse / Expand Toggle */}
       <button
         type="button"
@@ -103,7 +78,7 @@ export default function Sidebar({
         <ChevronLeft className={`w-3.5 h-3.5 transition-transform duration-300 ${collapsed ? 'rotate-180' : ''}`} />
       </button>
 
-      <div className="flex flex-col flex-1 overflow-y-auto">
+      <div className="flex flex-col flex-1 min-h-0">
         {/* Brand Logo Header */}
         <div className={`${collapsed ? 'px-3 py-4' : 'px-5 py-5'} border-b border-indigo-900/40`}>
           <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'}`}>
@@ -162,75 +137,6 @@ export default function Sidebar({
             })}
           </div>
         </nav>
-      </div>
-
-      {/* Sidebar Bottom: Current Event Box */}
-      <div className="p-3 border-t border-indigo-950/60">
-        {collapsed ? (
-          <div className="bg-[#181e42] border border-indigo-800/50 rounded-2xl p-2 flex justify-center">
-            {currentEvent ? (
-              <button
-                type="button"
-                onClick={() => onViewEventDetails(currentEvent)}
-                title={`${currentEvent.title} - View Event Page`}
-                className="transition active:scale-95"
-              >
-                <img
-                  src={currentEvent.poster}
-                  alt={currentEvent.title}
-                  className="w-9 h-9 rounded-xl object-cover ring-1 ring-white/10"
-                />
-              </button>
-            ) : (
-              <div
-                title="No event selected"
-                className="w-9 h-9 rounded-xl bg-black/20 flex items-center justify-center"
-              >
-                <Calendar className="w-4 h-4 text-slate-500" />
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="bg-[#181e42] border border-indigo-800/50 rounded-2xl p-3 text-white space-y-2.5">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Current Event</span>
-            {currentEvent ? (
-              <>
-                <div className="flex items-center gap-2.5">
-                  <img 
-                    src={currentEvent.poster} 
-                    alt="Event Poster" 
-                    className="w-11 h-11 rounded-xl object-cover ring-1 ring-white/10 flex-shrink-0"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <h4 className="text-xs font-black text-white uppercase tracking-tight truncate leading-tight">
-                      {currentEvent.title}
-                    </h4>
-                    <p className="text-[10px] text-slate-300 font-semibold mt-0.5 flex items-center gap-1 truncate">
-                      <Calendar className="w-2.5 h-2.5 text-rose-400 flex-shrink-0" />
-                      <span>{currentEvent.date} ({currentEvent.day.slice(0, 3)})</span>
-                    </p>
-                    <p className="text-[10px] text-slate-400 truncate flex items-center gap-1">
-                      <MapPin className="w-2.5 h-2.5 text-amber-400 flex-shrink-0" />
-                      <span>{currentEvent.venue}</span>
-                    </p>
-                  </div>
-                </div>
-
-                <button 
-                  onClick={() => onViewEventDetails(currentEvent)}
-                  className="w-full py-2 bg-[#2d2282] hover:bg-[#392caa] text-white text-[11px] font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors active:scale-[0.98]"
-                >
-                  <span>View Event Page</span>
-                  <ArrowRight className="w-3 h-3" />
-                </button>
-              </>
-            ) : (
-              <div className="text-center py-2">
-                <p className="text-[10px] text-slate-500 font-semibold">No event selected</p>
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </aside>
   );

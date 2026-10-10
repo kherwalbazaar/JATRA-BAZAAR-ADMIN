@@ -209,6 +209,8 @@ export interface TransactionView {
   email: string;
   dateLabel: string;
   timeLabel: string;
+  blockLabel: string;
+  rowsLabel: string;
   timestamp: number;
   tickets: OnlineTicketRow[];
   /** Display list of the purchased ticket IDs (A1, A2, A3 — never A1-A3). */
@@ -255,6 +257,24 @@ export function buildTransactionView(
   const bookingId = bookingReference(booking);
   const ticketIds = rows.map((r) => r.displayId);
 
+  // Block + row derived from the booking's seat keys ("A1-B-6" → block A1,
+  // row B; "B-6" → row B) so the history list can show where the customer sat.
+  const seatKeys = (Array.isArray(booking.seats) ? booking.seats : [])
+    .map((s) => String(s || '').trim().toUpperCase())
+    .filter(Boolean);
+  let blockLabel = String(booking.block || '').trim().toUpperCase();
+  if (!blockLabel) {
+    const full = seatKeys.find((k) => k.split('-').length >= 3);
+    if (full) blockLabel = full.split('-')[0];
+  }
+  const rowSet = new Set<string>();
+  for (const key of seatKeys) {
+    const parts = key.split('-');
+    if (parts.length >= 3) rowSet.add(parts[1]);
+    else if (parts.length === 2) rowSet.add(parts[0]);
+  }
+  const rowsLabel = Array.from(rowSet).sort().join(', ');
+
   const searchText = [
     transactionId,
     bookingId,
@@ -264,6 +284,8 @@ export function buildTransactionView(
     booking.customerEmail || '',
     booking.eventName || '',
     booking.ticketTypeName || '',
+    blockLabel,
+    rowsLabel,
     ...ticketIds,
     ...rows.map((r) => r.ticketId),
     ...(Array.isArray(booking.seats) ? booking.seats : []),
@@ -284,6 +306,8 @@ export function buildTransactionView(
     email: booking.customerEmail || '',
     dateLabel: booking.date || fallback.date || '—',
     timeLabel: booking.time || fallback.time || '—',
+    blockLabel,
+    rowsLabel,
     timestamp: parsed ? parsed.getTime() : 0,
     tickets: rows,
     ticketIds,

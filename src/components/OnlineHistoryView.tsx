@@ -405,6 +405,22 @@ export default function OnlineHistoryView(_props: OnlineHistoryViewProps) {
                       </div>
 
                       <div className="flex flex-wrap items-center gap-x-8 gap-y-1 text-[9px] text-slate-400 font-black uppercase">
+                        {t.blockLabel && (
+                          <span>
+                            Block
+                            <span className="text-slate-800 ml-1.5 text-sm font-black">
+                              {t.blockLabel}
+                            </span>
+                          </span>
+                        )}
+                        {t.rowsLabel && (
+                          <span>
+                            Row
+                            <span className="text-slate-800 ml-1.5 text-sm font-black">
+                              {t.rowsLabel}
+                            </span>
+                          </span>
+                        )}
                         <span>
                           Qty
                         <span className="text-slate-800 ml-1.5 text-sm font-black">

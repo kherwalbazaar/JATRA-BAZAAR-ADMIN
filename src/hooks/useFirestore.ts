@@ -51,6 +51,7 @@ export interface FirestoreState {
     booking: Omit<BookingItem, 'id'> & { eventId: string },
     seatGroups?: { block: string; seats: string[] }[]
   ) => Promise<string>;
+  cancelBooking: (booking: BookingItem) => Promise<void>;
   checkInTicket: (bookingId: string) => Promise<void>;
   updateQuota: (typeId: string, delta: number) => Promise<void>;
   incrementGate: (gateId: string) => Promise<void>;
@@ -68,6 +69,12 @@ export interface FirestoreState {
     price?: number;
   }) => Promise<number>;
   deleteSeatRow: (params: { eventId: string; blockId: string; rowId: string }) => Promise<void>;
+  trimSeatRow: (params: {
+    eventId: string;
+    blockId: string;
+    rowId: string;
+    totalSeats: number;
+  }) => Promise<{ deleted: number; keptBooked: number }>;
   updateSeatRow: (params: {
     eventId: string;
     blockId: string;
@@ -654,6 +661,21 @@ export function useFirestore(): FirestoreState {
     return id;
   }, [isOfflineMode, isLiveConnected]);
 
+  const handleCancelBooking = useCallback(async (booking: BookingItem) => {
+    if (isOfflineMode || !isLiveConnected) {
+      setBookings((prev) =>
+        prev.map((b) =>
+          b.id === booking.id ? { ...b, status: 'Cancelled' as const, bookingStatus: 'Cancelled' } : b
+        )
+      );
+      setLastUpdated(new Date());
+      return;
+    }
+    isLocalActionRef.current = true;
+    await fs.cancelBookingWithRelease(booking);
+    setLastUpdated(new Date());
+  }, [isOfflineMode, isLiveConnected]);
+
   const handleCheckInTicket = useCallback(async (bookingId: string) => {
     if (isOfflineMode || !isLiveConnected) {
       setBookings((prev) =>
@@ -876,6 +898,19 @@ export function useFirestore(): FirestoreState {
     [isOfflineMode, isLiveConnected]
   );
 
+  const handleTrimSeatRow = useCallback(
+    async (params: { eventId: string; blockId: string; rowId: string; totalSeats: number }) => {
+      if (isOfflineMode || !isLiveConnected) {
+        throw new Error('Offline — connect to change seat count.');
+      }
+      isLocalActionRef.current = true;
+      const result = await fs.trimSeatRow(params);
+      setLastUpdated(new Date());
+      return result;
+    },
+    [isOfflineMode, isLiveConnected]
+  );
+
   return {
     events,
     currentEvent,
@@ -897,6 +932,7 @@ export function useFirestore(): FirestoreState {
     updateEvent: handleUpdateEvent,
     deleteEvent: handleDeleteEvent,
     addBooking: handleAddBooking,
+    cancelBooking: handleCancelBooking,
     checkInTicket: handleCheckInTicket,
     updateQuota: handleUpdateQuota,
     incrementGate: handleIncrementGate,
@@ -909,6 +945,7 @@ export function useFirestore(): FirestoreState {
     createSeatRow: handleCreateSeatRow,
     deleteSeatRow: handleDeleteSeatRow,
     updateSeatRow: handleUpdateSeatRow,
+    trimSeatRow: handleTrimSeatRow,
     seedDatabase,
     retryConnection,
   };

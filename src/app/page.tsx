@@ -10,8 +10,6 @@ import TicketTypesView from '@/components/TicketTypesView';
 import SeatCreateSection from '@/components/SeatCreateSection';
 import BookingsView from '@/components/BookingsView';
 import AdminBookings from '@/components/AdminBookings';
-import GateManagementView from '@/components/GateManagementView';
-import CounterManagementView from '@/components/CounterManagementView';
 import CounterBookingView from '@/components/CounterBookingView';
 import DiagramSettingsView from '@/components/DiagramSettingsView';
 import ReportsView from '@/components/ReportsView';
@@ -43,7 +41,6 @@ export default function App() {
     ticketTypes,
     bookings,
     gates,
-    counters,
     kpis,
     loading,
     isLiveConnected,
@@ -58,17 +55,16 @@ export default function App() {
     updateEvent,
     deleteEvent,
     addBooking,
+    cancelBooking,
     checkInTicket,
     updateQuota,
-    incrementGate,
-    decrementGate,
-    resetGate,
     addTicketType,
     updateTicketType,
     deleteTicketType,
     seats,
     createSeatRow,
     deleteSeatRow,
+    trimSeatRow,
     seedDatabase,
     retryConnection,
   } = useFirestore();
@@ -90,7 +86,8 @@ export default function App() {
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem('jatra_active_tab');
-      if (saved) setCurrentTabState(saved as NavigationTab);
+      const validTabs: NavigationTab[] = ['dashboard', 'events', 'tickets-types', 'create-seat', 'diagram', 'counter-booking', 'bookings', 'tickets', 'scanner-members', 'scan-history', 'online-history', 'payments', 'customers', 'settings', 'logs'];
+      if (saved && validTabs.includes(saved as NavigationTab)) setCurrentTabState(saved as NavigationTab);
     } catch {
       /* ignore */
     }
@@ -193,13 +190,11 @@ export default function App() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#f4f6fc] text-slate-800 antialiased font-sans">
+    <div className="flex h-screen overflow-hidden bg-[#f4f6fc] text-slate-800 antialiased font-sans">
       {/* 1. Left Sidebar Navigation */}
       <Sidebar
         currentTab={currentTab}
         onTabChange={setCurrentTab}
-        currentEvent={currentEvent}
-        onViewEventDetails={(evt) => setSelectedEventForModal(evt)}
         collapsed={sidebarCollapsed}
         onToggleCollapse={toggleSidebar}
       />
@@ -339,6 +334,7 @@ export default function App() {
                 onOpenRequest={() => setSeatFormOpen(true)}
                 onCreateSeatRow={createSeatRow}
                 onDeleteSeatRow={deleteSeatRow}
+                onTrimSeatRow={trimSeatRow}
               />
             </div>
           )}
@@ -354,6 +350,14 @@ export default function App() {
                 setNewBookingOpen(true);
               }}
               onPrintTicket={(b) => setPrintTicketTarget(b)}
+              onCancelBooking={async (b) => {
+                try {
+                  await cancelBooking(b);
+                } catch (err) {
+                  console.error('Cancel booking failed:', err);
+                  window.alert('Failed to cancel booking. Please try again.');
+                }
+              }}
             />
           )}
 
@@ -414,33 +418,7 @@ export default function App() {
             </div>
           )}
 
-          {currentTab === 'counters' && (
-            <CounterManagementView
-              currentEvent={currentEvent}
-              counters={counters}
-              onOpenNewBooking={() => setNewBookingOpen(true)}
-            />
-          )}
-
-          {currentTab === 'gates' && (
-            <GateManagementView
-              currentEvent={currentEvent}
-              gates={gates}
-              onIncrementGate={incrementGate}
-              onDecrementGate={decrementGate}
-              onResetGate={resetGate}
-            />
-          )}
-
-          {currentTab === 'reports' && (
-            <ReportsView
-              currentEvent={currentEvent}
-              kpis={kpis}
-              ticketTypes={ticketTypes}
-            />
-          )}
-
-          {(currentTab === 'settings' || currentTab === 'users' || currentTab === 'logs' || currentTab === 'support' || currentTab === 'marketing') && (
+          {(currentTab === 'settings' || currentTab === 'logs') && (
             <SettingsView currentEvent={currentEvent} />
           )}
         </div>

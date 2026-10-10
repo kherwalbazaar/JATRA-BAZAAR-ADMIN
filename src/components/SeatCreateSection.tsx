@@ -48,6 +48,13 @@ interface SeatCreateSectionProps {
     price?: number;
   }) => Promise<number>;
   onDeleteSeatRow: (params: { eventId: string; blockId: string; rowId: string }) => Promise<void>;
+  /** Reduce a row's seat count — deletes seats above the target (booked seats are kept). */
+  onTrimSeatRow: (params: {
+    eventId: string;
+    blockId: string;
+    rowId: string;
+    totalSeats: number;
+  }) => Promise<{ deleted: number; keptBooked: number }>;
 }
 
 export default function SeatCreateSection({
@@ -59,6 +66,7 @@ export default function SeatCreateSection({
   onOpenRequest,
   onCreateSeatRow,
   onDeleteSeatRow,
+  onTrimSeatRow,
 }: SeatCreateSectionProps) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ type: 'error' | 'success' | 'info'; text: string } | null>(null);
@@ -357,31 +365,14 @@ export default function SeatCreateSection({
         setMsg({ type: 'error', text: `Row ${no} (Block ${b}, Row ${r}): total seats must be a whole number of at least 1.` });
         return;
       }
-      if (n > 500) {
-        setMsg({ type: 'error', text: `Row ${no} (Block ${b}, Row ${r}): total seats cannot exceed 500.` });
-        return;
-      }
-      if (editMode) {
-        if (n < editMode.oldTotal) {
-          setMsg({ type: 'error', text: `Row ${no} (Block ${b}, Row ${r}): total seats must be at least ${editMode.oldTotal} (current count).` });
-          return;
-        }
-      } else {
-        const existing = existingSeatCount(b, r);
-        if (n <= existing) {
-          setMsg({
-            type: 'error',
-            text: `Row ${no} (Block ${b}, Row ${r}): row already has ${existing} seat${existing === 1 ? '' : 's'} — enter more than ${existing} to add seats, or remove this row.`,
-          });
-          return;
-        }
-      }
     }
 
     setBusy(true);
     setMsg(null);
     const freshRows: { block: string; row: string }[] = [];
     let totalCreated = 0;
+    let totalTrimmed = 0;
+    let totalKept = 0;
 
     try {
       if (editMode) {
@@ -396,14 +387,25 @@ export default function SeatCreateSection({
           totalSeats: n,
           price: ticketTypes[0]?.price,
         });
+        const trimmed = await onTrimSeatRow({
+          eventId: currentEventId,
+          blockId: b,
+          rowId: r,
+          totalSeats: n,
+        });
+        const parts: string[] = [];
+        if (created > 0) parts.push(`added ${created} new seat${created > 1 ? 's' : ''}`);
+        if (trimmed.deleted > 0) parts.push(`removed ${trimmed.deleted} seat${trimmed.deleted > 1 ? 's' : ''}`);
+        if (trimmed.keptBooked > 0) parts.push(`kept ${trimmed.keptBooked} booked seat${trimmed.keptBooked > 1 ? 's' : ''}`);
         setMsg({
           type: 'success',
-          text: created > 0
-            ? `Updated Block ${b}, Row ${r} — added ${created} new seat${created > 1 ? 's' : ''} (Total: ${n}).`
-            : `Block ${b}, Row ${r} already has ${n} seats — nothing to add.`,
+          text: parts.length
+            ? `Updated Block ${b}, Row ${r} — ${parts.join(', ')} (Total: ${n}).`
+            : `Block ${b}, Row ${r} already has ${n} seats — nothing to change.`,
         });
         setEditMode(null);
         setFormRows(emptyFormRows());
+        onClose();
       } else {
         for (const line of formRows) {
           const b = line.block.trim().toUpperCase();
@@ -418,27 +420,42 @@ export default function SeatCreateSection({
             price: ticketTypes[0]?.price,
           });
           totalCreated += created;
-          if (!existedBefore && created > 0) freshRows.push({ block: b, row: r });
+          if (existedBefore) {
+            const trimmed = await onTrimSeatRow({
+              eventId: currentEventId,
+              blockId: b,
+              rowId: r,
+              totalSeats: n,
+            });
+            totalTrimmed += trimmed.deleted;
+            totalKept += trimmed.keptBooked;
+          } else if (created > 0) {
+            freshRows.push({ block: b, row: r });
+          }
         }
         if (formRows.length === 1) {
           const line = formRows[0];
           const b = line.block.trim().toUpperCase();
           const r = line.row.trim().toUpperCase();
           const n = Number(line.seats);
+          const parts: string[] = [];
+          if (totalCreated > 0) parts.push(`added ${totalCreated} seat${totalCreated > 1 ? 's' : ''}`);
+          if (totalTrimmed > 0) parts.push(`removed ${totalTrimmed} seat${totalTrimmed > 1 ? 's' : ''}`);
+          if (totalKept > 0) parts.push(`kept ${totalKept} booked seat${totalKept > 1 ? 's' : ''}`);
           setMsg({
             type: 'success',
-            text:
-              totalCreated === n
-                ? `Created ${totalCreated} seats — Block ${b}, Row ${r} (1…${n}).`
-                : `Block ${b}, Row ${r}: created ${totalCreated} new seat${totalCreated === 1 ? '' : 's'}, skipped ${n - totalCreated} already existing (Total: ${n}).`,
+            text: parts.length
+              ? `Block ${b}, Row ${r} — ${parts.join(', ')} (Total: ${n}).`
+              : `Block ${b}, Row ${r} already has ${n} seats — nothing to change.`,
           });
         } else {
           setMsg({
             type: 'success',
-            text: `Created ${totalCreated} seat${totalCreated === 1 ? '' : 's'} across ${formRows.length} rows — seats that already existed were kept, never duplicated.`,
+            text: `Created ${totalCreated} seat${totalCreated === 1 ? '' : 's'} across ${formRows.length} rows${totalTrimmed > 0 ? `, removed ${totalTrimmed}` : ''} — booked seats are never deleted.`,
           });
         }
         setFormRows(emptyFormRows());
+        onClose();
       }
     } catch (err) {
       console.error('createSeatRow failed:', err);
@@ -500,7 +517,7 @@ export default function SeatCreateSection({
     setEditMode({ blockId, rowId, oldTotal: currentSeats.length });
     setOpenMenuId(null);
     setMenuPosition(null);
-    setMsg({ type: 'info', text: `Editing Block ${blockId} Row ${rowId}. Raise the seat count to add seats — existing seats are never overwritten.` });
+    setMsg({ type: 'info', text: `Editing Block ${blockId} Row ${rowId}. Raise the count to add seats or lower it to remove seats — booked seats are never removed.` });
     onOpenRequest?.();
   };
 
@@ -521,8 +538,7 @@ export default function SeatCreateSection({
   };
 
   const canSubmit =
-    !!currentEventId && !busy && formRows.length > 0 && formRows.every(formRowValid) &&
-    (!editMode || Number(formRows[0]?.seats) >= editMode.oldTotal);
+    !!currentEventId && !busy && formRows.length > 0 && formRows.every(formRowValid);
 
   return (
     <section className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden relative">
@@ -564,7 +580,7 @@ export default function SeatCreateSection({
               {editMode && (
                 <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-3 py-2 flex items-center justify-between">
                   <span className="text-[11px] font-bold text-indigo-800">
-                    Editing Block {editMode.blockId} Row {editMode.rowId} (Current: {editMode.oldTotal} seats) — existing seats stay untouched; only new seats are added.
+                    Editing Block {editMode.blockId} Row {editMode.rowId} (Current: {editMode.oldTotal} seats) — raise the count to add seats, lower it to remove seats (booked seats stay).
                   </span>
                   <button
                     type="button"
@@ -577,7 +593,6 @@ export default function SeatCreateSection({
               )}
 
               {formRows.map((line, index) => {
-                const existing = existingSeatCount(line.block, line.row);
                 return (
                   <div key={line.id} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto] gap-3 items-end">
                     <div>
@@ -730,25 +745,17 @@ export default function SeatCreateSection({
                       </label>
                       <input
                         type="number"
-                        min={editMode ? editMode.oldTotal : 1}
-                        max={500}
+                        min={1}
                         value={line.seats}
                         onChange={(e) => updateFormRow(line.id, { seats: e.target.value })}
                         disabled={busy}
-                        placeholder={editMode ? `≥ ${editMode.oldTotal}` : 'Enter total seats'}
+                        placeholder="Enter total seats"
                         aria-label={`Total seats for row ${index + 1}`}
                         ref={(el) => {
                           seatInputRefs.current.set(line.id, el);
                         }}
                         className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-500 disabled:opacity-60"
                       />
-                      {!!line.block.trim() && !!line.row.trim() && existing > 0 && (
-                        <span className="mt-1 inline-block text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">
-                          {editMode
-                            ? `${existing} exist`
-                            : `+${Math.max(0, Number(line.seats) - existing)} new · ${existing} exist`}
-                        </span>
-                      )}
                     </div>
 
                     <div className="flex items-end justify-end gap-1.5">

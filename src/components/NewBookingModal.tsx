@@ -89,17 +89,79 @@ export default function NewBookingModal({
   if (!isOpen) return null;
 
   const selectedTier = ticketTypes.find((t) => t.id === selectedTypeId) || ticketTypes[0];
-  const unitPrice = selectedTier ? selectedTier.price : 50;
+  const tierUnitPrice = selectedTier ? selectedTier.price : 50;
   const counterSeats = (counterSelection || []).flatMap((g) => g.seats);
   const effQuantity = counterSeats.length > 0 ? counterSeats.length : quantity;
-  const totalAmount = unitPrice * effQuantity;
-  const assignedGate = selectedTier?.gateAccess[0] || 'Gate C';
-  const tierBlocks: string[] = selectedTier?.blocks ?? [];
-  const blockLabel = tierBlocks.includes('All')
+
+  // Same block/row matching the counter seat grid uses — keeps the booking
+  // record aligned with the tier that actually owns the selected seats.
+  const getTicketTypeForSeat = (seat: Seat): TicketType | undefined =>
+    ticketTypes.find((tt) => {
+      const blocks = (tt.blocks || []).map((b) => b.trim().toUpperCase()).filter(Boolean);
+      const blocksMatch =
+        blocks.length === 0 || blocks.includes('ALL') || blocks.includes(seat.blockId.trim().toUpperCase());
+      const rows = (tt.rows || []).map((r) => r.trim().toUpperCase()).filter(Boolean);
+      const baseRow = seat.rowId.replace(/[0-9]/g, '').toUpperCase();
+      const rowsMatch =
+        rows.length === 0 || rows.includes('ALL') || rows.includes(seat.rowId.toUpperCase()) || rows.includes(baseRow);
+      return blocksMatch && rowsMatch;
+    });
+
+  const counterSeatObjs = seats.filter((s) => counterSeats.includes(s.id));
+  const seatType = counterSeatObjs.length > 0 ? getTicketTypeForSeat(counterSeatObjs[0]) : undefined;
+  const pricingType = seatType || selectedTier;
+
+  // Each seat sells at its OWNING TICKET TYPE's current price — the stored
+  // seat.price can be stale after a tier price change. Falls back to seat.price
+  // only when no ticket type covers the seat.
+  const seatPrice = (seat: Seat): number => {
+    const tt = getTicketTypeForSeat(seat);
+    if (tt && Number(tt.price) > 0) return Number(tt.price);
+    return Number(seat.price) || 0;
+  };
+  const seatPriceTotal = counterSeatObjs.reduce((sum, s) => sum + seatPrice(s), 0);
+  const unitPrice =
+    counterSeats.length > 0
+      ? effQuantity > 0
+        ? Math.round((seatPriceTotal / effQuantity) * 100) / 100
+        : tierUnitPrice
+      : tierUnitPrice;
+  const totalAmount = counterSeats.length > 0 ? seatPriceTotal : tierUnitPrice * effQuantity;
+  const assignedGate = pricingType?.gateAccess?.[0] || selectedTier?.gateAccess?.[0] || 'Gate C';
+  const tierBlocks: string[] = pricingType?.blocks ?? [];
+  const blockLabel = tierBlocks.includes('All') || tierBlocks.includes('ALL')
     ? 'All Blocks'
     : tierBlocks.length > 0
       ? tierBlocks.join(', ')
       : '—';
+
+  // Category-wise breakdown: seats grouped by their owning ticket type,
+  // or tier × quantity when selling without seat selection.
+  interface BreakdownRow {
+    name: string;
+    color?: string;
+    count: number;
+    price: number;
+    subtotal: number;
+  }
+  const breakdown: BreakdownRow[] = (() => {
+    if (counterSeatObjs.length > 0) {
+      const map = new Map<string, BreakdownRow>();
+      counterSeatObjs.forEach((s) => {
+        const tt = getTicketTypeForSeat(s);
+        const name = tt?.name || 'Standard';
+        const price = seatPrice(s);
+        const row = map.get(name) || { name, color: tt?.color, count: 0, price, subtotal: 0 };
+        row.count += 1;
+        row.subtotal += price;
+        map.set(name, row);
+      });
+      return Array.from(map.values());
+    }
+    return selectedTier
+      ? [{ name: selectedTier.name, color: selectedTier.color, count: effQuantity, price: tierUnitPrice, subtotal: totalAmount }]
+      : [];
+  })();
 
   const handleSubmit = async (e: React.FormEvent, shouldPrint: boolean = false) => {
     e.preventDefault();
@@ -121,8 +183,8 @@ export default function NewBookingModal({
       ticketNumber: generateBookingId(),
       customerName: customerName.trim(),
       customerPhone: customerPhone.trim() || '+91 98000 00000',
-      ticketTypeId: selectedTier.id,
-      ticketTypeName: selectedTier.name,
+      ticketTypeId: pricingType.id,
+      ticketTypeName: pricingType.name,
       quantity: effQuantity,
       unitPrice,
       amount: totalAmount,
@@ -143,7 +205,7 @@ export default function NewBookingModal({
       ...(counterSeats.length > 0
         ? {
             seats: counterSeats,
-            block: (counterSelection![0]?.block || '').toUpperCase(),
+            block: (counterSeatObjs[0]?.blockId || counterSelection![0]?.block || '').toUpperCase(),
             seatCount: counterSeats.length,
           }
         : {})
@@ -241,32 +303,54 @@ export default function NewBookingModal({
               })}
             </div>
 
-            <div className="flex items-center justify-between p-3 rounded-2xl border border-purple-100 bg-purple-50/50">
-              <div>
-                <p className="text-xs font-black text-slate-900 tracking-wide">{selectedTier?.name}</p>
-                <p className="text-[10px] font-semibold text-slate-500">
-                  ₹{unitPrice} per ticket &bull; {assignedGate}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                  className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-600 font-black flex items-center justify-center active:scale-95"
-                  aria-label="Decrease quantity"
-                >
-                  <Minus className="w-3.5 h-3.5" />
-                </button>
-                <span className="w-6 text-center text-sm font-black text-slate-900">{quantity}</span>
-                <button
-                  type="button"
-                  onClick={() => setQuantity((q) => q + 1)}
-                  className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-600 font-black flex items-center justify-center active:scale-95"
-                  aria-label="Increase quantity"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-              </div>
+            <div className="p-3 rounded-2xl border border-purple-100 bg-purple-50/50">
+              {counterSeats.length > 0 ? (
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-black text-slate-900 tracking-wide">
+                      {counterSeats.length} seat{counterSeats.length !== 1 ? 's' : ''} selected
+                      {seatType ? ` • ${seatType.name}` : ''}
+                    </p>
+                    <p className="text-[10px] font-semibold text-slate-500 break-words">
+                      {counterSeatObjs.map((s) => `${s.blockId}-${s.rowId}-${s.seatNumber}`).join(', ')}
+                    </p>
+                    <p className="text-[10px] font-semibold text-slate-500">
+                      Total {formatINR(seatPriceTotal)} &bull; {assignedGate}
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-black text-purple-700 bg-white border border-purple-200 px-2 py-1 rounded-lg shrink-0">
+                    Seats priced
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-black text-slate-900 tracking-wide">{selectedTier?.name}</p>
+                    <p className="text-[10px] font-semibold text-slate-500">
+                      ₹{unitPrice} per ticket &bull; {assignedGate}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                      className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-600 font-black flex items-center justify-center active:scale-95"
+                      aria-label="Decrease quantity"
+                    >
+                      <Minus className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="w-6 text-center text-sm font-black text-slate-900">{quantity}</span>
+                    <button
+                      type="button"
+                      onClick={() => setQuantity((q) => q + 1)}
+                      className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-600 font-black flex items-center justify-center active:scale-95"
+                      aria-label="Increase quantity"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Stage Layout Diagram */}
@@ -374,8 +458,20 @@ export default function NewBookingModal({
 
             <div className="bg-slate-50 border border-slate-200/90 rounded-2xl p-4 space-y-2.5">
               <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between text-slate-600 font-medium">
-                  <span>Ticket Amount ({quantity} ticket{quantity !== 1 ? 's' : ''})</span>
+                {breakdown.map((row) => (
+                  <div key={row.name} className="flex items-center justify-between text-slate-600 font-medium">
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ backgroundColor: row.color || '#4f39f6' }}
+                      />
+                      {row.name} &times; {row.count} @ ₹{row.price.toFixed(2)}
+                    </span>
+                    <span className="font-bold text-slate-900">₹{row.subtotal.toFixed(2)}</span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between text-slate-600 font-medium border-t border-slate-200 pt-2">
+                  <span>Ticket Amount ({effQuantity} ticket{effQuantity !== 1 ? 's' : ''})</span>
                   <span className="font-bold text-slate-900">₹{totalAmount.toFixed(2)}</span>
                 </div>
                 <div className="flex items-center justify-between text-slate-600 font-medium">

@@ -10,7 +10,8 @@ import {
   MapPin, 
   Clock, 
   Ticket, 
-  Sparkles 
+  Sparkles,
+  MessageCircle
 } from 'lucide-react';
 import { BookingItem, EventItem } from '@/types';
 import { formatINR } from '@/lib/utils';
@@ -30,6 +31,29 @@ export default function PrintTicketModal({
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleWhatsAppShare = () => {
+    const digits = booking.customerPhone.replace(/\D/g, '');
+    const waPhone = digits.length === 10 ? `91${digits}` : digits.length > 10 ? digits : '';
+    const seatLine = booking.seats?.length
+      ? `Seats: ${booking.block ? `${booking.block}: ` : ''}${booking.seats.join(', ')}\n`
+      : '';
+    const lines = [
+      `*${currentEvent?.title ?? 'Event'}* - Ticket Confirmed!`,
+      `Booking ID: ${booking.ticketNumber}`,
+      `Name: ${booking.customerName}`,
+      `Class: ${booking.ticketTypeName} | Qty: ${booking.quantity}`,
+      seatLine.trimEnd(),
+      `Amount: ${formatINR(booking.amount)} (${booking.paymentMethod})`,
+      `Gate: ${booking.assignedGate}`,
+      `${currentEvent?.date ?? ''} ${currentEvent?.time ? `| ${currentEvent.time}` : ''}${currentEvent?.venue ? ` | ${currentEvent.venue}` : ''}`
+    ].filter(Boolean);
+    const text = encodeURIComponent(lines.join('\n'));
+    const url = waPhone
+      ? `https://wa.me/${waPhone}?text=${text}`
+      : `https://wa.me/?text=${text}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
   };
 
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
@@ -172,9 +196,16 @@ export default function PrintTicketModal({
         <div className="p-4 bg-white border-t border-slate-100 flex items-center gap-2">
           <button
             onClick={onClose}
-            className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
+            className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
           >
             Close
+          </button>
+          <button
+            onClick={handleWhatsAppShare}
+            className="flex-1 py-2.5 bg-[#25D366] hover:bg-[#1ebe5b] text-white text-xs font-black rounded-xl shadow-md shadow-emerald-600/30 flex items-center justify-center gap-1.5 transition-all"
+          >
+            <MessageCircle className="w-4 h-4" />
+            <span>WhatsApp</span>
           </button>
           <button
             onClick={handlePrint}

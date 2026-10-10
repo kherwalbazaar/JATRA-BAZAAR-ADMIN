@@ -12,14 +12,8 @@ export type NavigationTab =
   | 'online-history'
   | 'payments'
   | 'customers'
-  | 'counters'
-  | 'gates'
-  | 'reports'
-  | 'marketing'
   | 'settings'
-  | 'users'
-  | 'logs'
-  | 'support';
+  | 'logs';
 
 export interface EventActor {
   name: string;

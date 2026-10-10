@@ -18,7 +18,6 @@ import {
   PlusCircle, 
   UserPlus, 
   ListChecks, 
-  FileSpreadsheet, 
   ShieldAlert,
   ArrowRight,
   ChevronDown,
@@ -467,13 +466,10 @@ export default function DashboardView({
         <div className="lg:col-span-5 bg-[#eef1f8] rounded-2xl p-5 border border-slate-200/70 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Gate Entry Summary</h3>
-            <button 
-              onClick={() => onNavigateTab('gates')}
-              className="bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-bold py-1 px-2.5 rounded-lg flex items-center gap-1 transition-colors"
-            >
+            <span className="bg-slate-50 border border-slate-200 text-slate-700 text-[11px] font-bold py-1 px-2.5 rounded-lg flex items-center gap-1">
               <span>Today</span>
               <ChevronDown className="w-3 h-3 text-slate-400" />
-            </button>
+            </span>
           </div>
 
           {/* 4 Gates Grid Cards */}
@@ -624,28 +620,6 @@ export default function DashboardView({
               <QrCode className="w-4 h-4" />
             </div>
             <span className="text-xs font-bold text-slate-800 leading-tight">Scan Ticket</span>
-          </button>
-
-          {/* 6. Sales Report */}
-          <button 
-            onClick={() => onNavigateTab('reports')}
-            className="bg-[#eef1f8] hover:bg-[#e4e9f4] border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left"
-          >
-            <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center text-sm flex-shrink-0">
-              <FileSpreadsheet className="w-4 h-4" />
-            </div>
-            <span className="text-xs font-bold text-slate-800 leading-tight">Sales Report</span>
-          </button>
-
-          {/* 7. Gate Entry Log */}
-          <button 
-            onClick={() => onNavigateTab('gates')}
-            className="bg-[#eef1f8] hover:bg-[#e4e9f4] border border-slate-200/80 rounded-2xl p-3 flex items-center gap-2.5 shadow-xs transition-all active:scale-95 text-left"
-          >
-            <div className="w-8 h-8 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center text-sm flex-shrink-0">
-              <DoorOpen className="w-4 h-4" />
-            </div>
-            <span className="text-xs font-bold text-slate-800 leading-tight">Gate Entry Log</span>
           </button>
 
         </div>

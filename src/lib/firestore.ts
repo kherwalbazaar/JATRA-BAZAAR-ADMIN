@@ -18,6 +18,7 @@ import {
   serverTimestamp,
   Unsubscribe,
   DocumentSnapshot,
+  QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { db, FIRESTORE_COLLECTIONS } from './firebase';
 import { BlockCategory } from '@/lib/blockCategories';
@@ -365,46 +366,77 @@ export function listenBookings(
   const targetId = String(showIdOrEventId || '').trim();
   const bookingsCol = colRef(C.BOOKINGS);
 
-  // Active Firestore onSnapshot listener on bookings filtered by showId and sorted by createdAt desc
-  const q = query(
-    bookingsCol,
-    where('showId', '==', targetId),
-    orderBy('createdAt', 'desc')
+  // Listen on BOTH keys and merge by doc id — customer-app bookings written
+  // by older versions carry only `eventId`, admin/counter ones carry
+  // `showId`. An empty result is not an error, so a query-only fallback
+  // would never fire; two parallel listeners cover both shapes.
+  const byShow = new Map<string, BookingItem>();
+  const byEvent = new Map<string, BookingItem>();
+  let showDone = false;
+  let eventDone = false;
+  let showError: Error | null = null;
+  let eventError: Error | null = null;
+  let disposed = false;
+
+  const emit = () => {
+    if (disposed || (!showDone && !eventDone)) return;
+    const merged = new Map<string, BookingItem>();
+    byEvent.forEach((b, id) => merged.set(id, b));
+    byShow.forEach((b, id) => merged.set(id, b));
+    const bookings = Array.from(merged.values());
+    bookings.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return timeB - timeA;
+    });
+    callback(bookings);
+  };
+
+  const handle = (
+    which: 'show' | 'event',
+    snap: { docs: { id: string; data: () => Record<string, unknown> }[] }
+  ) => {
+    if (disposed) return;
+    const map = which === 'show' ? byShow : byEvent;
+    map.clear();
+    snap.docs.forEach((d) => map.set(d.id, { id: d.id, ...d.data() } as BookingItem));
+    if (which === 'show') showDone = true;
+    else eventDone = true;
+    emit();
+  };
+
+  const fail = (which: 'show' | 'event', err: Error) => {
+    if (disposed) return;
+    if (which === 'show') {
+      showError = err;
+      showDone = true;
+    } else {
+      eventError = err;
+      eventDone = true;
+    }
+    if (byShow.size === 0 && byEvent.size === 0 && showError && eventError) {
+      console.error('listenBookings error:', showError);
+      onError?.(showError);
+    }
+    emit();
+  };
+
+  const unsubShow = onSnapshot(
+    query(bookingsCol, where('showId', '==', targetId), orderBy('createdAt', 'desc')),
+    (snap) => handle('show', snap),
+    (err) => fail('show', err)
+  );
+  const unsubEvent = onSnapshot(
+    query(bookingsCol, where('eventId', '==', targetId)),
+    (snap) => handle('event', snap),
+    (err) => fail('event', err)
   );
 
-  return onSnapshot(
-    q,
-    (snap) => {
-      const bookings = snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingItem));
-      bookings.sort((a, b) => {
-        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return timeB - timeA;
-      });
-      callback(bookings);
-    },
-    (err) => {
-      console.warn('listenBookings primary query error, using eventId fallback:', err);
-      // Fallback query in case documents carry legacy eventId
-      const fallbackQ = query(bookingsCol, where('eventId', '==', targetId));
-      return onSnapshot(
-        fallbackQ,
-        (snap) => {
-          const bookings = snap.docs.map((d) => ({ id: d.id, ...d.data() } as BookingItem));
-          bookings.sort((a, b) => {
-            const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-            const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-            return timeB - timeA;
-          });
-          callback(bookings);
-        },
-        (fallbackErr) => {
-          console.error('listenBookings error:', fallbackErr);
-          onError?.(fallbackErr);
-        }
-      );
-    }
-  );
+  return () => {
+    disposed = true;
+    unsubShow();
+    unsubEvent();
+  };
 }
 
 // Streams bookings across every event — used by the Online History section.
@@ -439,7 +471,9 @@ export type SeatGroup = { block: string; seats: string[] };
 function legacySeatDocId(seatKey: string): string {
   const raw = String(seatKey || '').trim().toUpperCase();
   if (raw.includes('-')) {
-    const [row, num] = raw.split('-');
+    const parts = raw.split('-');
+    // Full doc ids ("A1-E-1") carry the block prefix — drop it.
+    const [row, num] = parts.length >= 3 ? parts.slice(-2) : parts;
     return `${row}-${num}`;
   }
   const m = raw.match(/^([A-Z]+)(\d+)$/);
@@ -550,22 +584,24 @@ export async function addBooking(
       const taken: string[] = [];
 
       for (const target of targets) {
-        let snap = await tx.get(target.liveRef);
-        let ref = target.liveRef;
-        if (!snap.exists()) {
-          const legacySnap = await tx.get(target.legacyRef);
-          if (legacySnap.exists()) {
-            snap = legacySnap;
-            ref = target.legacyRef;
-          }
+        // Check BOTH paths: online bookings written by the customer app can
+        // land only in the legacy path (or only in the live path), so a
+        // "booked" on either side means the seat is gone.
+        const liveSnap = await tx.get(target.liveRef);
+        const legacySnap = await tx.get(target.legacyRef);
+        const liveStatus = String((liveSnap.data() as { status?: string } | undefined)?.status || '').toLowerCase();
+        const legacyStatus = String((legacySnap.data() as { status?: string } | undefined)?.status || '').toLowerCase();
+        const blocked = liveStatus === 'booked' || legacyStatus === 'booked';
+
+        if (blocked) {
+          taken.push(target.key);
+          continue;
         }
-        if (snap.exists()) {
-          const status = String((snap.data() as { status?: string }).status || '').toLowerCase();
-          if (status === 'booked') {
-            taken.push(target.key);
-          } else {
-            seatWrites.push({ ref });
-          }
+
+        if (liveSnap.exists()) seatWrites.push({ ref: target.liveRef });
+        if (legacySnap.exists()) seatWrites.push({ ref: target.legacyRef });
+        if (!liveSnap.exists() && !legacySnap.exists()) {
+          seatWrites.push({ ref: target.liveRef });
         }
       }
 
@@ -596,6 +632,80 @@ export async function updateBooking(id: string, data: Partial<BookingItem>): Pro
 
 export async function checkInBooking(bookingId: string): Promise<void> {
   await updateDoc(docRef(C.BOOKINGS, bookingId), { status: 'Checked-in' });
+}
+
+/**
+ * Cancel a booking and release its seats back to "available" on BOTH seat
+ * paths, so the seats instantly become sellable again online and at counter.
+ * Also cancels the per-ticket docs so QR scans reject them.
+ */
+export async function cancelBookingWithRelease(booking: {
+  id: string;
+  ticketNumber?: string;
+  eventId?: string;
+  showId?: string;
+  block?: string;
+  seats?: string[];
+}): Promise<void> {
+  const nowIso = new Date().toISOString();
+
+  // 1. Mark the booking cancelled (both status fields — online app reads both).
+  await updateBooking(booking.id, {
+    status: 'Cancelled',
+    bookingStatus: 'Cancelled',
+  } as Partial<BookingItem>);
+
+  // 2. Cancel every ticket issued for this booking.
+  try {
+    if (booking.ticketNumber) {
+      const tickets = await getTicketsByBookingId(booking.ticketNumber);
+      for (const t of tickets) {
+        await updateDoc(docRef(C.TICKETS, t.id), { status: 'CANCELLED', cancelledAt: nowIso });
+      }
+    }
+  } catch (err) {
+    console.warn('cancelBookingWithRelease tickets:', err);
+  }
+
+  // 3. Release the claimed seats on both paths.
+  const showId = String(booking.showId || booking.eventId || '').trim();
+  const blockHint = String(booking.block || '').trim().toUpperCase();
+  const seatKeys = (Array.isArray(booking.seats) ? booking.seats : [])
+    .map((s) => String(s || '').trim().toUpperCase())
+    .filter(Boolean);
+  if (!showId || seatKeys.length === 0) return;
+
+  for (const key of seatKeys) {
+    const parts = key.split('-');
+    let block = '';
+    let row = '';
+    let num = '';
+    if (parts.length >= 3) {
+      [block, row, num] = parts;
+    } else if (parts.length === 2 && blockHint) {
+      block = blockHint;
+      [row, num] = parts;
+    }
+    if (!block || !row || !num) continue;
+
+    const liveRef = doc(collection(db, 'shows', showId, 'seats'), `${block}-${row}-${num}`);
+    const legacyRef = doc(collection(db, C.SEATS, showId, block), `${row}-${num}`);
+
+    for (const ref of [liveRef, legacyRef]) {
+      try {
+        const snap = await getDoc(ref);
+        if (!snap.exists()) continue;
+        const data = snap.data() as { status?: string; bookingId?: string };
+        const st = String(data.status || '').toLowerCase();
+        if (st !== 'booked' && st !== 'reserved' && st !== 'sold') continue;
+        // Never free a seat claimed by a different booking.
+        if (data.bookingId && booking.ticketNumber && data.bookingId !== booking.ticketNumber) continue;
+        await updateDoc(ref, { status: 'available', bookedAt: null, bookingId: null });
+      } catch (err) {
+        console.warn('cancelBookingWithRelease seat release failed:', err);
+      }
+    }
+  }
 }
 
 // ─── Gates ────────────────────────────────────────────────────────
@@ -740,10 +850,118 @@ export function listenSeats(
     return () => {};
   }
 
+  // Statuses that always win over "available" no matter which path (live
+  // shows/{id}/seats or legacy seats/{id}/{block}) recorded them — online
+  // bookings written by older app versions land only in the legacy path.
+  const PROTECTED = new Set(['booked', 'reserved', 'sold']);
+
+  let active = true;
+  let liveSeats: Seat[] | null = null;
+  let fallbackUnsub: Unsubscribe | null = null;
+
+  const legacyMap = new Map<string, Record<string, unknown>>();
+  const legacyUnsubs = new Map<string, Unsubscribe>();
+
+  const legacyDocKey = (block: string, docId: string) => {
+    const id = docId.trim().toUpperCase();
+    const prefix = `${block}-`;
+    return id.startsWith(prefix) ? id.slice(prefix.length) : id;
+  };
+
+  const ensureLegacyBlock = (blockRaw: string) => {
+    const block = String(blockRaw || '').trim().toUpperCase();
+    if (!block || legacyUnsubs.has(block) || !active) return;
+    const unsub = onSnapshot(
+      collection(db, C.SEATS, showId, block),
+      (snap) => {
+        if (!active) return;
+        const prefix = `${block}/`;
+        for (const key of Array.from(legacyMap.keys())) {
+          if (key.startsWith(prefix)) legacyMap.delete(key);
+        }
+        snap.docs.forEach((d) => {
+          legacyMap.set(prefix + legacyDocKey(block, d.id), d.data() as Record<string, unknown>);
+        });
+        emit();
+      },
+      (err) => {
+        console.warn(`listenSeats legacy overlay block ${block} error:`, err);
+      }
+    );
+    legacyUnsubs.set(block, unsub);
+  };
+
+  const emit = () => {
+    if (!active || liveSeats === null) return;
+    const seen = new Set<string>();
+    const merged: Seat[] = liveSeats.map((seat) => {
+      const block = String(seat.blockId || '').trim().toUpperCase();
+      const key = `${block}/${legacyDocKey(block, seat.id)}`;
+      seen.add(key);
+      const lg = legacyMap.get(key);
+      const liveStatus = String(seat.status || 'available').toLowerCase();
+      const legacyStatus = String((lg && lg.status) || 'available').toLowerCase();
+      if (PROTECTED.has(legacyStatus) && !PROTECTED.has(liveStatus)) {
+        return {
+          ...seat,
+          status: 'booked',
+          bookedAt: (lg && (lg.bookedAt as string)) || seat.bookedAt || null,
+        } as Seat;
+      }
+      if (PROTECTED.has(liveStatus) && seat.status !== 'booked') {
+        return { ...seat, status: 'booked' } as Seat;
+      }
+      return seat;
+    });
+
+    // Legacy-only booked seats (booking never reached the live path).
+    legacyMap.forEach((data, key) => {
+      if (seen.has(key)) return;
+      const legacyStatus = String(data.status || 'available').toLowerCase();
+      if (!PROTECTED.has(legacyStatus)) return;
+      const [block, docId] = key.split('/');
+      const parts = docId.split('-');
+      const row = (String(data.rowId || data.row || parts[0] || '')).toUpperCase();
+      const seatNumber = Number(data.seatNumber) || Number(parts[1]) || 0;
+      merged.push({
+        id: `${block}-${row}-${seatNumber}`,
+        seatId: `${block}-${row}-${seatNumber}`,
+        eventId: showId,
+        showId,
+        blockId: String(data.blockId || data.block || block),
+        block: String(data.blockId || data.block || block),
+        rowId: row,
+        row,
+        seatNumber,
+        seatLabel: String(data.seatLabel || `${row}${seatNumber}`),
+        status: 'booked',
+        price: Number(data.price) || 0,
+        bookedAt: (data.bookedAt as string) || null,
+      } as Seat);
+    });
+
+    merged.sort((a, b) => {
+      if (a.blockId !== b.blockId) return a.blockId.localeCompare(b.blockId);
+      if (a.rowId !== b.rowId) return a.rowId.localeCompare(b.rowId);
+      return a.seatNumber - b.seatNumber;
+    });
+    callback(merged);
+  };
+
+  // SeatMeta blocks are also watched so legacy bookings inside blocks that
+  // have no live seats yet still surface.
+  const metaUnsub = onSnapshot(
+    doc(db, C.SEAT_META, showId),
+    (snap) => {
+      if (!active || !snap.exists()) return;
+      const blocks: string[] = (snap.data() as { blocks?: string[] }).blocks || [];
+      blocks.forEach(ensureLegacyBlock);
+    },
+    () => {}
+  );
+
   // Primary: Live onSnapshot listener on shows/{showId}/seats
   const seatsRef = collection(db, 'shows', showId, 'seats');
-  let fallbackUnsub: Unsubscribe | null = null;
-  let active = true;
 
   const unsub = onSnapshot(
     seatsRef,
@@ -774,15 +992,12 @@ export function listenSeats(
           } as Seat;
         });
 
-        seats.sort((a, b) => {
-          if (a.blockId !== b.blockId) return a.blockId.localeCompare(b.blockId);
-          if (a.rowId !== b.rowId) return a.rowId.localeCompare(b.rowId);
-          return a.seatNumber - b.seatNumber;
-        });
-
-        callback(seats);
+        liveSeats = seats;
+        seats.forEach((s) => ensureLegacyBlock(s.blockId));
+        emit();
       } else {
         // Fallback to legacy path if shows subcollection has no docs
+        liveSeats = null;
         if (!fallbackUnsub) {
           fallbackUnsub = listenLegacySeats(
             showId,
@@ -798,6 +1013,7 @@ export function listenSeats(
     },
     (err) => {
       console.warn('listenSeats shows/{showId}/seats error, using fallback:', err);
+      liveSeats = null;
       if (!fallbackUnsub) {
         fallbackUnsub = listenLegacySeats(showId, callback, onError);
       }
@@ -807,6 +1023,9 @@ export function listenSeats(
   return () => {
     active = false;
     unsub();
+    metaUnsub();
+    legacyUnsubs.forEach((u) => u());
+    legacyUnsubs.clear();
     if (fallbackUnsub) fallbackUnsub();
   };
 }
@@ -910,6 +1129,92 @@ export async function createSeatRow(params: {
   }
 
   return missing.length;
+}
+
+/**
+ * Reduce a row's seat count to `totalSeats`: deletes seats numbered above the
+ * target (both paths). Booked/reserved seats are NEVER deleted — they are kept
+ * so live sales are not destroyed.
+ * Returns { deleted, keptBooked }.
+ */
+export async function trimSeatRow(params: {
+  showId?: string;
+  eventId?: string;
+  blockId: string;
+  rowId: string;
+  totalSeats: number;
+}): Promise<{ deleted: number; keptBooked: number }> {
+  const showId = params.showId || params.eventId || '';
+  if (!showId) throw new Error('showId or eventId is required to trim seats.');
+  const block = params.blockId.trim().toUpperCase();
+  const row = params.rowId.trim().toUpperCase();
+  const target = Math.max(1, Math.floor(params.totalSeats));
+
+  let deleted = 0;
+  let keptBooked = 0;
+  const CHUNK_SIZE = 450;
+  const PROTECTED = new Set(['booked', 'reserved', 'sold']);
+
+  // Live path: shows/{showId}/seats
+  try {
+    const liveSnap = await getDocs(
+      query(
+        collection(db, 'shows', showId, 'seats'),
+        where('blockId', '==', block),
+        where('rowId', '==', row)
+      )
+    );
+    const toDelete: QueryDocumentSnapshot[] = [];
+    liveSnap.docs.forEach((d) => {
+      const data = d.data() as { seatNumber?: number; status?: string };
+      const n = Number(data.seatNumber);
+      if (!Number.isFinite(n) || n <= target) return;
+      if (PROTECTED.has(String(data.status || '').toLowerCase())) {
+        keptBooked++;
+        return;
+      }
+      toDelete.push(d);
+    });
+    for (let i = 0; i < toDelete.length; i += CHUNK_SIZE) {
+      const batch = writeBatch(db);
+      toDelete.slice(i, i + CHUNK_SIZE).forEach((d) => {
+        batch.delete(d.ref);
+        deleted++;
+      });
+      await batch.commit();
+    }
+  } catch (err) {
+    console.warn('trimSeatRow live path failed:', err);
+  }
+
+  // Legacy path: seats/{showId}/{block}/{row}-{n}
+  try {
+    const legacySnap = await getDocs(collection(db, C.SEATS, showId, block));
+    const toDelete: QueryDocumentSnapshot[] = [];
+    legacySnap.docs.forEach((d) => {
+      const data = d.data() as { seatNumber?: number; rowId?: string; status?: string };
+      const docRow = String(data.rowId || d.id.split('-')[0] || '').toUpperCase();
+      if (docRow !== row) return;
+      const n = Number(data.seatNumber) || Number(d.id.split('-')[1]);
+      if (!Number.isFinite(n) || n <= target) return;
+      if (PROTECTED.has(String(data.status || '').toLowerCase())) {
+        keptBooked++;
+        return;
+      }
+      toDelete.push(d);
+    });
+    for (let i = 0; i < toDelete.length; i += CHUNK_SIZE) {
+      const batch = writeBatch(db);
+      toDelete.slice(i, i + CHUNK_SIZE).forEach((d) => {
+        batch.delete(d.ref);
+      });
+      await batch.commit();
+    }
+  } catch (err) {
+    console.warn('trimSeatRow legacy path failed:', err);
+  }
+
+  return { deleted, keptBooked };
 }
 
 /**
