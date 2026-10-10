@@ -208,7 +208,7 @@ export default function OnlineHistoryView(_props: OnlineHistoryViewProps) {
         <div>
           <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
             <Globe className="w-5 h-5 text-indigo-600" />
-            Online History
+            Online Bookings
           </h2>
           <p className="text-xs text-slate-400 font-semibold mt-0.5 max-w-2xl">
             View and manage all online ticket bookings, payments, extra charges, and profit.

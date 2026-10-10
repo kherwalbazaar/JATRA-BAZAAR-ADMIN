@@ -33,7 +33,35 @@ interface AdminBookingsProps {
   onOpenNewBooking?: () => void;
   onSelectBooking?: (booking: BookingItem) => void;
   onPrintTicket?: (booking: BookingItem) => void;
+  /** Pre-filtered view used by the Booking Management sidebar group. */
+  preset?: 'all' | 'active' | 'cancelled' | 'cancellation-history' | 'refunds';
 }
+
+const PRESET_META: Record<
+  NonNullable<AdminBookingsProps['preset']>,
+  { title: string; subtitle: string }
+> = {
+  all: {
+    title: 'Bookings & Transactions',
+    subtitle: 'Real-time reactive stream (`onSnapshot`) • Instant synchronization between customer bookings and admin dashboard.',
+  },
+  active: {
+    title: 'Active Tickets',
+    subtitle: 'Confirmed & checked-in bookings — tickets that are still valid for entry.',
+  },
+  cancelled: {
+    title: 'Cancelled Tickets',
+    subtitle: 'Cancelled bookings — their seats are released back to inventory for resale.',
+  },
+  'cancellation-history': {
+    title: 'Cancellation History',
+    subtitle: 'Full history of cancelled and refunded bookings with amounts and channels.',
+  },
+  refunds: {
+    title: 'Refund Management',
+    subtitle: 'Refunded bookings — payment returned to the customer.',
+  },
+};
 
 export default function AdminBookings({
   currentShowId,
@@ -41,14 +69,18 @@ export default function AdminBookings({
   onOpenNewBooking,
   onSelectBooking,
   onPrintTicket,
+  preset = 'all',
 }: AdminBookingsProps) {
+  const presetMeta = PRESET_META[preset] || PRESET_META.all;
   const [bookings, setBookings] = useState<BookingItem[]>(initialBookings);
   const [loading, setLoading] = useState(!initialBookings.length);
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sourceFilter, setSourceFilter] = useState<'All' | 'Online' | 'Counter'>('All');
-  const [statusFilter, setStatusFilter] = useState<'All' | 'Confirmed' | 'Checked-in'>('All');
+  const [statusFilter, setStatusFilter] = useState<
+    'All' | 'Confirmed' | 'Checked-in' | 'Cancelled' | 'Refunded'
+  >('All');
   const [newlyAddedIds, setNewlyAddedIds] = useState<Set<string>>(new Set());
   const isInitialLoadRef = useRef(true);
   const previousIdsRef = useRef<Set<string>>(new Set());
@@ -218,8 +250,24 @@ export default function AdminBookings({
     };
   }, [currentShowId]);
 
-  // Filtering
+  // Filtering (preset scopes the table to the Booking Management section)
+  const matchesPreset = (b: BookingItem) => {
+    switch (preset) {
+      case 'active':
+        return b.status === 'Confirmed' || b.status === 'Checked-in';
+      case 'cancelled':
+        return b.status === 'Cancelled';
+      case 'cancellation-history':
+        return b.status === 'Cancelled' || b.status === 'Refunded';
+      case 'refunds':
+        return b.status === 'Refunded';
+      default:
+        return true;
+    }
+  };
+
   const filteredBookings = bookings.filter((b) => {
+    if (!matchesPreset(b)) return false;
     const matchesSearch =
       (b.customerName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (b.ticketNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -264,7 +312,7 @@ export default function AdminBookings({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
-            <h2 className="text-xl font-black text-slate-900">Bookings & Transactions</h2>
+            <h2 className="text-xl font-black text-slate-900">{presetMeta.title}</h2>
             {isLiveConnected ? (
               <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-700 border border-emerald-200">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -286,7 +334,7 @@ export default function AdminBookings({
             </span>
           </div>
           <p className="text-xs text-slate-400 font-semibold mt-0.5">
-            Real-time reactive stream (`onSnapshot`) • Instant synchronization between customer bookings and admin dashboard.
+            {presetMeta.subtitle}
           </p>
         </div>
 
@@ -390,6 +438,8 @@ export default function AdminBookings({
               <option value="All">All Statuses</option>
               <option value="Confirmed">Confirmed</option>
               <option value="Checked-in">Checked-in</option>
+              <option value="Cancelled">Cancelled</option>
+              <option value="Refunded">Refunded</option>
             </select>
           </div>
         </div>

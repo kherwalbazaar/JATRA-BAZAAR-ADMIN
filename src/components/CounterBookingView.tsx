@@ -136,6 +136,16 @@ export default function CounterBookingView({
   };
 
   // Group a block's seats by ticket type — each group keeps rows sorted.
+  // Ticket-type group display order — always serial in every block:
+  // Star → VIP → Special → 3rd → Standing (unknown types after, untyped last).
+  const TYPE_ORDER = ['star', 'vip', 'special', '3rd', 'standing'];
+  const typeRank = (type?: TicketType) => {
+    if (!type) return TYPE_ORDER.length + 1;
+    const n = String(type.name || '').trim().toLowerCase();
+    const idx = TYPE_ORDER.findIndex((o) => n.includes(o));
+    return idx === -1 ? (n ? TYPE_ORDER.length : TYPE_ORDER.length + 1) : idx;
+  };
+
   const getBlockSeatsByTicketType = (blockId: string) => {
     const blockSeats = seats.filter(seat => seat.blockId === blockId);
     const groups = new Map<string, { type?: TicketType; seatsByRow: Map<string, Seat[]> }>();
@@ -150,13 +160,21 @@ export default function CounterBookingView({
     groups.forEach(g => {
       g.seatsByRow.forEach(list => list.sort((a, b) => a.seatNumber - b.seatNumber));
     });
-    return groups;
+    return Array.from(groups.entries()).sort(([, a], [, b]) => {
+      const ra = typeRank(a.type);
+      const rb = typeRank(b.type);
+      if (ra !== rb) return ra - rb;
+      return String(a.type?.name || '').localeCompare(String(b.type?.name || ''));
+    });
   };
 
-  // Handle block selection
+  // Block tabs / diagram clicks jump to that block's section
+  // (all blocks stay visible in one scrollable list).
   const handleBlockSelect = (blockId: string) => {
     setActiveBlock(blockId);
-    setSelectedSeats([]);
+    requestAnimationFrame(() => {
+      document.getElementById(`counter-block-${blockId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   };
 
   // Map diagram block labels to blocks that actually have seats (C1 → C, etc.)
@@ -364,14 +382,14 @@ export default function CounterBookingView({
                 title={blockLabels[blockId] || `Block ${blockId}`}
                 className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border text-[11px] font-black whitespace-nowrap transition-colors ${
                   isActive
-                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/25'
+                    ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-600/25 animate-active-block-blink'
                     : isDisabled
                     ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    : 'bg-pink-200 border-pink-300 text-pink-900 hover:bg-pink-300'
                 }`}
               >
                 <span>{blockLabels[blockId] && blockLabels[blockId] !== blockId ? blockLabels[blockId] : `Block ${blockId}`}</span>
-                <span className={`text-[10px] font-bold ${isActive ? 'text-indigo-200' : 'text-slate-400'}`}>
+                <span className={`text-[10px] font-bold ${isActive ? 'text-blue-100' : 'text-pink-700'}`}>
                   {stats.booked}/{stats.total}
                 </span>
               </button>
@@ -382,117 +400,159 @@ export default function CounterBookingView({
           )}
         </div>
 
-        {activeBlock && (
-          <div className="w-full bg-gray-900 border-t border-gray-800 overflow-hidden flex-1 flex flex-col min-h-0">
-            <div className="p-3 border-b border-gray-800 flex flex-wrap items-center justify-between gap-3">
-              <h3 className="text-xs font-black text-sky-400 flex items-center gap-2">
-                <Armchair className="w-3.5 h-3.5" />
-                <span>Block {activeBlock} — tap seats to select</span>
-              </h3>
-              <div className="flex items-center gap-3 text-[10px] font-semibold">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded bg-gray-700 border border-gray-600"></span>
-                  <span className="text-slate-300">Available</span>
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded bg-emerald-500"></span>
-                  <span className="text-emerald-400">Selected</span>
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded bg-rose-900 border border-rose-700"></span>
-                  <span className="text-rose-400">Booked</span>
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded bg-yellow-500/30 border border-yellow-500/80"></span>
-                  <span className="text-yellow-400">Reserved</span>
-                </span>
+        {/* All blocks stacked — every block's seat rows in one scrollable list,
+            groups serial per block: Star → VIP → Special → 3rd → Standing */}
+        <div className="w-full bg-gray-900 border-t border-gray-800 overflow-hidden flex-1 flex flex-col min-h-0">
+          <div className="p-3 border-b border-gray-800 flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-xs font-black text-sky-400 flex items-center gap-2">
+              <Armchair className="w-3.5 h-3.5" />
+              <span>All blocks — tap seats to select</span>
+            </h3>
+            <div className="flex items-center gap-3 text-[10px] font-semibold">
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded bg-gray-700 border border-gray-600"></span>
+                <span className="text-slate-300">Available</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded bg-emerald-500"></span>
+                <span className="text-emerald-400">Selected</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded bg-rose-900 border border-rose-700"></span>
+                <span className="text-rose-400">Booked</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded bg-yellow-500/30 border border-yellow-500/80"></span>
+                <span className="text-yellow-400">Reserved</span>
+              </span>
+              {selectedSeats.length > 0 && (
                 <button
-                  onClick={() => {
-                    setActiveBlock(null);
-                    setSelectedSeats([]);
-                  }}
+                  onClick={() => setSelectedSeats([])}
                   className="text-slate-400 hover:text-white font-bold"
                 >
-                  Close
+                  Clear
                 </button>
-              </div>
-            </div>
-
-            <div className="p-3 overflow-x-auto flex-1">
-              {(() => {
-                const typeGroups = getBlockSeatsByTicketType(activeBlock);
-                if (typeGroups.size === 0) {
-                  return (
-                    <p className="text-xs text-gray-400 font-semibold text-center py-4">
-                      No seats created for this block yet
-                    </p>
-                  );
-                }
-                return (
-                  <div className="space-y-3">
-                    {Array.from(typeGroups.entries()).map(([key, group]) => {
-                      const rows = Array.from(group.seatsByRow.keys()).sort();
-                      const typeName = group.type?.name || 'Standard';
-                      const groupColor = group.type?.color || '#38bdf8';
-                      return (
-                        <div key={key} className="rounded-lg border border-gray-800 bg-gray-900/40 overflow-hidden">
-                          <div className="flex items-center gap-2 px-2.5 py-1.5 bg-gray-800/60 border-b border-gray-800">
-                            <Star className="w-3.5 h-3.5 flex-shrink-0" style={{ color: groupColor }} fill={groupColor} />
-                            <span className="text-[11px] font-black text-gray-200">{typeName} Group</span>
-                            <span className="text-[10px] font-semibold text-gray-500">— {activeBlock}: {rows.join(', ')}</span>
-                            <span
-                              className="ml-auto flex items-center gap-0.5 text-[11px] font-black flex-shrink-0"
-                              style={{ color: groupColor }}
-                            >
-                              <IndianRupee className="w-3 h-3" />
-                              {group.type?.price ?? 100}
-                            </span>
-                          </div>
-                          <div className="p-2.5 space-y-2">
-                            {rows.map((rowId) => (
-                              <div key={rowId} className="flex items-center gap-2">
-                                <span className="w-14 text-right text-[10px] font-bold text-gray-400 flex-shrink-0">
-                                  Row {rowId}
-                                </span>
-                                <div className="flex gap-1.5 flex-wrap">
-                                  {group.seatsByRow.get(rowId)?.map((seat) => {
-                                    const isBooked = seat.status === 'booked';
-                                    const isReserved = isSeatReserved(seat);
-                                    const isBlocked = isBooked || isReserved;
-                                    const isSelected = selectedSeats.includes(seat.id);
-                                    return (
-                                      <button
-                                        key={seat.id}
-                                        onClick={() => handleSeatToggle(seat.id, isBlocked)}
-                                        disabled={isBlocked}
-                                        className={`h-7 w-7 rounded text-[10px] font-bold flex items-center justify-center transition-all ${
-                                          isBooked
-                                            ? 'bg-rose-950/60 border border-rose-800/80 text-rose-400 cursor-not-allowed'
-                                            : isReserved
-                                            ? 'bg-yellow-500/20 border border-yellow-500/80 text-yellow-300 cursor-not-allowed'
-                                            : isSelected
-                                            ? 'bg-emerald-500 text-gray-950 scale-110 shadow-md shadow-emerald-500/30'
-                                            : 'bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 hover:border-gray-500'
-                                        }`}
-                                        title={`${typeName} — Row ${rowId}, Seat ${seat.seatLabel || seat.seatNumber} — ${isBooked ? 'Booked (online or counter)' : isReserved ? 'Reserved — customer checkout in progress' : isSelected ? 'Selected' : 'Available'} • ₹${seatPrice(seat)}`}
-                                      >
-                                        {seat.seatLabel || seat.seatNumber}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
+              )}
             </div>
           </div>
-        )}
+
+          <div className="p-3 overflow-y-auto flex-1">
+            {(() => {
+              const blocksWithSeats = blockChips.filter(([, stats]) => stats.total > 0);
+              if (!blocksWithSeats.length) {
+                return (
+                  <p className="text-xs text-gray-400 font-semibold text-center py-4">
+                    No seats created yet
+                  </p>
+                );
+              }
+              return (
+                <div className="space-y-4">
+                  {blocksWithSeats.map(([blockId, stats]) => {
+                    const isActive = activeBlock === blockId;
+                    const typeGroups = getBlockSeatsByTicketType(blockId);
+                    return (
+                      <div
+                        key={blockId}
+                        id={`counter-block-${blockId}`}
+                        className={`scroll-mt-2 rounded-lg border overflow-hidden ${
+                          isActive ? 'border-blue-500 ring-1 ring-blue-500/60' : 'border-gray-800'
+                        }`}
+                      >
+                        <div
+                          onClick={() => setActiveBlock(blockId)}
+                          className={`sticky top-0 z-10 flex items-center gap-2 px-2.5 py-2 border-b cursor-pointer backdrop-blur-sm ${
+                            isActive
+                              ? 'bg-blue-600 border-blue-500'
+                              : 'bg-gray-800/95 border-gray-800 hover:bg-gray-700/95'
+                          }`}
+                        >
+                          <Armchair className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-sky-400'}`} />
+                          <span className={`text-[11px] font-black ${isActive ? 'text-white' : 'text-gray-100'}`}>
+                            Block {blockId}
+                          </span>
+                          <span className={`text-[10px] font-bold ${isActive ? 'text-blue-100' : 'text-gray-400'}`}>
+                            {stats.booked}/{stats.total} booked
+                          </span>
+                          {blockLabels[blockId] && blockLabels[blockId] !== blockId && (
+                            <span className={`text-[10px] font-semibold ${isActive ? 'text-blue-100' : 'text-gray-500'}`}>
+                              — {blockLabels[blockId]}
+                            </span>
+                          )}
+                        </div>
+                        {typeGroups.length === 0 ? (
+                          <p className="text-xs text-gray-500 font-semibold px-2.5 py-3">
+                            No seats created for this block yet
+                          </p>
+                        ) : (
+                          <div className="p-2.5 space-y-3">
+                            {typeGroups.map(([key, group]) => {
+                              const rows = Array.from(group.seatsByRow.keys()).sort();
+                              const typeName = group.type?.name || 'Standard';
+                              const groupColor = group.type?.color || '#38bdf8';
+                              return (
+                                <div key={key} className="rounded-lg border border-gray-800 bg-gray-900/40 overflow-hidden">
+                                  <div className="flex items-center gap-2 px-2.5 py-1.5 bg-gray-800/60 border-b border-gray-800">
+                                    <Star className="w-3.5 h-3.5 flex-shrink-0" style={{ color: groupColor }} fill={groupColor} />
+                                    <span className="text-[11px] font-black text-gray-200">{typeName} Group</span>
+                                    <span className="text-[10px] font-semibold text-gray-500">— {blockId}: {rows.join(', ')}</span>
+                                    <span
+                                      className="ml-auto flex items-center gap-0.5 text-[11px] font-black flex-shrink-0"
+                                      style={{ color: groupColor }}
+                                    >
+                                      <IndianRupee className="w-3 h-3" />
+                                      {group.type?.price ?? 100}
+                                    </span>
+                                  </div>
+                                  <div className="p-2.5 space-y-2">
+                                    {rows.map((rowId) => (
+                                      <div key={rowId} className="flex items-center gap-2">
+                                        <span className="w-14 text-right text-[10px] font-bold text-gray-400 flex-shrink-0">
+                                          Row {rowId}
+                                        </span>
+                                        <div className="flex gap-1.5 flex-wrap">
+                                          {group.seatsByRow.get(rowId)?.map((seat) => {
+                                            const isBooked = seat.status === 'booked';
+                                            const isReserved = isSeatReserved(seat);
+                                            const isBlocked = isBooked || isReserved;
+                                            const isSelected = selectedSeats.includes(seat.id);
+                                            return (
+                                              <button
+                                                key={seat.id}
+                                                onClick={() => handleSeatToggle(seat.id, isBlocked)}
+                                                disabled={isBlocked}
+                                                className={`h-7 w-7 rounded text-[10px] font-bold flex items-center justify-center transition-all ${
+                                                  isBooked
+                                                    ? 'bg-rose-950/60 border border-rose-800/80 text-rose-400 cursor-not-allowed'
+                                                    : isReserved
+                                                    ? 'bg-yellow-500/20 border border-yellow-500/80 text-yellow-300 cursor-not-allowed'
+                                                    : isSelected
+                                                    ? 'bg-emerald-500 text-gray-950 scale-110 shadow-md shadow-emerald-500/30'
+                                                    : 'bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 hover:border-gray-500'
+                                                }`}
+                                                title={`${typeName} — Row ${rowId}, Seat ${seat.seatLabel || seat.seatNumber} — ${isBooked ? 'Booked (online or counter)' : isReserved ? 'Reserved — customer checkout in progress' : isSelected ? 'Selected' : 'Available'} • ₹${seatPrice(seat)}`}
+                                              >
+                                                {seat.seatLabel || seat.seatNumber}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
 
         {/* Floating selection bar — popup navbar shown only when seats are selected */}
         {selectedSeats.length > 0 && (

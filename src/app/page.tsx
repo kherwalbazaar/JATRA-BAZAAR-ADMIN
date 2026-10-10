@@ -86,7 +86,7 @@ export default function App() {
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem('jatra_active_tab');
-      const validTabs: NavigationTab[] = ['dashboard', 'events', 'tickets-types', 'create-seat', 'diagram', 'counter-booking', 'bookings', 'tickets', 'scanner-members', 'scan-history', 'online-history', 'payments', 'customers', 'settings', 'logs'];
+      const validTabs: NavigationTab[] = ['dashboard', 'events', 'tickets-types', 'create-seat', 'diagram', 'counter-booking', 'bookings', 'active-tickets', 'cancelled-tickets', 'cancellation-history', 'refunds', 'tickets', 'scanner-members', 'scan-history', 'online-history', 'payments', 'customers', 'settings', 'logs'];
       if (saved && validTabs.includes(saved as NavigationTab)) setCurrentTabState(saved as NavigationTab);
     } catch {
       /* ignore */
@@ -367,7 +367,51 @@ export default function App() {
             <AdminBookings
               currentShowId={currentEvent?.id}
               initialBookings={bookings}
-              onOpenNewBooking={() => setNewBookingOpen(true)}
+              onOpenNewBooking={() => setCurrentTab('counter-booking')}
+              onSelectBooking={(b) => setBookingDetailsTarget(b)}
+              onPrintTicket={(b) => setPrintTicketTarget(b)}
+            />
+          )}
+
+          {currentTab === 'active-tickets' && (
+            <AdminBookings
+              preset="active"
+              currentShowId={currentEvent?.id}
+              initialBookings={bookings}
+              onOpenNewBooking={() => setCurrentTab('counter-booking')}
+              onSelectBooking={(b) => setBookingDetailsTarget(b)}
+              onPrintTicket={(b) => setPrintTicketTarget(b)}
+            />
+          )}
+
+          {currentTab === 'cancelled-tickets' && (
+            <AdminBookings
+              preset="cancelled"
+              currentShowId={currentEvent?.id}
+              initialBookings={bookings}
+              onOpenNewBooking={() => setCurrentTab('counter-booking')}
+              onSelectBooking={(b) => setBookingDetailsTarget(b)}
+              onPrintTicket={(b) => setPrintTicketTarget(b)}
+            />
+          )}
+
+          {currentTab === 'cancellation-history' && (
+            <AdminBookings
+              preset="cancellation-history"
+              currentShowId={currentEvent?.id}
+              initialBookings={bookings}
+              onOpenNewBooking={() => setCurrentTab('counter-booking')}
+              onSelectBooking={(b) => setBookingDetailsTarget(b)}
+              onPrintTicket={(b) => setPrintTicketTarget(b)}
+            />
+          )}
+
+          {currentTab === 'refunds' && (
+            <AdminBookings
+              preset="refunds"
+              currentShowId={currentEvent?.id}
+              initialBookings={bookings}
+              onOpenNewBooking={() => setCurrentTab('counter-booking')}
               onSelectBooking={(b) => setBookingDetailsTarget(b)}
               onPrintTicket={(b) => setPrintTicketTarget(b)}
             />
