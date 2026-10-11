@@ -535,14 +535,22 @@ export default function AdminBookings({
                       </td>
                       <td className="py-3 px-4 font-bold text-slate-700">
                         {b.block ? (
-                          <span className="bg-slate-100 text-slate-800 text-[10px] font-black px-1.5 py-0.5 rounded mr-1">
+                          <span className="block bg-slate-100 text-slate-800 text-[10px] font-black px-1.5 py-0.5 rounded w-fit mb-1">
                             {b.block}
                           </span>
                         ) : null}
                         {b.seats && b.seats.length > 0 ? (
-                          <span className="text-[10px] text-slate-500 font-medium">
-                            {b.seats.slice(0, 3).join(', ')}
-                            {b.seats.length > 3 ? ` +${b.seats.length - 3}` : ''}
+                          <span className="flex flex-wrap gap-1">
+                            {b.seats.slice(0, 4).map((s) => (
+                              <span key={s} className="bg-indigo-50 text-indigo-700 text-[10px] font-black px-1.5 py-0.5 rounded border border-indigo-200">
+                                {s}
+                              </span>
+                            ))}
+                            {b.seats.length > 4 && (
+                              <span className="text-[10px] text-slate-400 font-bold self-center">
+                                +{b.seats.length - 4}
+                              </span>
+                            )}
                           </span>
                         ) : (
                           <span className="text-slate-400 text-[10px]">—</span>

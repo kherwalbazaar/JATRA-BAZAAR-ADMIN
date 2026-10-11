@@ -182,10 +182,13 @@ export default function Sidebar({
         {/* Brand Logo Header */}
         <div className={`${collapsed ? 'px-3 py-4' : 'px-5 py-5'} border-b border-indigo-900/40`}>
           <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'}`}>
-            <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-amber-400 to-yellow-300 p-0.5 shadow-md flex items-center justify-center flex-shrink-0">
-              <div className="w-full h-full bg-[#181d45] rounded-full flex items-center justify-center text-amber-400 text-xl font-black">
-                🎭
-              </div>
+            <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-amber-400 to-yellow-300 p-0.5 shadow-md flex items-center justify-center flex-shrink-0 overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/ic_launcher.png"
+                alt="Jatra Bazaar"
+                className="w-full h-full object-cover rounded-full"
+              />
             </div>
             {!collapsed && (
               <div className="leading-tight">
