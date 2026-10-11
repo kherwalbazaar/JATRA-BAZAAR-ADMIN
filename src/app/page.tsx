@@ -28,9 +28,12 @@ import AddTicketTypeModal from '@/components/AddTicketTypeModal';
 import PrintTicketModal from '@/components/PrintTicketModal';
 import EventDetailsModal from '@/components/EventDetailsModal';
 import BookingDetailsModal from '@/components/BookingDetailsModal';
+import EditBookingModal from '@/components/EditBookingModal';
+import ConfirmDeleteModal from '@/components/ConfirmDeleteModal';
 
 import { NavigationTab, BookingItem, EventItem, TicketType } from '@/types';
 import { useFirestore } from '@/hooks/useFirestore';
+import { deleteBooking } from '@/lib/firestore';
 import { UserPlus, Plus } from 'lucide-react';
 
 export default function App() {
@@ -124,6 +127,20 @@ export default function App() {
   const [createEventOpen, setCreateEventOpen] = useState(false);
   const [addTicketTypeOpen, setAddTicketTypeOpen] = useState(false);
   const [printTicketTarget, setPrintTicketTarget] = useState<BookingItem | null>(null);
+  const [editBookingTarget, setEditBookingTarget] = useState<BookingItem | null>(null);
+  const [deleteBookingTarget, setDeleteBookingTarget] = useState<BookingItem | null>(null);
+
+  const handleDeleteBooking = async () => {
+    const b = deleteBookingTarget;
+    if (!b) return;
+    try {
+      await deleteBooking({ id: b.id, ticketNumber: b.ticketNumber, eventId: b.eventId, showId: b.showId, block: b.block, seats: b.seats });
+    } catch (e) {
+      console.error('Failed to delete booking:', e);
+    } finally {
+      setDeleteBookingTarget(null);
+    }
+  };
   const [bookingDetailsTarget, setBookingDetailsTarget] = useState<BookingItem | null>(null);
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [selectedEventForModal, setSelectedEventForModal] = useState<EventItem | null>(null);
@@ -370,6 +387,8 @@ export default function App() {
               onOpenNewBooking={() => setCurrentTab('counter-booking')}
               onSelectBooking={(b) => setBookingDetailsTarget(b)}
               onPrintTicket={(b) => setPrintTicketTarget(b)}
+              onEditBooking={(b) => setEditBookingTarget(b)}
+              onDeleteBooking={(b) => setDeleteBookingTarget(b)}
             />
           )}
 
@@ -381,6 +400,8 @@ export default function App() {
               onOpenNewBooking={() => setCurrentTab('counter-booking')}
               onSelectBooking={(b) => setBookingDetailsTarget(b)}
               onPrintTicket={(b) => setPrintTicketTarget(b)}
+              onEditBooking={(b) => setEditBookingTarget(b)}
+              onDeleteBooking={(b) => setDeleteBookingTarget(b)}
             />
           )}
 
@@ -392,6 +413,8 @@ export default function App() {
               onOpenNewBooking={() => setCurrentTab('counter-booking')}
               onSelectBooking={(b) => setBookingDetailsTarget(b)}
               onPrintTicket={(b) => setPrintTicketTarget(b)}
+              onEditBooking={(b) => setEditBookingTarget(b)}
+              onDeleteBooking={(b) => setDeleteBookingTarget(b)}
             />
           )}
 
@@ -403,6 +426,8 @@ export default function App() {
               onOpenNewBooking={() => setCurrentTab('counter-booking')}
               onSelectBooking={(b) => setBookingDetailsTarget(b)}
               onPrintTicket={(b) => setPrintTicketTarget(b)}
+              onEditBooking={(b) => setEditBookingTarget(b)}
+              onDeleteBooking={(b) => setDeleteBookingTarget(b)}
             />
           )}
 
@@ -414,6 +439,8 @@ export default function App() {
               onOpenNewBooking={() => setCurrentTab('counter-booking')}
               onSelectBooking={(b) => setBookingDetailsTarget(b)}
               onPrintTicket={(b) => setPrintTicketTarget(b)}
+              onEditBooking={(b) => setEditBookingTarget(b)}
+              onDeleteBooking={(b) => setDeleteBookingTarget(b)}
             />
           )}
 
@@ -531,6 +558,20 @@ export default function App() {
         booking={printTicketTarget}
         currentEvent={currentEvent}
         onClose={() => setPrintTicketTarget(null)}
+      />
+
+      <EditBookingModal
+        isOpen={!!editBookingTarget}
+        booking={editBookingTarget}
+        onClose={() => setEditBookingTarget(null)}
+        onSaved={() => setEditBookingTarget(null)}
+      />
+
+      <ConfirmDeleteModal
+        isOpen={!!deleteBookingTarget}
+        booking={deleteBookingTarget}
+        onClose={() => setDeleteBookingTarget(null)}
+        onConfirm={handleDeleteBooking}
       />
 
       <EventDetailsModal

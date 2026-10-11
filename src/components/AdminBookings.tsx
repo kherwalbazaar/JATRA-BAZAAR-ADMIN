@@ -19,6 +19,9 @@ import {
   QrCode,
   Plus,
   Eye,
+  Pencil,
+  MoreVertical,
+  Trash2,
   Radio,
   Wifi,
   WifiOff,
@@ -33,6 +36,8 @@ interface AdminBookingsProps {
   onOpenNewBooking?: () => void;
   onSelectBooking?: (booking: BookingItem) => void;
   onPrintTicket?: (booking: BookingItem) => void;
+  onEditBooking?: (booking: BookingItem) => void;
+  onDeleteBooking?: (booking: BookingItem) => void;
   /** Pre-filtered view used by the Booking Management sidebar group. */
   preset?: 'all' | 'active' | 'cancelled' | 'cancellation-history' | 'refunds';
 }
@@ -69,6 +74,8 @@ export default function AdminBookings({
   onOpenNewBooking,
   onSelectBooking,
   onPrintTicket,
+  onEditBooking,
+  onDeleteBooking,
   preset = 'all',
 }: AdminBookingsProps) {
   const presetMeta = PRESET_META[preset] || PRESET_META.all;
@@ -82,8 +89,21 @@ export default function AdminBookings({
     'All' | 'Confirmed' | 'Checked-in' | 'Cancelled' | 'Refunded'
   >('All');
   const [newlyAddedIds, setNewlyAddedIds] = useState<Set<string>>(new Set());
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const isInitialLoadRef = useRef(true);
   const previousIdsRef = useRef<Set<string>>(new Set());
+
+  // Close the 3-dot action menu on outside click
+  useEffect(() => {
+    if (!menuOpenId) return;
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-action-menu]')) {
+        setMenuOpenId(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpenId]);
 
   // ─── Reactive Firestore onSnapshot Listener with Lifecycle Cleanup ───
   useEffect(() => {
@@ -98,14 +118,10 @@ export default function AdminBookings({
     try {
       const bookingsCol = collection(db, FIRESTORE_COLLECTIONS.BOOKINGS);
 
-      // Primary real-time query: filtered by showId and sorted by createdAt descending
-      let q = currentShowId
-        ? query(
-            bookingsCol,
-            where('showId', '==', currentShowId),
-            orderBy('createdAt', 'desc')
-          )
-        : query(bookingsCol, orderBy('createdAt', 'desc'));
+      // Listen to the full collection ordered by createdAt, then filter by
+      // showId/eventId in JS — legacy online bookings may only have eventId
+      // (no showId), so a Firestore-level where('showId'==) would miss them.
+      let q = query(bookingsCol, orderBy('createdAt', 'desc'));
 
       unsubscribe = onSnapshot(
         q,
@@ -119,6 +135,12 @@ export default function AdminBookings({
 
           snapshot.forEach((doc) => {
             const data = doc.data();
+            // Client-side event filter — covers both showId and legacy eventId-only docs
+            if (currentShowId) {
+              const docShowId = data.showId || '';
+              const docEventId = data.eventId || '';
+              if (docShowId !== currentShowId && docEventId !== currentShowId) return;
+            }
             const item: BookingItem = {
               id: doc.id,
               bookingId: data.bookingId || data.ticketNumber || doc.id,
@@ -446,8 +468,8 @@ export default function AdminBookings({
       </div>
 
       {/* Bookings Table */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-visible">
+        <div className="overflow-visible">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50/80 text-[10px] uppercase font-black text-slate-400 border-b border-slate-200/80">
               <tr>
@@ -459,16 +481,13 @@ export default function AdminBookings({
                 <th className="py-3 px-4 text-center">Qty</th>
                 <th className="py-3 px-4">Amount</th>
                 <th className="py-3 px-4 text-center">Channel</th>
-                <th className="py-3 px-4 text-center">Payment</th>
-                <th className="py-3 px-4 text-center">Status</th>
-                <th className="py-3 px-4">Gate</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={12} className="py-12 text-center text-slate-400 font-medium">
+                  <td colSpan={9} className="py-12 text-center text-slate-400 font-medium">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <RefreshCw className="w-5 h-5 text-indigo-500 animate-spin" />
                       <span>Streaming bookings in real-time…</span>
@@ -477,7 +496,7 @@ export default function AdminBookings({
                 </tr>
               ) : filteredBookings.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-8 text-center text-slate-400 font-medium">
+                  <td colSpan={9} className="py-8 text-center text-slate-400 font-medium">
                     No bookings found matching your search criteria.
                   </td>
                 </tr>
@@ -551,77 +570,50 @@ export default function AdminBookings({
                           {b.source}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-center">
-                        <span className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-bold">
-                          {b.paymentMethod}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        {b.status === 'Cancelled' || b.status === 'Refunded' ? (
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-rose-100 text-rose-700">
-                            Cancelled
-                          </span>
-                        ) : b.quantity > 1 ? (
-                          (() => {
-                            const usedCount =
-                              b.enteredCount ??
-                              (Array.isArray(b.usedTickets) ? b.usedTickets.length : 0);
-                            if (usedCount >= b.quantity || b.status === 'Checked-in') {
-                              return (
-                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                                  All Used ({b.quantity}/{b.quantity})
-                                </span>
-                              );
-                            }
-                            if (usedCount > 0) {
-                              return (
-                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
-                                  {usedCount} / {b.quantity} Entered
-                                </span>
-                              );
-                            }
-                            return (
-                              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
-                                Active (0/{b.quantity})
-                              </span>
-                            );
-                          })()
-                        ) : (
-                          <span
-                            className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                              b.status === 'Checked-in'
-                                ? 'bg-blue-100 text-blue-700'
-                                : b.status === 'Confirmed'
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : 'bg-slate-100 text-slate-600'
-                            }`}
-                          >
-                            {b.status === 'Checked-in' ? 'Entered' : b.status}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 font-bold text-slate-600">
-                        {b.assignedGate || '—'}
-                      </td>
                       <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {onSelectBooking && (
-                            <button
-                              onClick={() => onSelectBooking(b)}
-                              className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
-                              title="View Details"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                          {onPrintTicket && (
-                            <button
-                              onClick={() => onPrintTicket(b)}
-                              className="p-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg transition-colors"
-                              title="Print Thermal Ticket / Receipt"
-                            >
-                              <Printer className="w-3.5 h-3.5" />
-                            </button>
+                        <div data-action-menu className="relative flex items-center justify-end">
+                          <button
+                            onClick={() => setMenuOpenId(menuOpenId === b.id ? null : b.id)}
+                            className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+                            title="Actions"
+                          >
+                            <MoreVertical className="w-4 h-4 text-slate-500" />
+                          </button>
+                          {menuOpenId === b.id && (
+                            <div className="absolute right-0 top-full z-20 mt-1 w-36 bg-white border border-slate-200 rounded-xl shadow-lg py-1">
+                              {onSelectBooking && (
+                                <button
+                                  onClick={() => { onSelectBooking(b); setMenuOpenId(null); }}
+                                  className="flex items-center gap-2 w-full px-3 py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50"
+                                >
+                                  <Eye className="w-3.5 h-3.5" /> View
+                                </button>
+                              )}
+                              {onEditBooking && (
+                                <button
+                                  onClick={() => { onEditBooking(b); setMenuOpenId(null); }}
+                                  className="flex items-center gap-2 w-full px-3 py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" /> Edit
+                                </button>
+                              )}
+                              {onDeleteBooking && (
+                                <button
+                                  onClick={() => { onDeleteBooking(b); setMenuOpenId(null); }}
+                                  className="flex items-center gap-2 w-full px-3 py-2 text-[11px] font-bold text-rose-600 hover:bg-rose-50"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                                </button>
+                              )}
+                              {onPrintTicket && (
+                                <button
+                                  onClick={() => { onPrintTicket(b); setMenuOpenId(null); }}
+                                  className="flex items-center gap-2 w-full px-3 py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50"
+                                >
+                                  <Printer className="w-3.5 h-3.5" /> Print
+                                </button>
+                              )}
+                            </div>
                           )}
                         </div>
                       </td>

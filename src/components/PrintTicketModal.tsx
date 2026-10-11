@@ -1,18 +1,7 @@
 'use client';
 
 import React from 'react';
-import { 
-  X, 
-  Printer, 
-  Download, 
-  DoorOpen, 
-  Calendar, 
-  MapPin, 
-  Clock, 
-  Ticket, 
-  Sparkles,
-  MessageCircle
-} from 'lucide-react';
+import { X, Printer, MessageCircle } from 'lucide-react';
 import { BookingItem, EventItem } from '@/types';
 import { formatINR } from '@/lib/utils';
 
@@ -47,7 +36,7 @@ export default function PrintTicketModal({
       seatLine.trimEnd(),
       `Amount: ${formatINR(booking.amount)} (${booking.paymentMethod})`,
       `Gate: ${booking.assignedGate}`,
-      `${currentEvent?.date ?? ''} ${currentEvent?.time ? `| ${currentEvent.time}` : ''}${currentEvent?.venue ? ` | ${currentEvent.venue}` : ''}`
+      `${currentEvent?.date ?? ''}${currentEvent?.time ? ` | ${currentEvent.time}` : ''}`
     ].filter(Boolean);
     const text = encodeURIComponent(lines.join('\n'));
     const url = waPhone
@@ -56,7 +45,7 @@ export default function PrintTicketModal({
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
+  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(
     JSON.stringify({
       id: booking.ticketNumber,
       holder: booking.customerName,
@@ -68,151 +57,103 @@ export default function PrintTicketModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150">
+      <div className="bg-white rounded-2xl max-w-xs w-full overflow-hidden shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150">
         {/* Header */}
-        <div className="px-5 py-3.5 bg-[#0f1430] text-white flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Printer className="w-4 h-4 text-indigo-400" />
-            <span className="text-xs font-black tracking-wide">Ticket Receipt Preview</span>
-          </div>
+        <div className="px-4 py-2.5 bg-[#0f1430] text-white flex items-center justify-between">
+          <span className="text-[11px] font-black tracking-wide">Print Preview</span>
           <button 
             onClick={onClose}
-            className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+            className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-3 h-3" />
           </button>
         </div>
 
-        {/* Ticket Body / Printable Section */}
-        <div className="p-6 bg-slate-100 flex justify-center">
+        {/* Printable Ticket */}
+        <div className="p-4 bg-slate-100 flex justify-center">
           <div 
             id="printable-ticket" 
-            className="bg-white rounded-2xl border border-slate-200 p-5 w-full max-w-sm shadow-md text-slate-800 space-y-4 font-mono relative overflow-hidden"
+            className="bg-white border border-slate-200 p-3.5 w-[280px] shadow-sm text-slate-800 space-y-2 font-mono text-[10px] leading-tight"
           >
-            {/* Top Cutout Dots */}
-            <div className="text-center border-b border-dashed border-slate-300 pb-3">
-              <div className="flex items-center justify-center gap-1 text-sm font-black tracking-wider text-slate-900">
-                <span>🎭</span>
-                <span>                JATRA BAZAAR 2026</span>
-              </div>
-              <p className="text-[10px] text-slate-500 font-sans font-bold uppercase mt-0.5">
-                Official Admission Pass
-              </p>
-            </div>
-
-            {/* Event Details */}
-            <div className="space-y-1 text-xs">
-              <div className="font-sans font-black text-slate-900 text-sm leading-tight">
+            {/* Event */}
+            <div className="text-center border-b border-dashed border-slate-300 pb-2">
+              <div className="font-sans font-black text-slate-900 text-xs leading-tight">
                 {currentEvent?.title ?? 'Event'}
               </div>
-              <p className="text-[10px] text-slate-600 font-sans flex items-center gap-1">
-                <Calendar className="w-3 h-3 text-rose-500" />
-                <span>{currentEvent?.date ?? ''} ({currentEvent?.day ?? ''}) • {currentEvent?.time ?? ''}</span>
-              </p>
-              <p className="text-[10px] text-slate-600 font-sans flex items-center gap-1">
-                <MapPin className="w-3 h-3 text-amber-500" />
-                <span>{currentEvent?.venue ?? ''}</span>
-              </p>
-            </div>
-
-            {/* Ticket Tier Banner */}
-            <div className="bg-slate-900 text-white p-3 rounded-xl flex items-center justify-between font-sans">
-              <div>
-                <span className="text-[9px] uppercase font-bold text-amber-400 block">Class</span>
-                <span className="text-sm font-black">{booking.ticketTypeName}</span>
-              </div>
-              <div className="text-center">
-                <span className="text-[9px] uppercase font-bold text-slate-400 block">Qty</span>
-                <span className="text-sm font-black">{booking.quantity}</span>
-              </div>
-              <div className="text-right">
-                <span className="text-[9px] uppercase font-bold text-slate-400 block">Gate</span>
-                <span className="text-sm font-black text-emerald-400">{booking.assignedGate}</span>
+              <div className="text-[9px] text-slate-500 font-sans mt-0.5">
+                {currentEvent?.date ?? ''} • {currentEvent?.time ?? ''}
               </div>
             </div>
 
-            {/* Customer & Amount */}
-            <div className="border-t border-b border-dashed border-slate-300 py-2.5 space-y-1 text-[11px]">
+            {/* Core info */}
+            <div className="space-y-1">
               <div className="flex justify-between">
-                <span className="text-slate-500">Booking ID:</span>
+                <span className="text-slate-500">Ticket ID</span>
                 <span className="font-bold text-indigo-700">{booking.ticketNumber}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Attendee:</span>
+                <span className="text-slate-500">Name</span>
                 <span className="font-bold text-slate-900">{booking.customerName}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Contact:</span>
-                <span className="text-slate-700">{booking.customerPhone}</span>
+                <span className="text-slate-500">Class</span>
+                <span className="font-bold text-slate-900">{booking.ticketTypeName}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Payment:</span>
-                <span className="font-bold text-slate-900">{booking.paymentMethod}</span>
+                <span className="text-slate-500">Qty</span>
+                <span className="font-bold text-slate-900">{booking.quantity}</span>
               </div>
-              {booking.ticketAmount !== undefined ? (
-                <>
-                  <div className="flex justify-between text-[10px]">
-                    <span className="text-slate-500">Ticket Base:</span>
-                    <span className="text-slate-700 font-bold">₹{booking.ticketAmount}</span>
-                  </div>
-                  {booking.totalFees !== undefined && booking.totalFees > 0 ? (
-                    <div className="flex justify-between text-[10px]">
-                      <span className="text-slate-500">Fees & GST:</span>
-                      <span className="text-slate-700">₹{booking.totalFees}</span>
-                    </div>
-                  ) : null}
-                  <div className="flex justify-between font-bold text-slate-900 pt-0.5 border-t border-dotted border-slate-200">
-                    <span className="text-slate-500">Total Paid:</span>
-                    <span className="text-emerald-700">₹{booking.amount}</span>
-                  </div>
-                </>
-              ) : (
+              {booking.seats && booking.seats.length > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-slate-500">Total Paid:</span>
-                  <span className="font-bold text-slate-900">₹{booking.amount}</span>
+                  <span className="text-slate-500">Seats</span>
+                  <span className="font-bold text-slate-900">
+                    {booking.block ? `${booking.block}: ` : ''}{booking.seats.join(', ')}
+                  </span>
                 </div>
               )}
+              <div className="flex justify-between">
+                <span className="text-slate-500">Gate</span>
+                <span className="font-bold text-emerald-700">{booking.assignedGate}</span>
+              </div>
+              <div className="flex justify-between border-t border-dotted border-slate-200 pt-1 mt-1">
+                <span className="text-slate-500">Total</span>
+                <span className="font-bold text-slate-900">₹{booking.amount}</span>
+              </div>
             </div>
 
-            {/* QR Code */}
-            <div className="flex flex-col items-center justify-center pt-1">
+            {/* QR */}
+            <div className="flex flex-col items-center pt-1 border-t border-dashed border-slate-300">
               <img 
                 src={qrImageUrl} 
-                alt="Ticket QR Code" 
-                className="w-28 h-28 border border-slate-200 rounded-lg p-1 bg-white"
+                alt="QR" 
+                className="w-20 h-20 border border-slate-200 bg-white"
               />
-              <span className="text-[9px] font-mono text-slate-400 mt-1.5 tracking-wider">
-                Scan at {booking.assignedGate} turnstile
-              </span>
-            </div>
-
-            <div className="text-center text-[8px] text-slate-400 font-sans border-t border-slate-100 pt-2">
-              Valid only for 1 entry • Non-refundable • Keep barcode dry
+              <span className="text-[8px] font-sans text-slate-400 mt-1">Scan at gate</span>
             </div>
           </div>
         </div>
 
-        {/* Modal Actions */}
-        <div className="p-4 bg-white border-t border-slate-100 flex items-center gap-2">
+        {/* Actions */}
+        <div className="p-3 bg-white border-t border-slate-100 flex items-center gap-2">
           <button
             onClick={onClose}
-            className="py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
+            className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold rounded-lg transition-colors"
           >
             Close
           </button>
           <button
             onClick={handleWhatsAppShare}
-            className="flex-1 py-2.5 bg-[#25D366] hover:bg-[#1ebe5b] text-white text-xs font-black rounded-xl shadow-md shadow-emerald-600/30 flex items-center justify-center gap-1.5 transition-all"
+            className="flex-1 py-2 bg-[#25D366] hover:bg-[#1ebe5b] text-white text-[11px] font-black rounded-lg flex items-center justify-center gap-1.5 transition-all"
           >
-            <MessageCircle className="w-4 h-4" />
+            <MessageCircle className="w-3.5 h-3.5" />
             <span>WhatsApp</span>
           </button>
           <button
             onClick={handlePrint}
-            className="flex-1 py-2.5 bg-[#4f39f6] hover:bg-[#432ee0] text-white text-xs font-black rounded-xl shadow-md shadow-indigo-600/30 flex items-center justify-center gap-1.5 transition-all"
+            className="flex-1 py-2 bg-[#4f39f6] hover:bg-[#432ee0] text-white text-[11px] font-black rounded-lg flex items-center justify-center gap-1.5 transition-all"
           >
-            <Printer className="w-4 h-4" />
-            <span>Print Thermal Slip</span>
+            <Printer className="w-3.5 h-3.5" />
+            <span>Print</span>
           </button>
         </div>
       </div>

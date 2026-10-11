@@ -724,6 +724,79 @@ export async function cancelBookingWithRelease(booking: {
   }
 }
 
+/**
+ * Delete a booking: release seats, hard-delete all individual ticket docs,
+ * then hard-delete the booking document itself — full database removal.
+ */
+export async function deleteBooking(booking: {
+  id: string;
+  ticketNumber?: string;
+  eventId?: string;
+  showId?: string;
+  block?: string;
+  seats?: string[];
+}): Promise<void> {
+  // 1. Hard-delete individual ticket documents.
+  try {
+    if (booking.ticketNumber) {
+      const tickets = await getTicketsByBookingId(booking.ticketNumber);
+      for (const t of tickets) {
+        await deleteDoc(docRef(C.TICKETS, t.id));
+      }
+    }
+  } catch (err) {
+    console.warn('deleteBooking ticket removal:', err);
+  }
+
+  // 2. Release the claimed seats on both paths.
+  const showId = String(booking.showId || booking.eventId || '').trim();
+  const blockHint = String(booking.block || '').trim().toUpperCase();
+  const seatKeys = (Array.isArray(booking.seats) ? booking.seats : [])
+    .map((s) => String(s || '').trim().toUpperCase())
+    .filter(Boolean);
+
+  if (showId && seatKeys.length > 0) {
+    for (const key of seatKeys) {
+      const parts = key.split('-');
+      let block = '';
+      let row = '';
+      let num = '';
+      if (parts.length >= 3) {
+        [block, row, num] = parts;
+      } else if (parts.length === 2 && blockHint) {
+        block = blockHint;
+        [row, num] = parts;
+      }
+      if (!block || !row || !num) continue;
+
+      const liveRef = doc(collection(db, 'shows', showId, 'seats'), `${block}-${row}-${num}`);
+      const legacyRef = doc(collection(db, C.SEATS, showId, block), `${row}-${num}`);
+
+      for (const ref of [liveRef, legacyRef]) {
+        try {
+          const snap = await getDoc(ref);
+          if (!snap.exists()) continue;
+          const data = snap.data() as { status?: string; bookingId?: string };
+          const st = String(data.status || '').toLowerCase();
+          if (st !== 'booked' && st !== 'reserved' && st !== 'sold') continue;
+          if (data.bookingId && booking.ticketNumber && data.bookingId !== booking.ticketNumber) continue;
+          await updateDoc(ref, { status: 'available', bookedAt: null, bookingId: null, reservedBy: null, reservedAt: null });
+        } catch (err) {
+          console.warn('deleteBooking seat release failed:', err);
+        }
+      }
+    }
+  }
+
+  // 3. Hard-delete the booking document.
+  try {
+    await deleteDoc(docRef(C.BOOKINGS, booking.id));
+  } catch (err) {
+    console.warn('deleteBooking doc removal failed:', err);
+    throw err;
+  }
+}
+
 // ─── Gates ────────────────────────────────────────────────────────
 
 export function listenGates(
