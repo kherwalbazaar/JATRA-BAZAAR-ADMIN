@@ -21,6 +21,32 @@ import {
   QueryDocumentSnapshot,
 } from 'firebase/firestore';
 import { db, FIRESTORE_COLLECTIONS } from './firebase';
+import {
+  sbMirrorBooking,
+  sbMirrorBookingUpdate,
+  sbMirrorTicket,
+  sbMirrorTicketUpdate,
+  sbMirrorSeat,
+  sbMirrorSeatMany,
+  sbMirrorSeatUpdate,
+  sbMirrorEvent,
+  sbMirrorEventUpdate,
+  sbMirrorShow,
+  sbMirrorShowUpdate,
+  sbMirrorTicketType,
+  sbMirrorTicketTypeUpdate,
+  sbMirrorScannerMember,
+  sbMirrorScannerMemberUpdate,
+  sbMirrorTicketEntry,
+  sbMirrorGate,
+  sbMirrorGateUpdate,
+  sbMirrorCounter,
+  sbMirrorCounterUpdate,
+  sbMirrorBlockCategories,
+  sbMirrorSettings,
+  sbMirrorAuditLog,
+  sbMirrorDelete,
+} from './supabase-db';
 import { BlockCategory } from '@/lib/blockCategories';
 import {
   EventItem,
@@ -144,6 +170,7 @@ export async function saveEventFormFormat(): Promise<void> {
     updatedAt: new Date().toISOString(),
   };
   await setDoc(docRef(C.SETTINGS, 'createEventFormat'), payload, { merge: true });
+  sbMirrorSettings('createEventFormat', payload);
 }
 
 // Read the form format document back from Firestore
@@ -193,6 +220,7 @@ export async function saveBlockCategories(blocks: BlockCategory[]): Promise<void
     batch.set(docRef(C.BLOCK_CATEGORIES, id), { ...rest, order: index });
   });
   await batch.commit();
+  sbMirrorBlockCategories(blocks.map((b, index) => ({ ...b, order: index })));
 }
 
 export async function getEventsOnce(): Promise<EventItem[]> {
@@ -287,6 +315,10 @@ export async function addEvent(event: Omit<EventItem, 'id'>): Promise<string> {
     console.warn('Dual-sync notice:', e);
   }
 
+  // Mirror to Supabase
+  sbMirrorShow({ ...payload, id: showId, showId, eventId: showId });
+  sbMirrorEvent({ ...payload, id: showId, showId, eventId: showId });
+
   return showId;
 }
 
@@ -300,6 +332,8 @@ export async function updateEvent(id: string, data: Partial<EventItem>): Promise
   } catch (e) {
     console.warn('Dual-update notice:', e);
   }
+  sbMirrorShowUpdate(id, payload);
+  sbMirrorEventUpdate(id, payload);
 }
 
 export async function deleteEvent(id: string): Promise<void> {
@@ -314,6 +348,8 @@ export async function deleteEvent(id: string): Promise<void> {
   } catch (e) {
     console.warn('Delete from events notice:', e);
   }
+  sbMirrorDelete('shows', id);
+  sbMirrorDelete('events', id);
   console.log('Successfully deleted show/event:', id);
 }
 
@@ -344,16 +380,19 @@ export async function addTicketType(type: Omit<TicketType, 'id'> & { eventId: st
   // Don't persist a client-generated id (TT-xxx) — Firestore doc id is used everywhere.
   const { id: _clientId, ...rest } = type as TicketType & { eventId: string };
   const ref = await addDoc(colRef(C.TICKET_TYPES), rest);
+  sbMirrorTicketType({ ...rest, id: ref.id });
   return ref.id;
 }
 
 export async function updateTicketType(id: string, data: Partial<TicketType>): Promise<void> {
   // Upsert: legacy/local ticket types (e.g. TT-447) may not exist in Firestore yet.
   await setDoc(docRef(C.TICKET_TYPES, id), data as Partial<TicketType>, { merge: true });
+  sbMirrorTicketTypeUpdate(id, data as Record<string, unknown>);
 }
 
 export async function deleteTicketType(id: string): Promise<void> {
   await deleteDoc(docRef(C.TICKET_TYPES, id));
+  sbMirrorDelete('ticket_types', id);
 }
 
 // ─── Bookings ─────────────────────────────────────────────────────
@@ -639,15 +678,24 @@ export async function addBooking(
     throw new Error('Failed to save booking');
   }
 
+  // Mirror to Supabase (fire-and-forget after Firebase commit)
+  sbMirrorBooking({ ...fullBooking, id: bookingId });
+  for (const t of ticketItems) sbMirrorTicket(t.item as unknown as Record<string, unknown>);
+  for (const key of targets) {
+    sbMirrorSeatUpdate(key.key, { status: 'booked', bookedAt: nowIso, bookingId: baseTicketNumber, reservedBy: null, reservedAt: null });
+  }
+
   return bookingId;
 }
 
 export async function updateBooking(id: string, data: Partial<BookingItem>): Promise<void> {
   await updateDoc(docRef(C.BOOKINGS, id), data);
+  sbMirrorBookingUpdate(id, data as Record<string, unknown>);
 }
 
 export async function checkInBooking(bookingId: string): Promise<void> {
   await updateDoc(docRef(C.BOOKINGS, bookingId), { status: 'Checked-in' });
+  sbMirrorBookingUpdate(bookingId, { status: 'Checked-in' });
 }
 
 /**
@@ -677,6 +725,7 @@ export async function cancelBookingWithRelease(booking: {
       const tickets = await getTicketsByBookingId(booking.ticketNumber);
       for (const t of tickets) {
         await updateDoc(docRef(C.TICKETS, t.id), { status: 'CANCELLED', cancelledAt: nowIso });
+        sbMirrorTicketUpdate(t.id, { status: 'CANCELLED', cancelledAt: nowIso });
       }
     }
   } catch (err) {
@@ -717,6 +766,7 @@ export async function cancelBookingWithRelease(booking: {
         // Never free a seat claimed by a different booking.
         if (data.bookingId && booking.ticketNumber && data.bookingId !== booking.ticketNumber) continue;
         await updateDoc(ref, { status: 'available', bookedAt: null, bookingId: null });
+        sbMirrorSeatUpdate(`${block}-${row}-${num}`, { status: 'available', bookedAt: null, bookingId: null });
       } catch (err) {
         console.warn('cancelBookingWithRelease seat release failed:', err);
       }
@@ -742,6 +792,7 @@ export async function deleteBooking(booking: {
       const tickets = await getTicketsByBookingId(booking.ticketNumber);
       for (const t of tickets) {
         await deleteDoc(docRef(C.TICKETS, t.id));
+        sbMirrorDelete('tickets', t.id);
       }
     }
   } catch (err) {
@@ -781,6 +832,7 @@ export async function deleteBooking(booking: {
           if (st !== 'booked' && st !== 'reserved' && st !== 'sold') continue;
           if (data.bookingId && booking.ticketNumber && data.bookingId !== booking.ticketNumber) continue;
           await updateDoc(ref, { status: 'available', bookedAt: null, bookingId: null, reservedBy: null, reservedAt: null });
+          sbMirrorSeatUpdate(`${block}-${row}-${num}`, { status: 'available', bookedAt: null, bookingId: null, reservedBy: null, reservedAt: null });
         } catch (err) {
           console.warn('deleteBooking seat release failed:', err);
         }
@@ -791,6 +843,7 @@ export async function deleteBooking(booking: {
   // 3. Hard-delete the booking document.
   try {
     await deleteDoc(docRef(C.BOOKINGS, booking.id));
+    sbMirrorDelete('bookings', booking.id);
   } catch (err) {
     console.warn('deleteBooking doc removal failed:', err);
     throw err;
@@ -820,11 +873,13 @@ export function listenGates(
 
 export async function addGate(gate: Omit<GateInfo, 'id'> & { eventId: string }): Promise<string> {
   const ref = await addDoc(colRef(C.GATES), gate);
+  sbMirrorGate({ ...gate, id: ref.id });
   return ref.id;
 }
 
 export async function updateGate(id: string, data: Partial<GateInfo>): Promise<void> {
   await updateDoc(docRef(C.GATES, id), data);
+  sbMirrorGateUpdate(id, data as Record<string, unknown>);
 }
 
 export async function incrementGateEntry(gateId: string, delta: number): Promise<void> {
@@ -832,15 +887,18 @@ export async function incrementGateEntry(gateId: string, delta: number): Promise
   if (!snap.exists()) return;
   const gate = snap.data() as GateInfo;
   const newEntered = Math.max(0, gate.entered + delta);
-  await updateDoc(docRef(C.GATES, gateId), {
+  const patch = {
     entered: newEntered,
     percentage: Math.round((newEntered / gate.capacity) * 100),
     status: newEntered >= gate.capacity ? 'full' : newEntered >= gate.capacity * 0.8 ? 'congested' : 'normal',
-  });
+  };
+  await updateDoc(docRef(C.GATES, gateId), patch);
+  sbMirrorGateUpdate(gateId, patch);
 }
 
 export async function resetGate(gateId: string): Promise<void> {
   await updateDoc(docRef(C.GATES, gateId), { entered: 0, percentage: 0, status: 'normal' });
+  sbMirrorGateUpdate(gateId, { entered: 0, percentage: 0, status: 'normal' });
 }
 
 // ─── Seats (Uniform Data Model: shows/{showId}/seats/{seatId}) ──
@@ -1223,6 +1281,24 @@ export async function createSeatRow(params: {
     batch.set(metaRef, { blocks: arrayUnion(block) }, { merge: true });
 
     await batch.commit();
+
+    // Mirror to Supabase
+    const nowIso = new Date().toISOString();
+    sbMirrorSeatMany(chunk.map((n) => ({
+      id: `${block}-${row}-${n}`,
+      seat_id: `${block}-${row}-${n}`,
+      seat_number: n,
+      block: block,
+      block_id: block,
+      row: row,
+      row_id: row,
+      seat_label: `${row}${n}`,
+      price: Number(price) || 100,
+      status: 'available',
+      show_id: showId,
+      event_id: showId,
+      created_at: nowIso,
+    })));
   }
 
   return missing.length;
@@ -1311,6 +1387,13 @@ export async function trimSeatRow(params: {
     console.warn('trimSeatRow legacy path failed:', err);
   }
 
+  // Mirror deletions to Supabase
+  if (deleted > 0) {
+    for (let n = target + 1; n <= target + deleted + keptBooked; n++) {
+      sbMirrorDelete('seats', `${block}-${row}-${n}`);
+    }
+  }
+
   return { deleted, keptBooked };
 }
 
@@ -1379,6 +1462,22 @@ export async function updateSeatRow(params: {
     console.warn('updateSeatRow legacy path failed:', err);
   }
 
+  // Mirror price updates to Supabase
+  if (updated > 0) {
+    try {
+      const liveSnap = await getDocs(
+        query(
+          collection(db, 'shows', showId, 'seats'),
+          where('blockId', '==', block),
+          where('rowId', '==', row)
+        )
+      );
+      liveSnap.docs.forEach((d) => {
+        sbMirrorSeatUpdate(d.id, { price });
+      });
+    } catch { /* best-effort mirror */ }
+  }
+
   return updated;
 }
 
@@ -1406,6 +1505,8 @@ export async function deleteSeatRow(params: {
       const batch = writeBatch(db);
       snap.docs.forEach((d) => batch.delete(d.ref));
       await batch.commit();
+      // Mirror to Supabase
+      snap.docs.forEach((d) => sbMirrorDelete('seats', d.id));
     }
   } catch (err) {
     console.warn('deleteSeatRow shows/seats error:', err);
@@ -1468,11 +1569,13 @@ export function listenCounters(
 
 export async function addCounter(counter: Omit<CounterBooth, 'id'> & { eventId: string }): Promise<string> {
   const ref = await addDoc(colRef(C.COUNTERS), counter);
+  sbMirrorCounter({ ...counter, id: ref.id });
   return ref.id;
 }
 
 export async function updateCounter(id: string, data: Partial<CounterBooth>): Promise<void> {
   await updateDoc(docRef(C.COUNTERS, id), data);
+  sbMirrorCounterUpdate(id, data as Record<string, unknown>);
 }
 
 // ─── Scanner Members ──────────────────────────────────────────────
@@ -1541,6 +1644,7 @@ export async function addScannerMember(input: NewScannerMemberInput): Promise<Sc
     totalScans: 0,
   };
   const ref = await addDoc(colRef(C.SCANNER_MEMBERS), payload);
+  sbMirrorScannerMember({ ...payload, id: ref.id });
   await writeAuditLog({
     action: 'scanner.added',
     performedBy: 'admin',
@@ -1552,13 +1656,16 @@ export async function addScannerMember(input: NewScannerMemberInput): Promise<Sc
 
 export async function updateScannerMember(id: string, patch: Partial<ScannerMember>): Promise<void> {
   await updateDoc(docRef(C.SCANNER_MEMBERS, id), patch);
+  sbMirrorScannerMemberUpdate(id, patch as Record<string, unknown>);
 }
 
 // ─── Audit Log ────────────────────────────────────────────────────
 
 export async function writeAuditLog(entry: Omit<AuditLog, 'id' | 'timestamp'> & { timestamp?: string }): Promise<void> {
   try {
-    await addDoc(colRef(C.AUDIT_LOGS), { ...entry, timestamp: entry.timestamp || new Date().toISOString() });
+    const payload = { ...entry, timestamp: entry.timestamp || new Date().toISOString() };
+    await addDoc(colRef(C.AUDIT_LOGS), payload);
+    sbMirrorAuditLog(payload);
   } catch (err) {
     console.warn('writeAuditLog failed:', err);
   }
@@ -1633,7 +1740,7 @@ export async function recordScanLog(
 
   try {
     const entryDocRef = doc(colRef(C.TICKET_ENTRIES));
-    await setDoc(entryDocRef, {
+    const entryPayload = {
       id: entryDocRef.id,
       eventId: ctx.eventId,
       scannerId: member?.scannerId || 'SCN-UNKNOWN',
@@ -1656,7 +1763,9 @@ export async function recordScanLog(
       previousScannerId: extra.previousScannerId,
       previousScannerName: extra.previousScannerName,
       previousGateId: extra.previousGateId,
-    } satisfies TicketEntry);
+    } satisfies TicketEntry;
+    await setDoc(entryDocRef, entryPayload);
+    sbMirrorTicketEntry(entryPayload as Record<string, unknown>);
   } catch (err) {
     console.warn('Failed to record scan log in ticketEntries:', err);
   }
