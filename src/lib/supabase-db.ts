@@ -298,8 +298,54 @@ export function sbMirrorSeatMany(rows: Record<string, unknown>[]): void {
   sbUpsertMany('seats', rows.map((r) => applyMap(r, SEAT_FIELD_MAP)));
 }
 
-export function sbMirrorSeatUpdate(id: string, data: Record<string, unknown>): void {
-  sbUpdate('seats', id, applyMap(data, SEAT_FIELD_MAP));
+export function sbMirrorSeatUpdate(
+  id: string,
+  data: Record<string, unknown>,
+  showId?: string
+): void {
+  const mapped = applyMap(data, SEAT_FIELD_MAP);
+  const sk = id.trim().toUpperCase();
+  const prefixed = showId ? `${showId}_${sk}` : '';
+  const filter = prefixed
+    ? `id.eq.${sk},seat_id.eq.${sk},id.eq.${prefixed}`
+    : `id.eq.${sk},seat_id.eq.${sk}`;
+
+  sb.from('seats')
+    .update(mapped)
+    .or(filter)
+    .then(({ error }) => {
+      if (error) logFail('seats', 'updateSeat', error.message);
+    });
+}
+
+/** Delete an entire row of seats for an event from Supabase */
+export function sbMirrorDeleteSeatRow(
+  eventId: string,
+  blockId: string,
+  rowId: string
+): void {
+  const b = blockId.trim().toUpperCase();
+  const r = rowId.trim().toUpperCase();
+  sb.from('seats')
+    .delete()
+    .eq('event_id', eventId)
+    .eq('block_id', b)
+    .eq('row_id', r)
+    .then(({ error }) => {
+      if (error) logFail('seats', `deleteSeatRow (${b}-${r})`, error.message);
+    });
+}
+
+/** Delete a specific seat by key for an event from Supabase */
+export function sbMirrorDeleteSeat(showId: string, seatKey: string): void {
+  const sk = seatKey.trim().toUpperCase();
+  const prefixed = `${showId}_${sk}`;
+  sb.from('seats')
+    .delete()
+    .or(`id.eq.${sk},seat_id.eq.${sk},id.eq.${prefixed}`)
+    .then(({ error }) => {
+      if (error) logFail('seats', `deleteSeat (${sk})`, error.message);
+    });
 }
 
 export function sbMirrorEvent(data: Record<string, unknown>): void {

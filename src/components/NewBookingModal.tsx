@@ -15,7 +15,8 @@ import {
   Headphones,
   Minus,
   Plus,
-  AlertCircle
+  AlertCircle,
+  Armchair
 } from 'lucide-react';
 import { TicketType, BookingItem, EventItem, Seat } from '@/types';
 import StageDiagram, { buildSeatStats } from '@/components/StageDiagram';
@@ -86,40 +87,120 @@ export default function NewBookingModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  const isCounterSeatMode = Boolean(counterSelection && counterSelection.length > 0);
+  const [removedSeatIds, setRemovedSeatIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setRemovedSeatIds(new Set());
+  }, [isOpen, counterSelection]);
+
+  const activeCounterSelection = React.useMemo(() => {
+    if (!counterSelection) return null;
+    return counterSelection
+      .map((g) => ({
+        block: g.block,
+        seats: g.seats.filter((id) => !removedSeatIds.has(id))
+      }))
+      .filter((g) => g.seats.length > 0);
+  }, [counterSelection, removedSeatIds]);
+
+  const counterSeats = React.useMemo(() => {
+    return (activeCounterSelection || []).flatMap((g) => g.seats);
+  }, [activeCounterSelection]);
+
+  const effQuantity = isCounterSeatMode ? counterSeats.length : quantity;
+
+  const handleRemoveSeat = (seatId: string) => {
+    setRemovedSeatIds((prev) => new Set([...prev, seatId]));
+  };
 
   const selectedTier = ticketTypes.find((t) => t.id === selectedTypeId) || ticketTypes[0];
   const tierUnitPrice = selectedTier ? selectedTier.price : 50;
-  const counterSeats = (counterSelection || []).flatMap((g) => g.seats);
-  const effQuantity = counterSeats.length > 0 ? counterSeats.length : quantity;
+
+  const findSeatObj = (seatId: string): Seat | undefined =>
+    seats.find((s) => s.id === seatId || (s as any).seatId === seatId);
 
   // Same block/row matching the counter seat grid uses — keeps the booking
   // record aligned with the tier that actually owns the selected seats.
   const getTicketTypeForSeat = (seat: Seat): TicketType | undefined =>
     ticketTypes.find((tt) => {
+      const sBlock = (seat.blockId || '').trim().toUpperCase();
+      const sRow = (seat.rowId || '').toUpperCase();
       const blocks = (tt.blocks || []).map((b) => b.trim().toUpperCase()).filter(Boolean);
       const blocksMatch =
-        blocks.length === 0 || blocks.includes('ALL') || blocks.includes(seat.blockId.trim().toUpperCase());
+        blocks.length === 0 || blocks.includes('ALL') || (sBlock && blocks.includes(sBlock));
       const rows = (tt.rows || []).map((r) => r.trim().toUpperCase()).filter(Boolean);
-      const baseRow = seat.rowId.replace(/[0-9]/g, '').toUpperCase();
+      const baseRow = sRow.replace(/[0-9]/g, '');
       const rowsMatch =
-        rows.length === 0 || rows.includes('ALL') || rows.includes(seat.rowId.toUpperCase()) || rows.includes(baseRow);
+        rows.length === 0 || rows.includes('ALL') || (sRow && rows.includes(sRow)) || (baseRow && rows.includes(baseRow));
       return blocksMatch && rowsMatch;
     });
 
-  const counterSeatObjs = seats.filter((s) => counterSeats.includes(s.id));
-  const seatType = counterSeatObjs.length > 0 ? getTicketTypeForSeat(counterSeatObjs[0]) : undefined;
+  const getSeatInfo = (seatId: string, blockFallback: string = ''): {
+    id: string;
+    block: string;
+    row: string;
+    seatNumber: number | string;
+    label: string;
+    price: number;
+    ticketType?: TicketType;
+  } => {
+    const s = findSeatObj(seatId);
+    let block = (s?.blockId || blockFallback || '').trim().toUpperCase();
+    let row = (s?.rowId || '').trim().toUpperCase();
+    let seatNumber: number | string = s?.seatNumber ?? '';
+    let label = (s?.seatLabel || '').trim();
+
+    if (!block || !row || !label) {
+      const parts = seatId.split('-');
+      if (parts.length >= 3) {
+        if (!block) block = parts[0].toUpperCase();
+        if (!row) row = parts[1].toUpperCase();
+        if (!seatNumber) seatNumber = parts[2];
+        if (!label) label = `${parts[1]}${parts[2]}`;
+      } else if (parts.length === 2) {
+        if (!row) row = parts[0].toUpperCase();
+        if (!seatNumber) seatNumber = parts[1];
+        if (!label) label = `${parts[0]}${parts[1]}`;
+      }
+    }
+
+    if (!label) {
+      label = row && seatNumber ? `${row}${seatNumber}` : seatId;
+    } else if (/^[A-Za-z]+[- ]?\d+$/.test(label)) {
+      label = label.replace('-', '');
+    }
+
+    const dummySeat: Seat = s || {
+      id: seatId,
+      eventId: currentEvent?.id || '',
+      blockId: block,
+      rowId: row,
+      seatNumber: Number(seatNumber) || 0,
+      seatLabel: label,
+      status: 'available',
+      price: 100,
+    };
+
+    const tt = getTicketTypeForSeat(dummySeat) || selectedTier;
+    const price = tt && Number(tt.price) > 0 ? Number(tt.price) : Number(dummySeat.price) || Number(selectedTier?.price) || 100;
+
+    return {
+      id: seatId,
+      block: block || 'A',
+      row,
+      seatNumber,
+      label,
+      price,
+      ticketType: tt,
+    };
+  };
+
+  const counterSeatObjs = counterSeats.map((id) => findSeatObj(id)).filter(Boolean) as Seat[];
+  const seatType = counterSeatObjs.length > 0 ? getTicketTypeForSeat(counterSeatObjs[0]) : (counterSeats.length > 0 ? getSeatInfo(counterSeats[0]).ticketType : undefined);
   const pricingType = seatType || selectedTier;
 
-  // Each seat sells at its OWNING TICKET TYPE's current price — the stored
-  // seat.price can be stale after a tier price change. Falls back to seat.price
-  // only when no ticket type covers the seat.
-  const seatPrice = (seat: Seat): number => {
-    const tt = getTicketTypeForSeat(seat);
-    if (tt && Number(tt.price) > 0) return Number(tt.price);
-    return Number(seat.price) || 0;
-  };
-  const seatPriceTotal = counterSeatObjs.reduce((sum, s) => sum + seatPrice(s), 0);
+  const seatPriceTotal = counterSeats.reduce((sum, sId) => sum + getSeatInfo(sId).price, 0);
   const unitPrice =
     counterSeats.length > 0
       ? effQuantity > 0
@@ -145,13 +226,14 @@ export default function NewBookingModal({
     subtotal: number;
   }
   const breakdown: BreakdownRow[] = (() => {
-    if (counterSeatObjs.length > 0) {
+    if (counterSeats.length > 0) {
       const map = new Map<string, BreakdownRow>();
-      counterSeatObjs.forEach((s) => {
-        const tt = getTicketTypeForSeat(s);
-        const name = tt?.name || 'Standard';
-        const price = seatPrice(s);
-        const row = map.get(name) || { name, color: tt?.color, count: 0, price, subtotal: 0 };
+      counterSeats.forEach((seatId) => {
+        const info = getSeatInfo(seatId);
+        const name = info.ticketType?.name || 'Standard';
+        const color = info.ticketType?.color;
+        const price = info.price;
+        const row = map.get(name) || { name, color, count: 0, price, subtotal: 0 };
         row.count += 1;
         row.subtotal += price;
         map.set(name, row);
@@ -166,6 +248,10 @@ export default function NewBookingModal({
   const handleSubmit = async (e: React.FormEvent, shouldPrint: boolean = false) => {
     e.preventDefault();
     if (saving) return;
+    if (isCounterSeatMode && counterSeats.length === 0) {
+      setError('Please select at least one seat to proceed');
+      return;
+    }
     if (!customerName.trim()) {
       setError('Please enter customer name');
       return;
@@ -205,14 +291,17 @@ export default function NewBookingModal({
       ...(counterSeats.length > 0
         ? {
             seats: counterSeats,
-            block: (counterSeatObjs[0]?.blockId || counterSelection![0]?.block || '').toUpperCase(),
+            block: (counterSeatObjs[0]?.blockId || activeCounterSelection?.[0]?.block || '').toUpperCase(),
             seatCount: counterSeats.length,
           }
         : {})
     };
 
     try {
-      await onAddBooking(newBooking, counterSelection && counterSelection.length ? counterSelection : undefined);
+      await onAddBooking(
+        newBooking,
+        activeCounterSelection && activeCounterSelection.length ? activeCounterSelection : undefined
+      );
     } catch (err) {
       console.error('Counter booking failed:', err);
       setError(err instanceof Error ? err.message : 'Failed to save booking. Please try again.');
@@ -233,6 +322,8 @@ export default function NewBookingModal({
     setSaving(false);
     onClose();
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
@@ -259,70 +350,128 @@ export default function NewBookingModal({
 
         {/* Scrollable Body */}
         <form onSubmit={(e) => handleSubmit(e, false)} className="p-4 sm:p-5 space-y-6 flex-1 overflow-y-auto">
-          {/* Seats picked on the counter seat grid — booked atomically below */}
-          {counterSeats.length > 0 && (
-            <div className="flex items-start justify-between gap-3 p-3 rounded-2xl border border-emerald-200 bg-emerald-50">
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase text-emerald-700">Counter seat selection</p>
-                <p className="text-xs font-bold text-slate-800 break-words">
-                  {(counterSelection || [])
-                    .map((g) => `${(g.block || '').toUpperCase()}: ${g.seats.join(', ')}`)
-                    .join('  •  ')}
-                </p>
+          {/* STEP 1 */}
+          {isCounterSeatMode ? (
+            /* COUNTER SEAT SELECTION MODE — Clean seat buttons [A1] [A2] [A3]..., no tier cards, no stage layout */
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <StepHeading number={1} title="Selected Seats" />
+                <span className="text-[11px] font-black text-purple-700 bg-purple-50 border border-purple-200 px-2.5 py-0.5 rounded-full">
+                  {counterSeats.length} seat{counterSeats.length !== 1 ? 's' : ''}
+                </span>
               </div>
-              <span className="text-xs font-black text-emerald-700 whitespace-nowrap">
-                {counterSeats.length} seat{counterSeats.length > 1 ? 's' : ''}
-              </span>
-            </div>
-          )}
-          {/* STEP 1 — TICKET & QUANTITY */}
-          <div className="space-y-3">
-            <StepHeading number={1} title="Ticket & Quantity" />
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {ticketTypes.map((tier) => {
-                const isSelected = selectedTypeId === tier.id;
-                return (
-                  <button
-                    type="button"
-                    key={tier.id}
-                    onClick={() => setSelectedTypeId(tier.id)}
-                    className={`p-2.5 rounded-2xl border text-left transition-all ${
-                      isSelected
-                        ? 'border-purple-600 bg-purple-50/60 text-purple-950 shadow-xs'
-                        : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: tier.color }}></span>
-                      <span className="text-xs font-black truncate">{tier.name}</span>
-                    </div>
-                    <div className="text-sm font-black mt-1 text-slate-900">₹{tier.price}</div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="p-3 rounded-2xl border border-purple-100 bg-purple-50/50">
-              {counterSeats.length > 0 ? (
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs font-black text-slate-900 tracking-wide">
-                      {counterSeats.length} seat{counterSeats.length !== 1 ? 's' : ''} selected
-                      {seatType ? ` • ${seatType.name}` : ''}
-                    </p>
-                    <p className="text-[10px] font-semibold text-slate-500 break-words">
-                      {counterSeatObjs.map((s) => `${s.blockId}-${s.rowId}-${s.seatNumber}`).join(', ')}
-                    </p>
-                    <p className="text-[10px] font-semibold text-slate-500">
-                      Total {formatINR(seatPriceTotal)} &bull; {assignedGate}
-                    </p>
+              <div className="p-3.5 rounded-2xl border border-purple-200/80 bg-purple-50/40 space-y-3">
+                {/* Tier summary & Gate info */}
+                <div className="flex items-center justify-between pb-2.5 border-b border-purple-100">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: pricingType?.color || '#7c3aed' }}
+                    />
+                    <span className="text-xs font-black text-slate-900">
+                      {pricingType?.name || 'Standard'}
+                    </span>
+                    <span className="text-[11px] font-bold text-slate-500">
+                      • ₹{unitPrice} / seat
+                    </span>
                   </div>
-                  <span className="text-[10px] font-black text-purple-700 bg-white border border-purple-200 px-2 py-1 rounded-lg shrink-0">
-                    Seats priced
+                  <span className="text-[10px] font-bold text-purple-700 bg-white border border-purple-200 px-2 py-0.5 rounded-lg shadow-2xs">
+                    {assignedGate}
                   </span>
                 </div>
-              ) : (
+
+                {/* Blocks & Seat Buttons */}
+                {activeCounterSelection && activeCounterSelection.length > 0 ? (
+                  <div className="space-y-3">
+                    {activeCounterSelection.map((group) => {
+                      const blockName = (group.block || '').toUpperCase();
+                      return (
+                        <div key={blockName} className="space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-purple-800 bg-purple-100/90 border border-purple-200 px-2 py-0.5 rounded-md">
+                              Block {blockName}
+                            </span>
+                            <span className="text-[10px] font-semibold text-slate-500">
+                              {group.seats.length} seat{group.seats.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-2 pt-0.5">
+                            {group.seats.map((seatId) => {
+                              const info = getSeatInfo(seatId, group.block);
+                              return (
+                                <div
+                                  key={seatId}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border-2 border-purple-300 bg-white hover:bg-purple-50 shadow-xs transition-all group"
+                                  title={`Block ${info.block} • Seat ${info.label} • ₹${info.price}`}
+                                >
+                                  <Armchair className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
+                                  <span className="font-black text-xs text-purple-950 tracking-tight font-mono">
+                                    [{info.label}]
+                                  </span>
+                                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-200/80">
+                                    ₹{info.price}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveSeat(seatId)}
+                                    className="w-4 h-4 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors ml-0.5"
+                                    title={`Remove seat ${info.label}`}
+                                    aria-label={`Remove seat ${info.label}`}
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs font-semibold text-rose-500 py-1">
+                    No seats selected. Please close this popup and select seats from the counter grid.
+                  </p>
+                )}
+
+                {/* Total row */}
+                <div className="pt-2 border-t border-purple-100 flex items-center justify-between text-xs font-semibold">
+                  <span className="text-slate-500">Selected seats total:</span>
+                  <span className="text-slate-900 font-black">{formatINR(totalAmount)}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* REGULAR BOOKING MODE — Ticket type cards, quantity spinner, stage diagram */
+            <div className="space-y-3">
+              <StepHeading number={1} title="Ticket & Quantity" />
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {ticketTypes.map((tier) => {
+                  const isSelected = selectedTypeId === tier.id;
+                  return (
+                    <button
+                      type="button"
+                      key={tier.id}
+                      onClick={() => setSelectedTypeId(tier.id)}
+                      className={`p-2.5 rounded-2xl border text-left transition-all ${
+                        isSelected
+                          ? 'border-purple-600 bg-purple-50/60 text-purple-950 shadow-xs'
+                          : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: tier.color }}></span>
+                        <span className="text-xs font-black truncate">{tier.name}</span>
+                      </div>
+                      <div className="text-sm font-black mt-1 text-slate-900">₹{tier.price}</div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="p-3 rounded-2xl border border-purple-100 bg-purple-50/50">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs font-black text-slate-900 tracking-wide">{selectedTier?.name}</p>
@@ -350,27 +499,27 @@ export default function NewBookingModal({
                     </button>
                   </div>
                 </div>
-              )}
-            </div>
-
-            {/* Stage Layout Diagram */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase text-slate-500">Stage Layout</span>
-                <span className="text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-100 px-2 py-0.5 rounded-md">
-                  {selectedTier?.name}: {blockLabel}
-                </span>
               </div>
-              <StageDiagram
-                highlightBlocks={tierBlocks}
-                gradientIdPrefix="nbStage"
-                labels={blockLabels}
-                channelLabels={channelLabels}
-                seatStats={seatStats}
-                disabledBlocks={disabledBlocks}
-              />
+
+              {/* Stage Layout Diagram */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase text-slate-500">Stage Layout</span>
+                  <span className="text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-100 px-2 py-0.5 rounded-md">
+                    {selectedTier?.name}: {blockLabel}
+                  </span>
+                </div>
+                <StageDiagram
+                  highlightBlocks={tierBlocks}
+                  gradientIdPrefix="nbStage"
+                  labels={blockLabels}
+                  channelLabels={channelLabels}
+                  seatStats={seatStats}
+                  disabledBlocks={disabledBlocks}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           {/* STEP 2 — YOUR DETAILS */}
           <div className="space-y-3">
@@ -503,7 +652,7 @@ export default function NewBookingModal({
         <div className="p-4 border-t border-slate-100 bg-white sticky bottom-0 z-20 space-y-2.5">
           <button
             type="button"
-            disabled={saving}
+            disabled={saving || (isCounterSeatMode && counterSeats.length === 0)}
             onClick={(e) => handleSubmit(e, true)}
             className="w-full bg-gradient-to-r from-purple-700 to-indigo-800 hover:from-purple-800 hover:to-indigo-900 disabled:opacity-60 text-white font-extrabold text-xs py-3.5 rounded-2xl shadow-md flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
           >
@@ -514,7 +663,7 @@ export default function NewBookingModal({
 
           <button
             type="button"
-            disabled={saving}
+            disabled={saving || (isCounterSeatMode && counterSeats.length === 0)}
             onClick={(e) => handleSubmit(e as unknown as React.FormEvent, false)}
             className="w-full bg-slate-100 hover:bg-slate-200 disabled:opacity-60 text-slate-800 font-extrabold text-xs py-3 rounded-2xl flex items-center justify-center gap-1.5 transition-colors"
           >

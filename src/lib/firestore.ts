@@ -29,6 +29,8 @@ import {
   sbMirrorSeat,
   sbMirrorSeatMany,
   sbMirrorSeatUpdate,
+  sbMirrorDeleteSeatRow,
+  sbMirrorDeleteSeat,
   sbMirrorEvent,
   sbMirrorEventUpdate,
   sbMirrorShow,
@@ -682,7 +684,7 @@ export async function addBooking(
   sbMirrorBooking({ ...fullBooking, id: bookingId });
   for (const t of ticketItems) sbMirrorTicket(t.item as unknown as Record<string, unknown>);
   for (const key of targets) {
-    sbMirrorSeatUpdate(key.key, { status: 'booked', bookedAt: nowIso, bookingId: baseTicketNumber, reservedBy: null, reservedAt: null });
+    sbMirrorSeatUpdate(key.key, { status: 'booked', bookedAt: nowIso, bookingId: baseTicketNumber, reservedBy: null, reservedAt: null }, showId);
   }
 
   return bookingId;
@@ -766,7 +768,7 @@ export async function cancelBookingWithRelease(booking: {
         // Never free a seat claimed by a different booking.
         if (data.bookingId && booking.ticketNumber && data.bookingId !== booking.ticketNumber) continue;
         await updateDoc(ref, { status: 'available', bookedAt: null, bookingId: null });
-        sbMirrorSeatUpdate(`${block}-${row}-${num}`, { status: 'available', bookedAt: null, bookingId: null });
+        sbMirrorSeatUpdate(`${block}-${row}-${num}`, { status: 'available', bookedAt: null, bookingId: null }, showId);
       } catch (err) {
         console.warn('cancelBookingWithRelease seat release failed:', err);
       }
@@ -832,7 +834,7 @@ export async function deleteBooking(booking: {
           if (st !== 'booked' && st !== 'reserved' && st !== 'sold') continue;
           if (data.bookingId && booking.ticketNumber && data.bookingId !== booking.ticketNumber) continue;
           await updateDoc(ref, { status: 'available', bookedAt: null, bookingId: null, reservedBy: null, reservedAt: null });
-          sbMirrorSeatUpdate(`${block}-${row}-${num}`, { status: 'available', bookedAt: null, bookingId: null, reservedBy: null, reservedAt: null });
+          sbMirrorSeatUpdate(`${block}-${row}-${num}`, { status: 'available', bookedAt: null, bookingId: null, reservedBy: null, reservedAt: null }, showId);
         } catch (err) {
           console.warn('deleteBooking seat release failed:', err);
         }
@@ -1285,7 +1287,7 @@ export async function createSeatRow(params: {
     // Mirror to Supabase
     const nowIso = new Date().toISOString();
     sbMirrorSeatMany(chunk.map((n) => ({
-      id: `${block}-${row}-${n}`,
+      id: `${showId}_${block}-${row}-${n}`,
       seat_id: `${block}-${row}-${n}`,
       seat_number: n,
       block: block,
@@ -1390,7 +1392,7 @@ export async function trimSeatRow(params: {
   // Mirror deletions to Supabase
   if (deleted > 0) {
     for (let n = target + 1; n <= target + deleted + keptBooked; n++) {
-      sbMirrorDelete('seats', `${block}-${row}-${n}`);
+      sbMirrorDeleteSeat(showId, `${block}-${row}-${n}`);
     }
   }
 
@@ -1473,7 +1475,7 @@ export async function updateSeatRow(params: {
         )
       );
       liveSnap.docs.forEach((d) => {
-        sbMirrorSeatUpdate(d.id, { price });
+        sbMirrorSeatUpdate(d.id, { price }, showId);
       });
     } catch { /* best-effort mirror */ }
   }
@@ -1494,19 +1496,27 @@ export async function deleteSeatRow(params: {
 
   // 1. Delete from shows/{showId}/seats
   try {
-    const snap = await getDocs(
-      query(
-        collection(db, 'shows', showId, 'seats'),
-        where('block', '==', block),
-        where('row', '==', row)
-      )
-    );
-    if (!snap.empty) {
-      const batch = writeBatch(db);
-      snap.docs.forEach((d) => batch.delete(d.ref));
-      await batch.commit();
-      // Mirror to Supabase
-      snap.docs.forEach((d) => sbMirrorDelete('seats', d.id));
+    const seatsCol = collection(db, 'shows', showId, 'seats');
+    const [snap1, snap2] = await Promise.all([
+      getDocs(query(seatsCol, where('block', '==', block), where('row', '==', row))),
+      getDocs(query(seatsCol, where('blockId', '==', block), where('rowId', '==', row))),
+    ]);
+    const seen = new Set<string>();
+    const toDelete: Array<typeof snap1.docs[0]> = [];
+    [...snap1.docs, ...snap2.docs].forEach((d) => {
+      if (!seen.has(d.id)) {
+        seen.add(d.id);
+        toDelete.push(d);
+      }
+    });
+
+    if (toDelete.length > 0) {
+      const CHUNK = 450;
+      for (let i = 0; i < toDelete.length; i += CHUNK) {
+        const batch = writeBatch(db);
+        toDelete.slice(i, i + CHUNK).forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+      }
     }
   } catch (err) {
     console.warn('deleteSeatRow shows/seats error:', err);
@@ -1530,6 +1540,9 @@ export async function deleteSeatRow(params: {
   } catch (err) {
     console.warn('deleteSeatRow legacy cleanup error:', err);
   }
+
+  // 3. Mirror row deletion to Supabase
+  sbMirrorDeleteSeatRow(showId, block, row);
 }
 
 export async function listSeatBlocks(eventId: string): Promise<string[]> {

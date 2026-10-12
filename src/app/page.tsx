@@ -34,7 +34,7 @@ import ConfirmDeleteModal from '@/components/ConfirmDeleteModal';
 import { NavigationTab, BookingItem, EventItem, TicketType } from '@/types';
 import { useFirestore } from '@/hooks/useFirestore';
 import { deleteBooking } from '@/lib/firestore';
-import { UserPlus, Plus } from 'lucide-react';
+import { UserPlus, Plus, ExternalLink } from 'lucide-react';
 
 export default function App() {
   const router = useRouter();
@@ -252,7 +252,7 @@ export default function App() {
 
         {/* Sticky Top Header */}
         <Header
-          sectionTitle={currentTab === 'scan-history' ? 'Scanner' : NAV_LABELS[currentTab] || currentTab}
+          sectionTitle={NAV_LABELS[currentTab] || currentTab}
           currentEvent={currentEvent}
           eventsList={eventsList}
           onSelectEvent={setCurrentEvent}
@@ -478,8 +478,31 @@ export default function App() {
 
           {currentTab === 'customers' && (
             <div className="p-6 space-y-6">
-              <h2 className="text-xl font-black text-slate-900">Registered Audience Directory</h2>
-              <p className="text-xs text-slate-400 font-semibold -mt-4">Frequent drama audience, phone contacts, and loyalty history.</p>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 rounded-2xl bg-gradient-to-r from-purple-50 via-indigo-50 to-white border border-purple-200 shadow-xs">
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    Customer Profile & Fake OTP Portal
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Test the Visitor &rarr; Mobile &rarr; Fake OTP (123456) &rarr; Supabase Profile Creation flow.
+                  </p>
+                </div>
+                <a
+                  href="/customer/profile"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold shadow-sm transition-all whitespace-nowrap self-start sm:self-auto"
+                >
+                  <span>Open Customer Portal</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Registered Audience Directory</h2>
+                <p className="text-xs text-slate-400 font-semibold mt-1">Frequent drama audience, phone contacts, and loyalty history.</p>
+              </div>
               <BookingsView
                 bookings={bookings}
                 onOpenNewBooking={() => setNewBookingOpen(true)}
