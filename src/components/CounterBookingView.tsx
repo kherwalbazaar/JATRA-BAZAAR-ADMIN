@@ -149,7 +149,11 @@ export default function CounterBookingView({
   const getBlockSeatsByTicketType = (blockId: string) => {
     const blockSeats = seats.filter(seat => seat.blockId === blockId);
     const groups = new Map<string, { type?: TicketType; seatsByRow: Map<string, Seat[]> }>();
+    const seen = new Set<string>();
     blockSeats.forEach(seat => {
+      const seatKey = seat.id || `${seat.blockId}-${seat.rowId}-${seat.seatNumber}`;
+      if (seen.has(seatKey)) return;
+      seen.add(seatKey);
       const tt = getTicketTypeForSeat(seat);
       const key = tt?.id || '__standard__';
       if (!groups.has(key)) groups.set(key, { type: tt, seatsByRow: new Map() });
@@ -518,7 +522,7 @@ export default function CounterBookingView({
                                             const isSelected = selectedSeats.includes(seat.id);
                                             return (
                                               <button
-                                                key={seat.id}
+                                                key={seat.id || `${seat.blockId}-${rowId}-${seat.seatNumber}`}
                                                 onClick={() => handleSeatToggle(seat.id, isBlocked)}
                                                 disabled={isBlocked}
                                                 className={`h-7 w-7 rounded text-[10px] font-bold flex items-center justify-center transition-all ${

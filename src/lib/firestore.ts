@@ -918,7 +918,18 @@ function listenLegacySeats(
 
   const emit = () => {
     if (disposed || pendingBlocks > 0) return;
-    callback(Array.from(seatsMap.values()));
+    const rawList = Array.from(seatsMap.values());
+    const deduped = new Map<string, Seat>();
+    rawList.forEach((s) => {
+      const b = String(s.blockId || '').trim().toUpperCase();
+      const r = String(s.rowId || '').trim().toUpperCase();
+      const n = Number(s.seatNumber) || 0;
+      const key = s.id ? s.id : `${b}-${r}-${n}`;
+      if (!deduped.has(key)) {
+        deduped.set(key, s);
+      }
+    });
+    callback(Array.from(deduped.values()));
   };
 
   const subscribeBlock = (blockId: string) => {
@@ -1047,44 +1058,78 @@ export function listenSeats(
 
   const emit = () => {
     if (!active || liveSeats === null) return;
-    const seen = new Set<string>();
-    const merged: Seat[] = liveSeats.map((seat) => {
+    const seatMap = new Map<string, Seat>();
+    const locMap = new Map<string, string>(); // locKey -> canonicalId
+
+    liveSeats.forEach((seat) => {
       const block = String(seat.blockId || '').trim().toUpperCase();
-      const key = `${block}/${legacyDocKey(block, seat.id)}`;
-      seen.add(key);
-      const lg = legacyMap.get(key);
-      const liveStatus = String(seat.status || 'available').toLowerCase();
-      const legacyStatus = String((lg && lg.status) || 'available').toLowerCase();
-      if (statusPriority(legacyStatus) > statusPriority(liveStatus)) {
-        return {
-          ...seat,
-          status: legacyStatus as Seat['status'],
-          bookedAt: (lg && (lg.bookedAt as string)) || seat.bookedAt || null,
-          reservedAt: legacyStatus === 'reserved' ? ((lg && (lg.reservedAt as string)) || null) : null,
-          reservedBy: legacyStatus === 'reserved' ? ((lg && (lg.reservedBy as string)) || null) : null,
-        } as Seat;
+      const row = String(seat.rowId || '').trim().toUpperCase();
+      const num = Number(seat.seatNumber) || 0;
+      const canonicalId = seat.id || `${block}-${row}-${num}`;
+      const locKey = `${block}|${row}|${num}`;
+
+      // Look up in legacyMap by multiple key formats to guarantee a hit if legacy data exists
+      const lgKey1 = `${block}/${legacyDocKey(block, canonicalId)}`;
+      const lgKey2 = `${block}/${row}-${num}`;
+      const lgKey3 = `${block}/${canonicalId}`;
+      const lg = legacyMap.get(lgKey1) || legacyMap.get(lgKey2) || legacyMap.get(lgKey3);
+
+      let finalSeat = seat;
+      if (lg) {
+        const liveStatus = String(seat.status || 'available').toLowerCase();
+        const legacyStatus = String(lg.status || 'available').toLowerCase();
+        if (statusPriority(legacyStatus) > statusPriority(liveStatus)) {
+          finalSeat = {
+            ...seat,
+            status: legacyStatus as Seat['status'],
+            bookedAt: (lg.bookedAt as string) || seat.bookedAt || null,
+            reservedAt: legacyStatus === 'reserved' ? ((lg.reservedAt as string) || null) : null,
+            reservedBy: legacyStatus === 'reserved' ? ((lg.reservedBy as string) || null) : null,
+          };
+        }
       }
-      return seat;
+
+      seatMap.set(canonicalId, finalSeat);
+      if (block && row && num > 0) {
+        locMap.set(locKey, canonicalId);
+      }
     });
 
     // Legacy-only protected seats (booking/hold never reached the live path).
     legacyMap.forEach((data, key) => {
-      if (seen.has(key)) return;
       const legacyStatus = String(data.status || 'available').toLowerCase();
       if (statusPriority(legacyStatus) === 0) return;
-      const [block, docId] = key.split('/');
+      const [blockRaw, docId] = key.split('/');
       const parts = docId.split('-');
-      const row = (String(data.rowId || data.row || parts[0] || '')).toUpperCase();
-      const seatNumber = Number(data.seatNumber) || Number(parts[1]) || 0;
-      merged.push({
-        id: `${block}-${row}-${seatNumber}`,
-        seatId: `${block}-${row}-${seatNumber}`,
+      const row = String(data.rowId || data.row || (parts.length >= 2 ? parts[0] : '')).trim().toUpperCase();
+      const seatNumber = Number(data.seatNumber) || (parts.length >= 2 ? Number(parts[1]) : 0);
+      const block = String(data.blockId || data.block || blockRaw).trim().toUpperCase();
+      const canonicalId = `${block}-${row}-${seatNumber}`;
+      const locKey = `${block}|${row}|${seatNumber}`;
+
+      // If already present from liveSeats, update higher priority status without creating duplicate
+      const existingId = locMap.get(locKey) || (seatMap.has(canonicalId) ? canonicalId : null);
+      if (existingId && seatMap.has(existingId)) {
+        const existing = seatMap.get(existingId)!;
+        const curPriority = statusPriority(String(existing.status || '').toLowerCase());
+        const newPriority = statusPriority(legacyStatus);
+        if (newPriority > curPriority) {
+          seatMap.set(existingId, {
+            ...existing,
+            status: legacyStatus as Seat['status'],
+            bookedAt: (data.bookedAt as string) || existing.bookedAt || null,
+            reservedAt: legacyStatus === 'reserved' ? ((data.reservedAt as string) || null) : null,
+            reservedBy: legacyStatus === 'reserved' ? ((data.reservedBy as string) || null) : null,
+          });
+        }
+        return;
+      }
+
+      const newSeat: Seat = {
+        id: canonicalId,
         eventId: showId,
-        showId,
-        blockId: String(data.blockId || data.block || block),
-        block: String(data.blockId || data.block || block),
+        blockId: block,
         rowId: row,
-        row,
         seatNumber,
         seatLabel: String(data.seatLabel || `${row}${seatNumber}`),
         status: legacyStatus as Seat['status'],
@@ -1092,9 +1137,14 @@ export function listenSeats(
         bookedAt: (data.bookedAt as string) || null,
         reservedAt: legacyStatus === 'reserved' ? ((data.reservedAt as string) || null) : null,
         reservedBy: legacyStatus === 'reserved' ? ((data.reservedBy as string) || null) : null,
-      } as Seat);
+      };
+      seatMap.set(canonicalId, newSeat);
+      if (block && row && seatNumber > 0) {
+        locMap.set(locKey, canonicalId);
+      }
     });
 
+    const merged = Array.from(seatMap.values());
     merged.sort((a, b) => {
       if (a.blockId !== b.blockId) return a.blockId.localeCompare(b.blockId);
       if (a.rowId !== b.rowId) return a.rowId.localeCompare(b.rowId);
@@ -1129,17 +1179,24 @@ export function listenSeats(
         }
         const seats = snap.docs.map((d) => {
           const data = d.data();
+          const parts = d.id.split('-');
+          const fallbackBlock = parts.length >= 3 ? parts[0] : '';
+          const fallbackRow = parts.length >= 3 ? parts[1] : parts.length === 2 ? parts[0] : '';
+          const fallbackNum = parts.length >= 3 ? Number(parts[2]) : parts.length === 2 ? Number(parts[1]) : 0;
+          const block = String(data.block || data.blockId || fallbackBlock).trim().toUpperCase();
+          const row = String(data.row || data.rowId || fallbackRow).trim().toUpperCase();
+          const seatNumber = Number(data.seatNumber) || fallbackNum || 0;
           return {
             id: d.id,
             seatId: d.id,
             eventId: showId,
             showId: showId,
-            blockId: data.block || data.blockId || '',
-            block: data.block || data.blockId || '',
-            rowId: data.row || data.rowId || '',
-            row: data.row || data.rowId || '',
-            seatNumber: Number(data.seatNumber) || 0,
-            seatLabel: data.seatLabel || `${data.row || data.rowId}${data.seatNumber}`,
+            blockId: block,
+            block: block,
+            rowId: row,
+            row: row,
+            seatNumber,
+            seatLabel: data.seatLabel || `${row}${seatNumber}`,
             status: data.status || 'available',
             price: Number(data.price) || 100,
             createdAt: data.createdAt ? (typeof data.createdAt === 'object' && data.createdAt.toDate ? data.createdAt.toDate().toISOString() : String(data.createdAt)) : '',

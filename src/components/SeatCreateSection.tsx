@@ -183,11 +183,29 @@ export default function SeatCreateSection({
 
   const rowsByBlock = useMemo(() => {
     const map = new Map<string, Map<string, Seat[]>>();
+    const seen = new Set<string>();
+
     seats.forEach((s) => {
-      if (!map.has(s.blockId)) map.set(s.blockId, new Map());
-      const rows = map.get(s.blockId)!;
-      if (!rows.has(s.rowId)) rows.set(s.rowId, []);
-      rows.get(s.rowId)!.push(s);
+      if (!s) return;
+      const b = String(s.blockId || '').trim().toUpperCase();
+      const r = String(s.rowId || '').trim().toUpperCase();
+      const n = Number(s.seatNumber) || 0;
+      const key = s.id ? s.id : `${b}-${r}-${n}`;
+      const locKey = `${b}|${r}|${n}`;
+
+      if (seen.has(key) || (b && r && n > 0 && seen.has(locKey))) return;
+      seen.add(key);
+      if (b && r && n > 0) seen.add(locKey);
+
+      if (!map.has(b)) map.set(b, new Map());
+      const rows = map.get(b)!;
+      if (!rows.has(r)) rows.set(r, []);
+      rows.get(r)!.push({
+        ...s,
+        blockId: b,
+        rowId: r,
+        seatNumber: n,
+      });
     });
     map.forEach((rows) => {
       rows.forEach((list) => list.sort((a, b) => a.seatNumber - b.seatNumber));
@@ -930,22 +948,34 @@ export default function SeatCreateSection({
                       }
                       
                       const group = groupedRows.get(baseRowId)!;
-                      group.rowIds.push(rowId);
-                      group.allSeats.push(...list);
-                      group.totalSeats += list.length;
-                      group.hasBooked = group.hasBooked || list.some(s => s.status === 'booked');
-                      
-                      // Sort row IDs naturally (A1, A2, A3, etc.)
+                      if (!group.rowIds.includes(rowId)) {
+                        group.rowIds.push(rowId);
+                      }
+                      for (const s of list) {
+                        const sId = s.id || `${blockId}-${s.rowId}-${s.seatNumber}`;
+                        const alreadyInGroup = group.allSeats.some(
+                          (existing) =>
+                            existing.id === sId ||
+                            (existing.rowId === s.rowId && existing.seatNumber === s.seatNumber)
+                        );
+                        if (!alreadyInGroup) {
+                          group.allSeats.push(s);
+                        }
+                      }
+                      group.totalSeats = group.allSeats.length;
+                      group.hasBooked = group.allSeats.some((s) => s.status === 'booked');
+                    });
+
+                    // Sort row IDs and seats cleanly once per group
+                    groupedRows.forEach((group) => {
                       group.rowIds.sort((a, b) => {
                         const aParts = a.match(/([A-Za-z]+)(\d*)/);
                         const bParts = b.match(/([A-Za-z]+)(\d*)/);
-                        
                         if (aParts && bParts) {
                           const aLetter = aParts[1];
                           const bLetter = bParts[1];
                           const aNum = aParts[2] ? parseInt(aParts[2]) : 0;
                           const bNum = bParts[2] ? parseInt(bParts[2]) : 0;
-                          
                           if (aLetter !== bLetter) {
                             return aLetter.localeCompare(bLetter);
                           }
@@ -953,34 +983,11 @@ export default function SeatCreateSection({
                         }
                         return a.localeCompare(b);
                       });
-                      
-                      // Sort seats within the group by seat number
+
                       group.allSeats.sort((a, b) => a.seatNumber - b.seatNumber);
-                      
-                      // Sort row IDs naturally (A1, A2, A3, etc.)
-                      group.rowIds.sort((a, b) => {
-                        const aParts = a.match(/([A-Za-z]+)(\d*)/);
-                        const bParts = b.match(/([A-Za-z]+)(\d*)/);
-                        
-                        if (aParts && bParts) {
-                          const aLetter = aParts[1];
-                          const bLetter = bParts[1];
-                          const aNum = aParts[2] ? parseInt(aParts[2]) : 0;
-                          const bNum = bParts[2] ? parseInt(bParts[2]) : 0;
-                          
-                          if (aLetter !== bLetter) {
-                            return aLetter.localeCompare(bLetter);
-                          }
-                          return aNum - bNum;
-                        }
-                        return a.localeCompare(b);
-                      });
-                      
-                      // Sort seats within the group by seat number
-                      group.allSeats.sort((a, b) => a.seatNumber - b.seatNumber);
-                      
+
                       // Extract just the numbers for display (A1, A2, A3 → 1, 2, 3)
-                      group.rowIdNumbers = group.rowIds.map(id => {
+                      group.rowIdNumbers = group.rowIds.map((id) => {
                         const parts = id.match(/([A-Za-z]+)(\d*)/);
                         return parts && parts[2] ? parts[2] : '';
                       });
@@ -1015,9 +1022,9 @@ export default function SeatCreateSection({
                           }).join(',')}
                         </span>
                         <div className="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
-                          {group.allSeats.map((s) => (
+                          {group.allSeats.map((s, idx) => (
                             <span
-                              key={s.id}
+                              key={s.id || `${blockId}-${s.rowId}-${s.seatNumber}-${idx}`}
                               className={`inline-block border rounded px-1.5 py-0.5 text-[10px] font-bold leading-none ${
                                 s.status === 'available'
                                   ? 'bg-green-100 text-green-700 border-green-200'

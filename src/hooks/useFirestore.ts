@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { EventItem, TicketType, BookingItem, GateInfo, CounterBooth, KPIStats, Seat } from '@/types';
 import * as fs from '@/lib/firestore';
+import { getAugmentedTicketTypes } from '@/lib/ticketSales';
 
 // ─── Local cache (localStorage) — database data stored locally ────
 const CACHE_NS = 'jatra_cache_';
@@ -121,6 +122,28 @@ function computeKPIs(
     averageTicketValue: totalTicketsSold > 0 ? Math.round((totalCollection / totalTicketsSold) * 100) / 100 : 0,
     scannedTodayPercentage: totalTicketsSold > 0 ? Math.round((peopleEntered / totalTicketsSold) * 1000) / 10 : 0,
   };
+}
+
+function dedupeSeats(list: Seat[]): Seat[] {
+  if (!Array.isArray(list)) return [];
+  const map = new Map<string, Seat>();
+  const locMap = new Map<string, string>();
+  for (const s of list) {
+    if (!s) continue;
+    const b = String(s.blockId || '').trim().toUpperCase();
+    const r = String(s.rowId || '').trim().toUpperCase();
+    const n = Number(s.seatNumber) || 0;
+    const key = s.id ? s.id : `${b}-${r}-${n}`;
+    const locKey = `${b}|${r}|${n}`;
+    if (b && r && n > 0 && locMap.has(locKey)) {
+      continue;
+    }
+    if (!map.has(key)) {
+      map.set(key, s);
+      if (b && r && n > 0) locMap.set(locKey, key);
+    }
+  }
+  return Array.from(map.values());
 }
 
 export function useFirestore(): FirestoreState {
@@ -325,7 +348,7 @@ export function useFirestore(): FirestoreState {
     const cachedCounters = cacheRead<CounterBooth[]>(`counters_${eid}`);
     if (cachedCounters) setCounters(cachedCounters);
     const cachedSeats = cacheRead<Seat[]>(`seats_${eid}`);
-    if (cachedSeats) setSeats(cachedSeats);
+    if (cachedSeats) setSeats(dedupeSeats(cachedSeats));
 
     const unsubs: (() => void)[] = [];
 
@@ -462,8 +485,9 @@ export function useFirestore(): FirestoreState {
         fs.listenSeats(
           eid,
           (sts) => {
-            setSeats(sts);
-            cacheWrite(`seats_${eid}`, sts);
+            const clean = dedupeSeats(sts);
+            setSeats(clean);
+            cacheWrite(`seats_${eid}`, clean);
             setIsLiveConnected(true);
             setIsConnectionLost(false);
             setLastUpdated(new Date());
@@ -911,10 +935,15 @@ export function useFirestore(): FirestoreState {
     [isOfflineMode, isLiveConnected]
   );
 
+  // Compute real sold units dynamically across ticket types from live bookings and seats
+  const augmentedTicketTypes = useMemo(() => {
+    return getAugmentedTicketTypes(ticketTypes, bookings, seats, currentEvent?.id);
+  }, [ticketTypes, bookings, seats, currentEvent?.id]);
+
   return {
     events,
     currentEvent,
-    ticketTypes,
+    ticketTypes: augmentedTicketTypes,
     bookings,
     gates,
     counters,

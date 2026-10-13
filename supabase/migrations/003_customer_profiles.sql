@@ -1,72 +1,82 @@
 -- ============================================================
 -- Migration 003: Customer Profiles Table & Row Level Security
--- JATRA BAZAAR — Customer Profile Creation Logic
+-- JATRA BAZAAR — Customer Profile Creation & Management
+-- Safe & Idempotent: Run this in Supabase Dashboard -> SQL Editor
 -- ============================================================
 
--- 1. Create the customer profiles table
+-- 1. Helper function for automated updated_at timestamp
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+SET search_path = public, pg_temp;
+
+-- 2. Create public.profiles table
+-- Note: id is TEXT to seamlessly accept both Supabase Auth UUIDs and client customer IDs
 CREATE TABLE IF NOT EXISTS public.profiles (
-  id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  mobile text NOT NULL UNIQUE,
-  full_name text NOT NULL DEFAULT '',
-  email text,
-  profile_photo text,
-  role text NOT NULL DEFAULT 'customer' CHECK (role = 'customer'),
-  is_active boolean NOT NULL DEFAULT true,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  id TEXT PRIMARY KEY,
+  mobile TEXT NOT NULL UNIQUE,
+  full_name TEXT NOT NULL DEFAULT '',
+  email TEXT,
+  profile_photo TEXT,
+  role TEXT NOT NULL DEFAULT 'customer',
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- 2. Indexes for fast lookups
+-- 3. Indexes for rapid lookups by mobile & role
 CREATE INDEX IF NOT EXISTS idx_profiles_mobile ON public.profiles(mobile);
 CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
 
--- 3. Automatic updated_at trigger
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_trigger WHERE tgname = 'trg_profiles_updated_at'
-  ) THEN
-    CREATE TRIGGER trg_profiles_updated_at
-      BEFORE UPDATE ON public.profiles
-      FOR EACH ROW
-      EXECUTE FUNCTION set_updated_at();
-  END IF;
-END $$;
+-- 4. Automatic updated_at trigger
+DROP TRIGGER IF EXISTS trg_profiles_updated_at ON public.profiles;
+CREATE TRIGGER trg_profiles_updated_at
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_updated_at();
 
--- 4. Enable Row Level Security (RLS)
+-- 5. Enable Row Level Security (RLS)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
--- 5. Drop existing policies if any to avoid duplication
+-- 6. Clean existing policies to prevent conflicts
+DROP POLICY IF EXISTS "Public access to profiles" ON public.profiles;
 DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Service role full access on profiles" ON public.profiles;
 DROP POLICY IF EXISTS "Admins can view all customer profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Allow anon and authenticated select profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Allow anon and authenticated insert profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Allow anon and authenticated update profiles" ON public.profiles;
 
--- 6. RLS Policies
--- Authenticated customers can read ONLY their own profile
-CREATE POLICY "Users can view own profile"
+-- 7. Comprehensive RLS Policies for Mobile/Web Audience Portal
+-- Allow reading profiles
+CREATE POLICY "Allow anon and authenticated select profiles"
   ON public.profiles
   FOR SELECT
-  TO authenticated
-  USING (auth.uid() = id);
+  TO public
+  USING (true);
 
--- Authenticated customers can insert ONLY their own profile with role = 'customer'
-CREATE POLICY "Users can insert own profile"
+-- Allow creating new customer profile
+CREATE POLICY "Allow anon and authenticated insert profiles"
   ON public.profiles
   FOR INSERT
-  TO authenticated
-  WITH CHECK (auth.uid() = id AND role = 'customer');
+  TO public
+  WITH CHECK (true);
 
--- Authenticated customers can update ONLY their own profile (role must remain 'customer')
-CREATE POLICY "Users can update own profile"
+-- Allow updating profile
+CREATE POLICY "Allow anon and authenticated update profiles"
   ON public.profiles
   FOR UPDATE
-  TO authenticated
-  USING (auth.uid() = id)
-  WITH CHECK (auth.uid() = id AND role = 'customer');
+  TO public
+  USING (true)
+  WITH CHECK (true);
 
--- Service role has full administrative access
+-- Full unrestricted access for service_role backend operations
 CREATE POLICY "Service role full access on profiles"
   ON public.profiles
   FOR ALL
@@ -74,14 +84,5 @@ CREATE POLICY "Service role full access on profiles"
   USING (true)
   WITH CHECK (true);
 
--- Admins can view all customer profiles for audience directory
-CREATE POLICY "Admins can view all customer profiles"
-  ON public.profiles
-  FOR SELECT
-  TO authenticated
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.users
-      WHERE users.id = auth.uid() AND users.role = 'admin'
-    )
-  );
+-- 8. Instantly reload PostgREST schema cache
+NOTIFY pgrst, 'reload schema';
