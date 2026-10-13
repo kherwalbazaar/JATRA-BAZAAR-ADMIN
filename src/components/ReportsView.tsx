@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { KPIStats, TicketType, EventItem, BookingItem, Seat } from '@/types';
 import { formatINR, formatNumber } from '@/lib/utils';
-import { computeTicketTypeSales } from '@/lib/ticketSales';
+import { computeTicketTypeSales, getTierQuota } from '@/lib/ticketSales';
 
 interface ReportsViewProps {
   currentEvent: EventItem | null;
@@ -56,7 +56,7 @@ export default function ReportsView({
   const cashPct = instrumentTotal > 0 ? Math.round(((kpis.cashCollection || 0) / instrumentTotal) * 1000) / 10 : 0;
 
   // Totals for table footer
-  const totalQuota = ticketTypes.reduce((sum, t) => sum + (t.totalQuota || 0), 0);
+  const totalQuota = ticketTypes.reduce((sum, t) => sum + getTierQuota(t, ticketTypes, seats), 0);
   const totalSold = ticketTypes.reduce((sum, t) => {
     const s = salesMap.get(t.id) || { soldUnits: t.sold || 0, revenue: 0 };
     return sum + s.soldUnits;
@@ -191,7 +191,8 @@ export default function ReportsView({
               {ticketTypes.map((t) => {
                 const sales = salesMap.get(t.id) || { soldUnits: t.sold || 0, revenue: (t.sold || 0) * t.price };
                 const soldUnits = sales.soldUnits;
-                const occupancy = formatOccupancy(soldUnits, t.totalQuota);
+                const quota = getTierQuota(t, ticketTypes, seats);
+                const occupancy = formatOccupancy(soldUnits, quota);
                 const revenue = sales.revenue;
 
                 return (
@@ -201,7 +202,7 @@ export default function ReportsView({
                       <span>{t.name}</span>
                     </td>
                     <td className="py-2.5 px-3">₹{t.price}</td>
-                    <td className="py-2.5 px-3">{formatNumber(t.totalQuota)}</td>
+                    <td className="py-2.5 px-3">{formatNumber(quota)}</td>
                     <td className="py-2.5 px-3 font-bold text-slate-900">{formatNumber(soldUnits)}</td>
                     <td className="py-2.5 px-3 font-bold text-indigo-600">{occupancy}</td>
                     <td className="py-2.5 px-3 text-right font-black text-slate-900">{formatINR(revenue)}</td>

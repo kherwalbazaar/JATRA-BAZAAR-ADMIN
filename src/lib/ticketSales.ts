@@ -6,6 +6,68 @@ export interface TierSalesStats {
 }
 
 /**
+ * Checks if a ticket tier is for standing / general admission.
+ */
+export function isStandingTier(type: TicketType): boolean {
+  if (!type) return false;
+  const name = (type.name || '').toLowerCase();
+  const blocks = (type.blocks || []).map((b) => b.trim().toUpperCase());
+  return name.includes('standing') || blocks.includes('STANDING');
+}
+
+/**
+ * Returns a score indicating how specifically and accurately a ticket type matches a seat's block and row.
+ * Returns -1 if it does not match. Higher score means higher specificity.
+ */
+function scoreTierForSeat(
+  tt: TicketType,
+  seatBlock: string,
+  seatRow: string
+): number {
+  if (isStandingTier(tt)) return -1; // Never match physical seats to standing tiers
+
+  const sBlock = (seatBlock || '').trim().toUpperCase();
+  const sRow = (seatRow || '').trim().toUpperCase();
+  const baseRow = sRow.replace(/^ROW\s*/i, '').replace(/[0-9]/g, '').trim();
+
+  const blocks = (tt.blocks || []).map((b) => b.trim().toUpperCase()).filter(Boolean);
+  const rows = (tt.rows || []).map((r) => r.trim().toUpperCase()).filter(Boolean);
+
+  const hasSpecificBlocks = blocks.length > 0 && !blocks.includes('ALL');
+  const hasSpecificRows = rows.length > 0 && !rows.includes('ALL');
+
+  // Check block match
+  const blockMatches =
+    !hasSpecificBlocks ||
+    !sBlock ||
+    blocks.includes(sBlock);
+
+  if (!blockMatches) return -1;
+
+  // Check row match
+  let rowMatches = false;
+  if (!hasSpecificRows) {
+    rowMatches = true;
+  } else {
+    rowMatches =
+      Boolean(sRow && rows.includes(sRow)) ||
+      Boolean(baseRow && rows.includes(baseRow));
+  }
+
+  if (!rowMatches) return -1;
+
+  // Specificity scoring:
+  // Both specific row and specific block match: 40
+  // Specific row matched: 30
+  // Specific block matched: 20
+  // Generic match (no specific rows or blocks): 10
+  if (hasSpecificBlocks && hasSpecificRows) return 40;
+  if (hasSpecificRows) return 30;
+  if (hasSpecificBlocks) return 20;
+  return 10;
+}
+
+/**
  * Matches a seat reference (e.g. "C1-A-1", "A1-A-2", "A-1" or doc ID) to its TicketType.
  */
 export function matchSeatToTier(
@@ -15,64 +77,85 @@ export function matchSeatToTier(
 ): TicketType | undefined {
   if (!ticketTypes || ticketTypes.length === 0) return undefined;
 
-  // 1. If we have the hydrated Seat object:
-  if (seatObj) {
-    const sBlock = (seatObj.blockId || '').trim().toUpperCase();
-    const sRow = (seatObj.rowId || '').trim().toUpperCase();
-    const baseRow = sRow.replace(/[0-9]/g, '');
+  let sBlock = '';
+  let sRow = '';
 
-    const found = ticketTypes.find((tt) => {
-      const blocks = (tt.blocks || []).map((b) => b.trim().toUpperCase()).filter(Boolean);
-      const blocksMatch =
-        blocks.length === 0 || blocks.includes('ALL') || (sBlock && blocks.includes(sBlock));
-      const rows = (tt.rows || []).map((r) => r.trim().toUpperCase()).filter(Boolean);
-      const rowsMatch =
-        rows.length === 0 ||
-        rows.includes('ALL') ||
-        (sRow && rows.includes(sRow)) ||
-        (baseRow && rows.includes(baseRow));
-      return blocksMatch && rowsMatch;
-    });
-    if (found) return found;
+  if (seatObj) {
+    sBlock = (seatObj.blockId || '').trim().toUpperCase();
+    sRow = (seatObj.rowId || '').trim().toUpperCase();
   }
 
-  // 2. Parse from seatRef string: e.g. "C1-A-1", "Block C1-Row A-Seat 1", "A-1", "A1-2"
-  const clean = String(seatRef || '').trim();
-  const parts = clean.split(/[-_/\s]+/);
+  if (!sBlock || !sRow) {
+    const clean = String(seatRef || '').trim();
+    const parts = clean.split(/[-_/\s]+/);
 
-  let parsedBlock = '';
-  let parsedRow = '';
-
-  if (parts.length >= 3) {
-    // Format: Block-Row-Number, e.g. ["C1", "A", "1"]
-    parsedBlock = parts[0].toUpperCase();
-    parsedRow = parts[1].toUpperCase();
-  } else if (parts.length === 2) {
-    // Format: Row-Number (e.g. ["A", "1"]) or Block-Seat
-    if (/^[A-Za-z]+$/.test(parts[0])) {
-      parsedRow = parts[0].toUpperCase();
-    } else {
-      parsedBlock = parts[0].toUpperCase();
+    if (parts.length >= 3) {
+      if (!sBlock) sBlock = parts[0].toUpperCase();
+      if (!sRow) sRow = parts[1].toUpperCase();
+    } else if (parts.length === 2) {
+      if (/^[A-Za-z]+$/.test(parts[0])) {
+        if (!sRow) sRow = parts[0].toUpperCase();
+      } else {
+        if (!sBlock) sBlock = parts[0].toUpperCase();
+      }
     }
   }
 
-  const baseParsedRow = parsedRow.replace(/[0-9]/g, '');
+  // Find candidate tier with the highest match score
+  let bestTier: TicketType | undefined = undefined;
+  let bestScore = -1;
 
-  return ticketTypes.find((tt) => {
-    const blocks = (tt.blocks || []).map((b) => b.trim().toUpperCase()).filter(Boolean);
-    const blocksMatch =
-      blocks.length === 0 ||
-      blocks.includes('ALL') ||
-      !parsedBlock ||
-      blocks.includes(parsedBlock);
-    const rows = (tt.rows || []).map((r) => r.trim().toUpperCase()).filter(Boolean);
-    const rowsMatch =
-      rows.length === 0 ||
-      rows.includes('ALL') ||
-      (parsedRow && rows.includes(parsedRow)) ||
-      (baseParsedRow && rows.includes(baseParsedRow));
-    return blocksMatch && rowsMatch;
+  for (const tt of ticketTypes) {
+    const score = scoreTierForSeat(tt, sBlock, sRow);
+    if (score > bestScore) {
+      bestScore = score;
+      bestTier = tt;
+    }
+  }
+
+  return bestTier;
+}
+
+/**
+ * Returns all physical seats assigned to this ticket type.
+ */
+export function getTierPhysicalSeats(
+  tier: TicketType,
+  allTicketTypes: TicketType[],
+  seats: Seat[] = []
+): Seat[] {
+  if (!seats || seats.length === 0) return [];
+  if (isStandingTier(tier)) return [];
+
+  return seats.filter((s) => {
+    const matched = matchSeatToTier(s.id, allTicketTypes, s);
+    return matched?.id === tier.id;
   });
+}
+
+/**
+ * Calculates the total seat quota for a ticket tier.
+ * For standing / general admission: returns tier.totalQuota.
+ * For seated tiers: returns the total count of physical seats created in its assigned rows/blocks.
+ * If no physical seats exist for this event at all, falls back to tier.totalQuota.
+ */
+export function getTierQuota(
+  tier: TicketType,
+  allTicketTypes: TicketType[] = [],
+  seats: Seat[] = []
+): number {
+  if (isStandingTier(tier)) {
+    return tier.totalQuota || 0;
+  }
+
+  // If the event has physical seats created in the venue
+  if (seats && seats.length > 0) {
+    const physicalSeats = getTierPhysicalSeats(tier, allTicketTypes, seats);
+    return physicalSeats.length;
+  }
+
+  // Fallback if no seats have been created in the venue at all yet
+  return tier.totalQuota || 0;
 }
 
 /**
