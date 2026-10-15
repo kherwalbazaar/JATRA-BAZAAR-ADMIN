@@ -3,8 +3,9 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Trash2, CalendarPlus } from 'lucide-react';
-import { doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { db, FIRESTORE_COLLECTIONS } from '@/lib/firebase';
+import { updateEvent, deleteEvent } from '@/lib/firestore';
 import EventForm from '@/components/EventForm';
 import { EventItem } from '@/types';
 
@@ -54,7 +55,7 @@ function EditEventForm() {
   const handleSave = async (data: Omit<EventItem, 'id'>) => {
     setSaving(true);
     try {
-      await updateDoc(doc(db, FIRESTORE_COLLECTIONS.EVENTS, id!), { ...data });
+      await updateEvent(id!, data);
       goBack();
     } catch (err) {
       console.error('Failed to update event:', err);
@@ -68,7 +69,7 @@ function EditEventForm() {
     if (!confirm('Are you sure you want to delete this event? This cannot be undone.')) return;
     setDeleting(true);
     try {
-      await deleteDoc(doc(db, FIRESTORE_COLLECTIONS.EVENTS, id!));
+      await deleteEvent(id!);
       goBack();
     } catch (err) {
       console.error('Failed to delete event:', err);

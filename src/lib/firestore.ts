@@ -811,14 +811,19 @@ export async function deleteBooking(booking: {
   if (showId && seatKeys.length > 0) {
     for (const key of seatKeys) {
       const parts = key.split('-');
-      let block = '';
+      let block = blockHint;
       let row = '';
       let num = '';
       if (parts.length >= 3) {
         [block, row, num] = parts;
-      } else if (parts.length === 2 && blockHint) {
-        block = blockHint;
+      } else if (parts.length === 2) {
         [row, num] = parts;
+      } else if (parts.length === 1) {
+        const m = parts[0].match(/^([A-Z]+)(\d+)$/);
+        if (m) {
+          row = m[1];
+          num = m[2];
+        }
       }
       if (!block || !row || !num) continue;
 
@@ -1051,10 +1056,19 @@ export function listenSeats(
     legacyUnsubs.set(block, unsub);
   };
 
+  const isHoldFresh = (reservedAt?: unknown): boolean => {
+    if (!reservedAt) return false;
+    const t = typeof reservedAt === 'string' ? Date.parse(reservedAt) : NaN;
+    if (isNaN(t)) return false;
+    return Date.now() - t < 10 * 60 * 1000;
+  };
+
   // Which protected status is stronger when both paths disagree
   // (booked/sold beat a fresh customer-app hold of "reserved").
-  const statusPriority = (s: string) =>
-    s === 'booked' ? 3 : s === 'sold' ? 2 : PROTECTED.has(s) ? 1 : 0;
+  const statusPriority = (s: string, reservedAt?: unknown) => {
+    if (s === 'reserved' && !isHoldFresh(reservedAt)) return 0;
+    return s === 'booked' ? 3 : s === 'sold' ? 2 : s === 'reserved' ? 1 : 0;
+  };
 
   const emit = () => {
     if (!active || liveSeats === null) return;
@@ -1075,14 +1089,20 @@ export function listenSeats(
       const lg = legacyMap.get(lgKey1) || legacyMap.get(lgKey2) || legacyMap.get(lgKey3);
 
       let finalSeat = seat;
+      if (finalSeat.status === 'reserved' && !isHoldFresh(finalSeat.reservedAt)) {
+        finalSeat = { ...finalSeat, status: 'available', reservedAt: null, reservedBy: null };
+      }
       if (lg) {
-        const liveStatus = String(seat.status || 'available').toLowerCase();
-        const legacyStatus = String(lg.status || 'available').toLowerCase();
-        if (statusPriority(legacyStatus) > statusPriority(liveStatus)) {
+        const liveStatus = String(finalSeat.status || 'available').toLowerCase();
+        let legacyStatus = String(lg.status || 'available').toLowerCase();
+        if (legacyStatus === 'reserved' && !isHoldFresh(lg.reservedAt)) {
+          legacyStatus = 'available';
+        }
+        if (statusPriority(legacyStatus, lg.reservedAt) > statusPriority(liveStatus, finalSeat.reservedAt)) {
           finalSeat = {
-            ...seat,
+            ...finalSeat,
             status: legacyStatus as Seat['status'],
-            bookedAt: (lg.bookedAt as string) || seat.bookedAt || null,
+            bookedAt: (lg.bookedAt as string) || finalSeat.bookedAt || null,
             reservedAt: legacyStatus === 'reserved' ? ((lg.reservedAt as string) || null) : null,
             reservedBy: legacyStatus === 'reserved' ? ((lg.reservedBy as string) || null) : null,
           };
@@ -1097,8 +1117,11 @@ export function listenSeats(
 
     // Legacy-only protected seats (booking/hold never reached the live path).
     legacyMap.forEach((data, key) => {
-      const legacyStatus = String(data.status || 'available').toLowerCase();
-      if (statusPriority(legacyStatus) === 0) return;
+      let legacyStatus = String(data.status || 'available').toLowerCase();
+      if (legacyStatus === 'reserved' && !isHoldFresh(data.reservedAt)) {
+        legacyStatus = 'available';
+      }
+      if (statusPriority(legacyStatus, data.reservedAt) === 0) return;
       const [blockRaw, docId] = key.split('/');
       const parts = docId.split('-');
       const row = String(data.rowId || data.row || (parts.length >= 2 ? parts[0] : '')).trim().toUpperCase();

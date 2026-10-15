@@ -182,31 +182,35 @@ export default function TicketTypesView({
                       </span>
                     )}
 
-                    {/* Assigned Rows or Standing Badge */}
-                    <div className="mt-1">
-                      {isStanding ? (
-                        <span className="inline-block text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200/80 px-1.5 py-0.5 rounded">
-                          Standing / General Quota
-                        </span>
-                      ) : assignedRows.length > 0 ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200/80 px-1.5 py-0.5 rounded">
-                          <span>Rows: {assignedRows.join(', ')}</span>
-                          <span className="text-indigo-600 font-extrabold">({formatNumber(tierQuota)} {tierQuota === 1 ? 'seat' : 'seats'})</span>
-                        </span>
-                      ) : (
-                        <span className="inline-block text-[10px] font-bold text-slate-400 bg-slate-50 border border-slate-200/60 px-1.5 py-0.5 rounded">
-                          All Venue Seats
-                        </span>
-                      )}
-                    </div>
                   </div>
 
                   <div className="text-right flex-shrink-0">
                     <span className="text-xl font-black text-emerald-700">
                       ₹{type.price}
                     </span>
-                    <span className="text-[9px] text-slate-400 block font-bold">per seat</span>
                   </div>
+                </div>
+
+                {/* Assigned Rows or Standing Badge */}
+                <div className="mt-1.5 space-y-0.5">
+                  {isStanding ? (
+                    <span className="inline-block text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200/80 px-1.5 py-0.5 rounded">
+                      Standing / General Quota
+                    </span>
+                  ) : assignedRows.length > 0 ? (
+                    <>
+                      <span className="block text-[10px] font-bold text-slate-600 bg-slate-100 border border-slate-200/80 px-1.5 py-0.5 rounded w-fit">
+                        Rows: {assignedRows.join(', ')}
+                      </span>
+                      <span className="block text-[10px] font-extrabold text-indigo-600">
+                        ({formatNumber(tierQuota)} {tierQuota === 1 ? 'seat' : 'seats'})
+                      </span>
+                    </>
+                  ) : (
+                    <span className="inline-block text-[10px] font-bold text-slate-400 bg-slate-50 border border-slate-200/60 px-1.5 py-0.5 rounded">
+                      All Venue Seats
+                    </span>
+                  )}
                 </div>
 
                 {/* Sales Progress Bar */}

@@ -13,11 +13,12 @@ const sb = createClient(supabaseUrl, supabaseKey);
 // They run AFTER the Firebase write succeeds (via .then()).
 
 function logFail(table: string, op: string, err: unknown) {
-  console.warn(`[supabase-mirror] ${op} on ${table} failed:`, err);
+  console.error(`[supabase-mirror ERROR] ${op} on ${table} failed:`, err);
 }
 
 /** Upsert a row (insert or update by id). */
 export function sbUpsert(table: string, data: Record<string, unknown>): void {
+  if (!data || Object.keys(data).length === 0) return;
   sb.from(table)
     .upsert(data)
     .then(({ error }) => {
@@ -35,13 +36,26 @@ export function sbUpsertMany(table: string, rows: Record<string, unknown>[]): vo
     });
 }
 
-/** Update a row by id. */
+/** Update a row by id. Falls back to insert if row was missing in Supabase. */
 export function sbUpdate(table: string, id: string, data: Record<string, unknown>): void {
+  if (!id || Object.keys(data).length === 0) return;
   sb.from(table)
     .update(data)
     .eq('id', id)
-    .then(({ error }) => {
-      if (error) logFail(table, 'update', error.message);
+    .select('id')
+    .then(({ data: rows, error }) => {
+      if (error) {
+        logFail(table, 'update', error.message);
+      } else if (!rows || rows.length === 0) {
+        // Row did not exist in Supabase yet — insert with id if title or required fields exist
+        if (data.title || table !== 'events') {
+          sb.from(table)
+            .upsert({ ...data, id })
+            .then(({ error: upsertErr }) => {
+              if (upsertErr) logFail(table, 'fallback-insert', upsertErr.message);
+            });
+        }
+      }
     });
 }
 
@@ -184,6 +198,7 @@ const EVENT_FIELD_MAP: Record<string, string> = {
   startTime: 'start_time',
   endTime: 'end_time',
   entryTime: 'entry_time',
+  eventTime: 'event_time',
   additionalBanners: 'additional_banners',
   musicDirector: 'music_director',
   trailerUrl: 'trailer_url',
@@ -191,6 +206,17 @@ const EVENT_FIELD_MAP: Record<string, string> = {
   showId: 'show_id',
   eventId: 'event_id',
   dayOfMonth: 'day_of_month',
+  totalCapacity: 'total_capacity',
+  ticketsSold: 'tickets_sold',
+  totalRevenue: 'total_revenue',
+  // Common legacy / form aliases
+  about: 'description',
+  location: 'venue',
+  name: 'committee_name',
+  organizationName: 'organizer',
+  banner: 'poster',
+  banners: 'additional_banners',
+  committee: 'committee_name',
 };
 
 const SCANNER_FIELD_MAP: Record<string, string> = {
@@ -348,20 +374,98 @@ export function sbMirrorDeleteSeat(showId: string, seatKey: string): void {
     });
 }
 
+const VALID_EVENT_COLUMNS = new Set([
+  'id',
+  'title',
+  'subtitle',
+  'event_title',
+  'committee_name',
+  'committee_location',
+  'party_name',
+  'language',
+  'audience',
+  'sale_mode',
+  'date',
+  'day',
+  'time',
+  'entry_time',
+  'start_time',
+  'end_time',
+  'duration',
+  'venue',
+  'address',
+  'city',
+  'phone',
+  'status',
+  'poster',
+  'additional_banners',
+  'actors',
+  'writer',
+  'director',
+  'music_director',
+  'singer',
+  'trailer_url',
+  'total_capacity',
+  'tickets_sold',
+  'total_revenue',
+  'organizer',
+  'description',
+  'created_at',
+  'updated_at',
+  'image_url',
+  'show_id',
+  'event_id',
+  'year',
+  'month',
+  'day_of_month',
+  'event_time',
+]);
+
+function cleanEventRow(data: Record<string, unknown>): Record<string, unknown> {
+  const mapped = applyMap(data, EVENT_FIELD_MAP);
+
+  // Address & venue fallback
+  if (!mapped.venue && mapped.address) mapped.venue = mapped.address;
+  if (!mapped.address && mapped.venue) mapped.address = mapped.venue;
+
+  // Format date if year, month, day_of_month are present
+  const mNames: Record<string, string> = {
+    jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+    jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+  };
+  if (mapped.year && mapped.month && mapped.day_of_month) {
+    const mo = String(mapped.month).toLowerCase().slice(0, 3);
+    const mm = mNames[mo];
+    const dd = String(mapped.day_of_month).padStart(2, '0');
+    if (mm) {
+      mapped.date = `${mapped.year}-${mm}-${dd}`;
+    }
+  }
+
+  // Filter out any columns NOT in VALID_EVENT_COLUMNS
+  const safe: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(mapped)) {
+    if (VALID_EVENT_COLUMNS.has(k)) {
+      safe[k] = v;
+    }
+  }
+  return safe;
+}
+
 export function sbMirrorEvent(data: Record<string, unknown>): void {
-  sbUpsert('events', applyMap(data, EVENT_FIELD_MAP));
+  sbUpsert('events', cleanEventRow(data));
 }
 
 export function sbMirrorEventUpdate(id: string, data: Record<string, unknown>): void {
-  sbUpdate('events', id, applyMap(data, EVENT_FIELD_MAP));
+  sbUpdate('events', id, cleanEventRow(data));
 }
 
 export function sbMirrorShow(data: Record<string, unknown>): void {
-  sbUpsert('shows', applyMap(data, EVENT_FIELD_MAP));
+  sbUpsert('shows', cleanEventRow(data));
 }
 
 export function sbMirrorShowUpdate(id: string, data: Record<string, unknown>): void {
-  sbUpdate('shows', id, applyMap(data, EVENT_FIELD_MAP));
+  sbUpdate('shows', id, cleanEventRow(data));
 }
 
 export function sbMirrorTicketType(data: Record<string, unknown>): void {

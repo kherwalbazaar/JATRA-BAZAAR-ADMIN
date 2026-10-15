@@ -3,8 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, CalendarPlus } from 'lucide-react';
-import { addDoc, collection } from 'firebase/firestore';
-import { db, FIRESTORE_COLLECTIONS } from '@/lib/firebase';
+import { addEvent } from '@/lib/firestore';
 import EventForm from '@/components/EventForm';
 import { EventItem } from '@/types';
 
@@ -23,7 +22,7 @@ export default function CreateEventPage() {
   const handleCreate = async (data: Omit<EventItem, 'id'>) => {
     setSaving(true);
     try {
-      await addDoc(collection(db, FIRESTORE_COLLECTIONS.EVENTS), data);
+      await addEvent(data);
       goBack();
     } catch (err) {
       console.error('Failed to create event:', err);
