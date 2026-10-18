@@ -254,6 +254,8 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
   const eventsRef = useRef<EventItem[]>([]);
   const [partyOptions, setPartyOptions] = useState<string[]>([]);
   const [storyOptions, setStoryOptions] = useState<string[]>([]);
+  const [writerOptions, setWriterOptions] = useState<string[]>(['Kanhu Marndi', 'Maheswar Soren']);
+  const [directorOptions, setDirectorOptions] = useState<string[]>(['Dasarath Sing', 'Dasarath Singh']);
 
   const buildStoryOptions = (party: string, keepTitle?: string) => {
     const evts = eventsRef.current;
@@ -281,6 +283,28 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
         if (currentParty && !parties.includes(currentParty)) parties.push(currentParty);
         setPartyOptions(parties);
         buildStoryOptions(currentParty, (src?.title || '').trim());
+
+        // Extract real writers and directors from events
+        const writers = new Set<string>();
+        const directors = new Set<string>();
+        evts.forEach((e) => {
+          if (e.writer?.trim()) writers.add(e.writer.trim());
+          if (e.director?.trim()) directors.add(e.director.trim());
+          const raw = e as unknown as Record<string, unknown>;
+          const credits = raw.credits as Record<string, unknown> | undefined;
+          if (credits?.writer && typeof credits.writer === 'string' && credits.writer.trim()) {
+            writers.add(credits.writer.trim());
+          }
+          if (credits?.director && typeof credits.director === 'string' && credits.director.trim()) {
+            directors.add(credits.director.trim());
+          }
+        });
+        if (writers.size > 0) {
+          setWriterOptions(Array.from(writers).filter(Boolean).sort());
+        }
+        if (directors.size > 0) {
+          setDirectorOptions(Array.from(directors).filter(Boolean).sort());
+        }
       })
       .catch((err) => console.warn('Failed to load party/story lists:', err));
     return () => {
@@ -978,11 +1002,35 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         <div>
           <label className={labelCls}>Writer</label>
-          <input type="text" value={writer} onChange={(e) => setWriter(e.target.value)} placeholder="e.g. Balakram Tudu" className={inputCls} />
+          <input
+            type="text"
+            list="event-writers-list"
+            value={writer}
+            onChange={(e) => setWriter(e.target.value)}
+            placeholder="e.g. Kanhu Marndi"
+            className={inputCls}
+          />
+          <datalist id="event-writers-list">
+            {writerOptions.map((w) => (
+              <option key={w} value={w} />
+            ))}
+          </datalist>
         </div>
         <div>
           <label className={labelCls}>Director</label>
-          <input type="text" value={director} onChange={(e) => setDirector(e.target.value)} placeholder="e.g. Dasarath Singh" className={inputCls} />
+          <input
+            type="text"
+            list="event-directors-list"
+            value={director}
+            onChange={(e) => setDirector(e.target.value)}
+            placeholder="e.g. Dasarath Sing"
+            className={inputCls}
+          />
+          <datalist id="event-directors-list">
+            {directorOptions.map((d) => (
+              <option key={d} value={d} />
+            ))}
+          </datalist>
         </div>
         <div>
           <label className={labelCls}>Music Director</label>

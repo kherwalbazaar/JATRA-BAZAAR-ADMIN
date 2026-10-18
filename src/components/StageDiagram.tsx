@@ -13,6 +13,8 @@ interface StageDiagramProps {
   gradientIdPrefix?: string;
   /** Flush to container edges: no rounded corners / borders. */
   flush?: boolean;
+  /** When true, removes the outer dark card background and inner SVG background rect for a transparent layout */
+  noBg?: boolean;
   /** Optional display names per block id (overrides the drawn label). */
   labels?: Record<string, string>;
   /** Per-block channel text ("Counter" / "Online") shown under the block name. */
@@ -45,6 +47,7 @@ export default function StageDiagram({
   onBlockClick,
   gradientIdPrefix = 'stage',
   flush = false,
+  noBg = false,
   labels,
   channelLabels,
   seatStats,
@@ -86,9 +89,11 @@ export default function StageDiagram({
   return (
     <div
       className={`${
-        flush
-          ? 'bg-gradient-to-br from-slate-900 to-slate-800 p-4 shadow-lg'
-          : 'bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-3 shadow-lg border border-slate-700'
+        noBg
+          ? 'p-0 bg-transparent'
+          : flush
+            ? 'bg-[#0f172a] p-3 shadow-md'
+            : 'bg-[#0f172a] rounded-2xl p-3 shadow-md border border-slate-800'
       } ${className}`}
     >
       <style>{`
@@ -100,7 +105,7 @@ export default function StageDiagram({
         }
         .sd-block:hover text:last-of-type { fill: #e2e8f0; }
       `}</style>
-      <svg viewBox="0 0 1000 900" className="w-full h-auto select-none" xmlns="http://www.w3.org/2000/svg">
+      <svg viewBox="0 0 1000 900" className="w-full h-auto max-h-full select-none" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id={stageGrad} x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="#8b5cf6" stopOpacity="1" />
@@ -114,8 +119,8 @@ export default function StageDiagram({
           </linearGradient>
         </defs>
 
-        {/* Background */}
-        <rect width="1000" height="900" fill="#0f172a" rx="20" />
+        {/* Single background */}
+        {!noBg && <rect width="1000" height="900" fill="#0f172a" rx="16" />}
 
         {/* STAGE (Center Top) */}
         <g>
@@ -126,65 +131,65 @@ export default function StageDiagram({
 
         {/* BLOCK C2 (Top Left) */}
         <g {...blockProps('C2')}>
-          <rect x="40" y="40" width="310" height="190" fill={fill('C2')} stroke="#38bdf8" strokeWidth={width('C2')} rx="6" />
+          <rect x="40" y="40" width="310" height="190" fill={fill('C2')} stroke="#38bdf8" strokeWidth={width('C2')} rx="10" />
           <text x="195" y="135" textAnchor="middle" fill="#ffffff" fontSize="28" fontWeight="bold">{label('C2')}</text>
-          <text x="195" y="165" textAnchor="middle" fill="#94a3b8" fontSize="14">{sub('C2', 'Left Side')}</text>
+          <text x="195" y="165" textAnchor="middle" fill="#f8fafc" opacity="0.95" fontSize="14">{sub('C2', 'Left Side')}</text>
         </g>
 
         {/* BLOCK A2 (Top Right) */}
         <g {...blockProps('A2')}>
-          <rect x="650" y="40" width="310" height="190" fill={fill('A2')} stroke="#38bdf8" strokeWidth={width('A2')} rx="6" />
+          <rect x="650" y="40" width="310" height="190" fill={fill('A2')} stroke="#38bdf8" strokeWidth={width('A2')} rx="10" />
           <text x="805" y="135" textAnchor="middle" fill="#ffffff" fontSize="28" fontWeight="bold">{label('A2')}</text>
-          <text x="805" y="165" textAnchor="middle" fill="#94a3b8" fontSize="14">{sub('A2', 'Right Side')}</text>
+          <text x="805" y="165" textAnchor="middle" fill="#f8fafc" opacity="0.95" fontSize="14">{sub('A2', 'Right Side')}</text>
         </g>
 
         {/* BLOCK C3 (Outer Left) */}
         <g {...blockProps('C3')}>
-          <polygon points="40,250 170,250 170,680 40,840" fill={fill('C3')} stroke="#38bdf8" strokeWidth={width('C3')} />
+          <polygon points="40,250 170,250 170,680 40,840" fill={fill('C3')} stroke="#38bdf8" strokeWidth={width('C3')} strokeLinejoin="round" strokeLinecap="round" />
           <text x="105" y="520" textAnchor="middle" fill="#ffffff" fontSize="28" fontWeight="bold">{label('C3')}</text>
-          <text x="105" y="550" textAnchor="middle" fill="#94a3b8" fontSize="14">{sub('C3', 'Left Side')}</text>
+          <text x="105" y="550" textAnchor="middle" fill="#f8fafc" opacity="0.95" fontSize="14">{sub('C3', 'Left Side')}</text>
         </g>
 
         {/* BLOCK C1 (Inner Left) */}
         <g {...blockProps('C1')}>
-          <polygon points="190,250 350,250 350,420 190,660" fill={fill('C1')} stroke="#38bdf8" strokeWidth={width('C1')} />
+          <polygon points="190,250 350,250 350,420 190,660" fill={fill('C1')} stroke="#38bdf8" strokeWidth={width('C1')} strokeLinejoin="round" strokeLinecap="round" />
           <text x="270" y="440" textAnchor="middle" fill="#ffffff" fontSize="28" fontWeight="bold">{label('C1')}</text>
-          <text x="270" y="470" textAnchor="middle" fill="#94a3b8" fontSize="14">{sub('C1', 'Left Side')}</text>
+          <text x="270" y="470" textAnchor="middle" fill="#f8fafc" opacity="0.95" fontSize="14">{sub('C1', 'Left Side')}</text>
         </g>
 
         {/* BLOCK A1 (Inner Right) */}
         <g {...blockProps('A1')}>
-          <polygon points="650,250 810,250 810,660 650,420" fill={fill('A1')} stroke="#38bdf8" strokeWidth={width('A1')} />
+          <polygon points="650,250 810,250 810,660 650,420" fill={fill('A1')} stroke="#38bdf8" strokeWidth={width('A1')} strokeLinejoin="round" strokeLinecap="round" />
           <text x="730" y="440" textAnchor="middle" fill="#ffffff" fontSize="28" fontWeight="bold">{label('A1')}</text>
-          <text x="730" y="470" textAnchor="middle" fill="#94a3b8" fontSize="14">{sub('A1', 'Right Side')}</text>
+          <text x="730" y="470" textAnchor="middle" fill="#f8fafc" opacity="0.95" fontSize="14">{sub('A1', 'Right Side')}</text>
         </g>
 
         {/* BLOCK A3 (Outer Right) */}
         <g {...blockProps('A3')}>
-          <polygon points="830,250 960,250 960,840 830,680" fill={fill('A3')} stroke="#38bdf8" strokeWidth={width('A3')} />
+          <polygon points="830,250 960,250 960,840 830,680" fill={fill('A3')} stroke="#38bdf8" strokeWidth={width('A3')} strokeLinejoin="round" strokeLinecap="round" />
           <text x="895" y="520" textAnchor="middle" fill="#ffffff" fontSize="28" fontWeight="bold">{label('A3')}</text>
-          <text x="895" y="550" textAnchor="middle" fill="#94a3b8" fontSize="14">{sub('A3', 'Right Side')}</text>
+          <text x="895" y="550" textAnchor="middle" fill="#f8fafc" opacity="0.95" fontSize="14">{sub('A3', 'Right Side')}</text>
         </g>
 
         {/* BLOCK B1 (Main Center Front Trapezoid) */}
         <g {...blockProps('B1')}>
-          <polygon points="370,420 630,420 780,660 220,660" fill={fill('B1')} stroke="#38bdf8" strokeWidth={width('B1')} />
+          <polygon points="370,420 630,420 780,660 220,660" fill={fill('B1')} stroke="#38bdf8" strokeWidth={width('B1')} strokeLinejoin="round" strokeLinecap="round" />
           <text x="500" y="540" textAnchor="middle" fill="#ffffff" fontSize="28" fontWeight="bold">{label('B1')}</text>
-          <text x="500" y="575" textAnchor="middle" fill="#94a3b8" fontSize="14">{sub('B1', 'Front Center')}</text>
+          <text x="500" y="575" textAnchor="middle" fill="#f8fafc" opacity="0.95" fontSize="14">{sub('B1', 'Front Center')}</text>
         </g>
 
         {/* BLOCK B2 (Bottom Left) */}
         <g {...blockProps('B2')}>
-          <polygon points="200,680 480,680 480,860 60,860" fill={fill('B2')} stroke="#38bdf8" strokeWidth={width('B2')} />
+          <polygon points="200,680 480,680 480,860 60,860" fill={fill('B2')} stroke="#38bdf8" strokeWidth={width('B2')} strokeLinejoin="round" strokeLinecap="round" />
           <text x="290" y="770" textAnchor="middle" fill="#ffffff" fontSize="28" fontWeight="bold">{label('B2')}</text>
-          <text x="290" y="800" textAnchor="middle" fill="#94a3b8" fontSize="14">{sub('B2', 'Front Center')}</text>
+          <text x="290" y="800" textAnchor="middle" fill="#f8fafc" opacity="0.95" fontSize="14">{sub('B2', 'Front Center')}</text>
         </g>
 
         {/* BLOCK B3 (Bottom Right) */}
         <g {...blockProps('B3')}>
-          <polygon points="520,680 800,680 940,860 520,860" fill={fill('B3')} stroke="#38bdf8" strokeWidth={width('B3')} />
+          <polygon points="520,680 800,680 940,860 520,860" fill={fill('B3')} stroke="#38bdf8" strokeWidth={width('B3')} strokeLinejoin="round" strokeLinecap="round" />
           <text x="710" y="770" textAnchor="middle" fill="#ffffff" fontSize="28" fontWeight="bold">{label('B3')}</text>
-          <text x="710" y="800" textAnchor="middle" fill="#94a3b8" fontSize="14">{sub('B3', 'Front Center')}</text>
+          <text x="710" y="800" textAnchor="middle" fill="#f8fafc" opacity="0.95" fontSize="14">{sub('B3', 'Front Center')}</text>
         </g>
       </svg>
     </div>

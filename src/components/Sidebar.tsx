@@ -21,7 +21,8 @@ import {
   CheckCircle2, 
   Ban, 
   RotateCcw,
-  QrCode
+  QrCode,
+  Theater
 } from 'lucide-react';
 import { NavigationTab } from '@/types';
 
@@ -35,6 +36,7 @@ interface SidebarProps {
 export const NAV_LABELS: Record<string, string> = {
   dashboard: 'Dashboard',
   events: 'Event Management',
+  parties: 'Opera Parties',
   'tickets-types': 'Ticket Types & Pricing',
   'create-seat': 'Seat Management',
   diagram: 'Seating Layout',
@@ -87,6 +89,7 @@ export default function Sidebar({
       items: [
         { id: 'dashboard', label: NAV_LABELS.dashboard, Icon: LayoutDashboard },
         { id: 'events', label: NAV_LABELS.events, Icon: CalendarDays },
+        { id: 'parties', label: NAV_LABELS.parties, Icon: Theater },
       ],
     },
     {

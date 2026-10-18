@@ -1,6 +1,7 @@
 export type NavigationTab =
   | 'dashboard'
   | 'events'
+  | 'parties'
   | 'tickets-types'
   | 'create-seat'
   | 'diagram'
@@ -18,6 +19,23 @@ export type NavigationTab =
   | 'customers'
   | 'settings'
   | 'logs';
+
+export interface PartyItem {
+  id: string;
+  name: string;
+  shortName?: string;
+  logo?: string;
+  genre?: string;
+  location?: string;
+  established?: string;
+  director?: string;
+  writer?: string;
+  phone?: string;
+  phone2?: string;
+  activeShows?: number;
+  color?: string;
+  status?: 'active' | 'inactive';
+}
 
 export interface EventActor {
   name: string;
@@ -47,6 +65,7 @@ export interface EventItem {
   eventTitle?: string;
 
   // 1. Event Details
+  committeeId?: string;
   committeeName?: string;
   committeeLocation?: string;
   partyName?: string;
@@ -107,11 +126,13 @@ export interface TicketType {
 export interface Seat {
   id: string;
   eventId: string;
+  committeeId?: string;
+  committeeName?: string;
   blockId: string;
   rowId: string;
   seatNumber: number;
   seatLabel: string;
-  status: 'available' | 'booked' | 'reserved' | 'locked' | 'sold';
+  status: 'available' | 'booked' | 'reserved' | 'locked' | 'sold' | 'blocked';
   price?: number;
   createdAt?: string;
   bookedAt?: string | null;
@@ -165,6 +186,8 @@ export interface TicketItem {
   totalTickets: number;
   eventId: string;
   eventName: string;
+  committeeId?: string;
+  committeeName?: string;
   ticketTypeId: string;
   ticketTypeName: string;
   seat?: string | null;
@@ -190,12 +213,16 @@ export interface TicketItem {
   createdAt: string;
 }
 
+export type AdminRole = 'super_admin' | 'committee_admin' | 'scanner';
+
 export interface BookingItem {
   id: string;
   bookingId?: string;
   showId?: string;
   eventId: string;
   eventName?: string;
+  committeeId?: string;
+  committeeName?: string;
   ticketNumber: string;
   customerName: string;
   customerPhone: string;

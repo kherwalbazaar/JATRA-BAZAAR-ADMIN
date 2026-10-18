@@ -15,6 +15,7 @@ import {
   Trash2,
   MoreVertical,
   AlertTriangle,
+  PenTool,
   X
 } from 'lucide-react';
 import { EventItem } from '@/types';
@@ -221,6 +222,16 @@ export default function EventsView({
                     <MapPin className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
                     <span className="truncate font-semibold text-slate-700">{evt.committeeLocation || evt.venue}</span>
                   </div>
+
+                  {evt.writer && (
+                    <div className="flex items-center gap-2">
+                      <PenTool className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                      <span className="truncate font-semibold text-slate-700">
+                        <span className="text-slate-400 font-medium mr-1">Writer:</span>
+                        <span className="text-slate-800 font-bold">{evt.writer}</span>
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 

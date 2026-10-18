@@ -116,6 +116,8 @@ const BOOKING_FIELD_MAP: Record<string, string> = {
   showId: 'show_id',
   eventId: 'event_id',
   eventName: 'event_name',
+  committeeId: 'committee_id',
+  committeeName: 'committee_name',
   ticketNumber: 'ticket_number',
   ticketTypeId: 'ticket_type_id',
   ticketTypeName: 'ticket_type_name',
@@ -155,6 +157,8 @@ const TICKET_FIELD_MAP: Record<string, string> = {
   showId: 'show_id',
   eventId: 'event_id',
   eventName: 'event_name',
+  committeeId: 'committee_id',
+  committeeName: 'committee_name',
   ticketTypeId: 'ticket_type_id',
   ticketTypeName: 'ticket_type_name',
   seatIndex: 'seat_index',
@@ -179,6 +183,8 @@ const SEAT_FIELD_MAP: Record<string, string> = {
   seatId: 'seat_id',
   showId: 'show_id',
   eventId: 'event_id',
+  committeeId: 'committee_id',
+  committeeName: 'committee_name',
   blockId: 'block_id',
   rowId: 'row_id',
   seatNumber: 'seat_number',
@@ -191,6 +197,7 @@ const SEAT_FIELD_MAP: Record<string, string> = {
 
 const EVENT_FIELD_MAP: Record<string, string> = {
   eventTitle: 'event_title',
+  committeeId: 'committee_id',
   committeeName: 'committee_name',
   committeeLocation: 'committee_location',
   partyName: 'party_name',
@@ -272,7 +279,7 @@ const AUDIT_FIELD_MAP: Record<string, string> = {
 
 const SETTINGS_FIELD_MAP: Record<string, string> = {
   updatedAt: 'updated_at',
-  autoComputedFields: 'auto_computed_fields',
+  updatedBy: 'updated_by',
 };
 
 function toSnakeCase(s: string): string {
@@ -379,6 +386,7 @@ const VALID_EVENT_COLUMNS = new Set([
   'title',
   'subtitle',
   'event_title',
+  'committee_id',
   'committee_name',
   'committee_location',
   'party_name',
@@ -488,6 +496,10 @@ export function sbMirrorTicketEntry(data: Record<string, unknown>): void {
   sbUpsert('ticket_entries', applyMap(data, ENTRY_FIELD_MAP));
 }
 
+export function sbMirrorTicketEntryUpdate(id: string, data: Record<string, unknown>): void {
+  sbUpdate('ticket_entries', id, applyMap(data, ENTRY_FIELD_MAP));
+}
+
 export function sbMirrorGate(data: Record<string, unknown>): void {
   sbUpsert('gates', applyMap(data, GATE_FIELD_MAP));
 }
@@ -505,13 +517,248 @@ export function sbMirrorCounterUpdate(id: string, data: Record<string, unknown>)
 }
 
 export function sbMirrorBlockCategories(rows: Record<string, unknown>[]): void {
-  sbUpsertMany('block_categories', rows.map((r) => sbCleanRow(r)));
+  const cleaned = rows.map((r, index) => {
+    const raw = sbCleanRow(r);
+    return {
+      id: raw.id,
+      name: raw.name || raw.id,
+      enabled: raw.online === true,
+      online: raw.online === true,
+      counter: raw.counter === true || raw.online === false,
+      builtin: raw.builtin !== false,
+      display_order: typeof raw.display_order === 'number' ? raw.display_order : (typeof raw.order === 'number' ? raw.order + 1 : index + 1),
+      updated_at: new Date().toISOString(),
+    };
+  });
+  sbUpsertMany('block_categories', cleaned);
+}
+
+/**
+ * Fetch all block categories directly from Supabase (source of truth).
+ */
+export async function sbFetchBlockCategories(): Promise<any[]> {
+  const { data, error } = await sb
+    .from('block_categories')
+    .select('*')
+    .order('display_order', { ascending: true });
+
+  if (error) {
+    console.error('[Supabase] sbFetchBlockCategories error:', error);
+    throw new Error(error.message || 'Failed to fetch block categories from Supabase');
+  }
+
+  return (data || []).map((r) => ({
+    id: r.id,
+    name: r.name || r.id,
+    enabled: r.online === true,
+    online: r.online === true,
+    counter: r.counter === true || r.online === false,
+    builtin: r.builtin !== false,
+    order: (r.display_order ?? 1) - 1,
+  }));
+}
+
+/**
+ * Update a block category's selling channel in Supabase.
+ * - mode = 'online'  => online: true,  counter: false, enabled: true
+ * - mode = 'counter' => online: false, counter: true,  enabled: false
+ */
+export async function sbUpdateBlockChannel(
+  id: string,
+  mode: 'online' | 'counter'
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const isOnline = mode === 'online';
+    const payload = {
+      online: isOnline,
+      counter: !isOnline,
+      enabled: isOnline,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await sb
+      .from('block_categories')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.error(`[Supabase] sbUpdateBlockChannel for ${id} failed:`, error);
+      return { success: false, error: error.message };
+    }
+
+    // Broadcast instant update across customer web, APK & admin tabs
+    try {
+      const channel = sb.channel('block_categories_broadcast');
+      channel.send({
+        type: 'broadcast',
+        event: 'channel_update',
+        payload: { id, mode, online: isOnline, counter: !isOnline },
+      });
+    } catch (bcErr) {
+      console.warn('[Supabase] Broadcast channel_update notice:', bcErr);
+    }
+
+    return { success: true, data };
+  } catch (err: any) {
+    console.error(`[Supabase] sbUpdateBlockChannel exception for ${id}:`, err);
+    return { success: false, error: err?.message || 'Network error updating block channel' };
+  }
+}
+
+/**
+ * Update a block category's display name in Supabase.
+ */
+export async function sbUpdateBlockName(
+  id: string,
+  name: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { error } = await sb
+      .from('block_categories')
+      .update({ name, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    try {
+      const channel = sb.channel('block_categories_broadcast');
+      channel.send({
+        type: 'broadcast',
+        event: 'name_update',
+        payload: { id, name },
+      });
+    } catch {}
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'Failed to update block name' };
+  }
+}
+
+/**
+ * Save all block categories (batch upsert) to Supabase.
+ */
+export async function sbSaveAllBlockCategories(
+  blocks: { id: string; name: string; online: boolean; counter: boolean; builtin?: boolean }[]
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const rows = blocks.map((b, index) => ({
+      id: b.id,
+      name: b.name || b.id,
+      enabled: b.online === true,
+      online: b.online === true,
+      counter: b.counter === true || b.online === false,
+      builtin: b.builtin !== false,
+      display_order: index + 1,
+      updated_at: new Date().toISOString(),
+    }));
+
+    const { error } = await sb.from('block_categories').upsert(rows);
+    if (error) throw error;
+
+    try {
+      const channel = sb.channel('block_categories_broadcast');
+      channel.send({
+        type: 'broadcast',
+        event: 'categories_changed',
+        payload: { count: rows.length },
+      });
+    } catch {}
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('[Supabase] sbSaveAllBlockCategories error:', err);
+    return { success: false, error: err?.message || 'Failed to save block categories' };
+  }
+}
+
+/**
+ * Realtime subscription to Supabase block categories changes.
+ */
+export function sbSubscribeBlockCategories(onChange: () => void): () => void {
+  const channelName = `sb_block_cats_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const channel = sb.channel(channelName);
+
+  channel
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'block_categories' },
+      () => {
+        onChange();
+      }
+    )
+    .on('broadcast', { event: 'channel_update' }, () => {
+      onChange();
+    })
+    .on('broadcast', { event: 'name_update' }, () => {
+      onChange();
+    })
+    .on('broadcast', { event: 'categories_changed' }, () => {
+      onChange();
+    })
+    .subscribe();
+
+  return () => {
+    try {
+      sb.removeChannel(channel);
+    } catch {}
+  };
 }
 
 export function sbMirrorSettings(docId: string, data: Record<string, unknown>): void {
-  const cleaned = applyMap(data, SETTINGS_FIELD_MAP);
-  cleaned.id = docId;
-  sbUpsert('settings', cleaned);
+  if (!docId || !data || Object.keys(data).length === 0) return;
+  const cleaned = sbCleanRow(data);
+
+  // The Supabase settings table stores arbitrary documents inside a JSONB `data` column,
+  // with top-level metadata columns: id, key, data, description, updated_by, updated_at
+  const isWrapped =
+    cleaned.data !== undefined &&
+    typeof cleaned.data === 'object' &&
+    cleaned.data !== null &&
+    !Array.isArray(cleaned.data) &&
+    Object.keys(cleaned).every((k) =>
+      ['id', 'key', 'data', 'description', 'updated_by', 'updatedBy', 'updated_at', 'updatedAt', 'created_at', 'createdAt'].includes(k)
+    );
+
+  const payloadData = isWrapped ? (cleaned.data as Record<string, unknown>) : cleaned;
+
+  const description =
+    typeof cleaned.description === 'string'
+      ? cleaned.description
+      : typeof payloadData.description === 'string'
+        ? (payloadData.description as string)
+        : typeof payloadData.name === 'string'
+          ? (payloadData.name as string)
+          : null;
+
+  const updatedBy =
+    (typeof cleaned.updatedBy === 'string' ? cleaned.updatedBy : undefined) ||
+    (typeof cleaned.updated_by === 'string' ? cleaned.updated_by : undefined) ||
+    (typeof payloadData.updatedBy === 'string' ? (payloadData.updatedBy as string) : undefined) ||
+    (typeof payloadData.updated_by === 'string' ? (payloadData.updated_by as string) : undefined) ||
+    null;
+
+  const updatedAt =
+    (cleaned.updatedAt ||
+      cleaned.updated_at ||
+      payloadData.updatedAt ||
+      payloadData.updated_at ||
+      new Date().toISOString()) as string;
+
+  const row: Record<string, unknown> = {
+    id: docId,
+    key: docId,
+    data: payloadData,
+    description,
+    updated_by: updatedBy,
+    updated_at: updatedAt,
+  };
+
+  sbUpsert('settings', row);
 }
 
 export function sbMirrorAuditLog(data: Record<string, unknown>): void {
@@ -522,4 +769,4 @@ export function sbMirrorDelete(table: string, id: string): void {
   sbDelete(table, id);
 }
 
-export { sb };
+export { sb, sb as supabase };

@@ -33,6 +33,8 @@ interface SeatFormRow {
 
 interface SeatCreateSectionProps {
   currentEventId?: string;
+  committeeId?: string;
+  committeeName?: string;
   seats: Seat[];
   ticketTypes: TicketType[];
   /** Popup visibility — controlled by the page's "Create Seat" button. */
@@ -46,6 +48,8 @@ interface SeatCreateSectionProps {
     rowId: string;
     totalSeats: number;
     price?: number;
+    committeeId?: string;
+    committeeName?: string;
   }) => Promise<number>;
   onDeleteSeatRow: (params: { eventId: string; blockId: string; rowId: string }) => Promise<void>;
   /** Reduce a row's seat count — deletes seats above the target (booked seats are kept). */
@@ -59,6 +63,8 @@ interface SeatCreateSectionProps {
 
 export default function SeatCreateSection({
   currentEventId,
+  committeeId,
+  committeeName,
   seats,
   ticketTypes,
   isOpen,
@@ -404,6 +410,8 @@ export default function SeatCreateSection({
           rowId: r,
           totalSeats: n,
           price: ticketTypes[0]?.price,
+          committeeId,
+          committeeName,
         });
         const trimmed = await onTrimSeatRow({
           eventId: currentEventId,
@@ -436,6 +444,8 @@ export default function SeatCreateSection({
             rowId: r,
             totalSeats: n,
             price: ticketTypes[0]?.price,
+            committeeId,
+            committeeName,
           });
           totalCreated += created;
           if (existedBefore) {

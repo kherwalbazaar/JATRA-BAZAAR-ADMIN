@@ -27,18 +27,31 @@ const STORAGE_KEY = 'jatra_block_categories_v1';
 
 /**
  * Default channel logic:
- * - Every block starts as COUNTER selling (status ON).
- * - When status is switched OFF, the block becomes active for ONLINE selling.
+ * - Every block starts as COUNTER selling (status OFF = yellow).
+ * - When switched ON, the block becomes active for ONLINE selling (status ON = green).
  */
 export function defaultBlockCategories(): BlockCategory[] {
   return DEFAULT_BLOCK_IDS.map((id) => ({
     id,
     name: id,
-    enabled: true, // status ON = counter selling
-    online: false, // only active when status is OFF
+    enabled: false, // status OFF = counter selling (yellow)
+    online: false, // active when status is ON (green)
     counter: true, // default selling channel
     builtin: true,
   }));
+}
+
+export function normalizeBlockCategory(b: Partial<BlockCategory> & { id: string; name?: string }): BlockCategory {
+  const online = b.online === true || (b.enabled === true && b.counter !== true);
+  const counter = !online;
+  return {
+    id: b.id,
+    name: b.name || b.id,
+    enabled: online, // status ON = online selling (green), OFF = counter selling (yellow)
+    online,
+    counter,
+    builtin: b.builtin !== false,
+  };
 }
 
 export function loadBlockCategories(): BlockCategory[] {
@@ -54,18 +67,7 @@ export function loadBlockCategories(): BlockCategory[] {
     if (!valid.length) return defaultBlockCategories();
     return valid
       .filter((b) => !isLegacyBuiltin(b.id, b.builtin !== false))
-      .map((b) => {
-      const online = b.online !== false && !(b.counter !== false); // online only when counter is off
-      const counter = !online;
-      return {
-        id: b.id,
-        name: b.name,
-        enabled: counter, // status ON = counter selling, OFF = online selling
-        online,
-        counter,
-        builtin: b.builtin !== false,
-      };
-    });
+      .map(normalizeBlockCategory);
   } catch {
     return defaultBlockCategories();
   }

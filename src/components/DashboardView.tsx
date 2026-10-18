@@ -632,23 +632,37 @@ export default function DashboardView({
       <div className="bg-[#141a35] text-white rounded-2xl p-4 shadow-xl border border-indigo-800/50 grid grid-cols-2 md:grid-cols-6 gap-4 items-center divide-y md:divide-y-0 md:divide-x divide-indigo-800/50">
         
         {/* Total Events */}
-        <div className="flex items-center gap-3 pt-2 md:pt-0">
+        <div className="flex items-center gap-3 pt-2 md:pt-0 min-w-0">
           <div className="w-10 h-10 rounded-xl bg-purple-600/30 text-purple-400 flex items-center justify-center text-lg flex-shrink-0">
             <CalendarPlus className="w-5 h-5" />
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <span className="text-[9px] uppercase font-bold text-slate-400 block">Current Event</span>
-            <span className="text-sm font-black text-white leading-tight">{currentEvent ? currentEvent.title : 'None Selected'}</span>
-            <span className="text-[9px] font-semibold text-slate-400 block">{currentEvent ? currentEvent.status : '—'}</span>
+            <div
+              title={currentEvent ? currentEvent.title : 'None Selected'}
+              className="text-xs sm:text-sm font-black text-white leading-tight break-words"
+              style={{
+                display: '-webkit-box',
+                WebkitBoxOrient: 'vertical',
+                WebkitLineClamp: 3,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                wordBreak: 'break-word',
+                minHeight: '3.75em',
+              }}
+            >
+              {currentEvent ? currentEvent.title : 'None Selected'}
+            </div>
+            <span className="text-[9px] font-semibold text-slate-400 block mt-0.5">{currentEvent ? currentEvent.status : '—'}</span>
           </div>
         </div>
 
         {/* Total Ticket Types */}
-        <div className="flex items-center gap-3 pl-0 md:pl-4 pt-2 md:pt-0">
+        <div className="flex items-center gap-3 pl-0 md:pl-4 pt-2 md:pt-0 min-w-0">
           <div className="w-10 h-10 rounded-xl bg-blue-600/30 text-blue-400 flex items-center justify-center text-lg flex-shrink-0">
             <Layers className="w-5 h-5" />
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <span className="text-[9px] uppercase font-bold text-slate-400 block">Total Ticket Types</span>
             <span className="text-sm font-black text-white leading-tight">{ticketTypes.length}</span>
             <span className="text-[9px] font-semibold text-slate-400 block">Active Types</span>
@@ -656,11 +670,11 @@ export default function DashboardView({
         </div>
 
         {/* Total Bookings */}
-        <div className="flex items-center gap-3 pl-0 md:pl-4 pt-2 md:pt-0">
+        <div className="flex items-center gap-3 pl-0 md:pl-4 pt-2 md:pt-0 min-w-0">
           <div className="w-10 h-10 rounded-xl bg-teal-600/30 text-teal-400 flex items-center justify-center text-lg flex-shrink-0">
             <ListChecks className="w-5 h-5" />
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <span className="text-[9px] uppercase font-bold text-slate-400 block">Total Bookings</span>
             <span className="text-sm font-black text-white leading-tight">{formatNumber(kpis.totalTicketsSold)}</span>
             <span className="text-[9px] font-semibold text-slate-400 block">Tickets Sold</span>
@@ -668,11 +682,11 @@ export default function DashboardView({
         </div>
 
         {/* Total Customers */}
-        <div className="flex items-center gap-3 pl-0 md:pl-4 pt-2 md:pt-0">
+        <div className="flex items-center gap-3 pl-0 md:pl-4 pt-2 md:pt-0 min-w-0">
           <div className="w-10 h-10 rounded-xl bg-indigo-600/30 text-indigo-400 flex items-center justify-center text-lg flex-shrink-0">
             <Users className="w-5 h-5" />
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <span className="text-[9px] uppercase font-bold text-slate-400 block">Total Customers</span>
             <span className="text-sm font-black text-white leading-tight">{formatNumber(recentBookings.length)}</span>
             <span className="text-[9px] font-semibold text-slate-400 block">Registered</span>
@@ -680,11 +694,11 @@ export default function DashboardView({
         </div>
 
         {/* Tickets Scanned Today */}
-        <div className="flex items-center gap-3 pl-0 md:pl-4 pt-2 md:pt-0">
+        <div className="flex items-center gap-3 pl-0 md:pl-4 pt-2 md:pt-0 min-w-0">
           <div className="w-10 h-10 rounded-xl bg-rose-600/30 text-rose-400 flex items-center justify-center text-lg flex-shrink-0">
             <QrCode className="w-5 h-5" />
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <span className="text-[9px] uppercase font-bold text-slate-400 block">Tickets Scanned</span>
             <span className="text-sm font-black text-white leading-tight">{formatNumber(kpis.peopleEntered)}</span>
             <span className="text-[9px] font-bold text-amber-400 block">{kpis.scannedTodayPercentage}% of Sold</span>
@@ -692,12 +706,12 @@ export default function DashboardView({
         </div>
 
         {/* System Status */}
-        <div className="flex items-center gap-3 pl-0 md:pl-4 pt-2 md:pt-0">
+        <div className="flex items-center gap-3 pl-0 md:pl-4 pt-2 md:pt-0 min-w-0">
           <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-base flex-shrink-0 relative">
             <span className="w-3 h-3 rounded-full bg-emerald-500 animate-ping absolute"></span>
             <span className="w-3 h-3 rounded-full bg-emerald-400 relative"></span>
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <span className="text-[9px] uppercase font-bold text-slate-400 block">System Status</span>
             <span className="text-xs font-black text-emerald-400 leading-tight">All Systems Operational</span>
           </div>

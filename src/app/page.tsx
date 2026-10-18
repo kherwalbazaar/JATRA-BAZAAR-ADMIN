@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Sidebar, { NAV_LABELS } from '@/components/Sidebar';
 import Header from '@/components/Header';
 import DashboardView from '@/components/DashboardView';
 import EventsView from '@/components/EventsView';
+import PartiesView from '@/components/PartiesView';
 import TicketTypesView from '@/components/TicketTypesView';
 import SeatCreateSection from '@/components/SeatCreateSection';
 import BookingsView from '@/components/BookingsView';
@@ -19,6 +20,7 @@ import ScanHistoryView from '@/components/ScanHistoryView';
 import OnlineHistoryView from '@/components/OnlineHistoryView';
 import ScannerMemberList from '@/components/ScannerMemberList';
 import CreateScannerUserModal from '@/components/CreateScannerUserModal';
+import CustomersView from '@/components/customer/CustomersView';
 
 // Modals
 import TicketScannerModal from '@/components/TicketScannerModal';
@@ -34,7 +36,7 @@ import ConfirmDeleteModal from '@/components/ConfirmDeleteModal';
 import { NavigationTab, BookingItem, EventItem, TicketType } from '@/types';
 import { useFirestore } from '@/hooks/useFirestore';
 import { deleteBooking } from '@/lib/firestore';
-import { UserPlus, Plus } from 'lucide-react';
+import { UserPlus, Plus, Building2, MapPin, Calendar, ChevronDown, LayoutGrid, Check } from 'lucide-react';
 
 export default function App() {
   const router = useRouter();
@@ -89,7 +91,7 @@ export default function App() {
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem('jatra_active_tab');
-      const validTabs: NavigationTab[] = ['dashboard', 'events', 'tickets-types', 'create-seat', 'diagram', 'counter-booking', 'bookings', 'active-tickets', 'cancelled-tickets', 'cancellation-history', 'refunds', 'tickets', 'scanner-members', 'scan-history', 'online-history', 'payments', 'customers', 'settings', 'logs'];
+      const validTabs: NavigationTab[] = ['dashboard', 'events', 'parties', 'tickets-types', 'create-seat', 'diagram', 'counter-booking', 'bookings', 'active-tickets', 'cancelled-tickets', 'cancellation-history', 'refunds', 'tickets', 'scanner-members', 'scan-history', 'online-history', 'payments', 'customers', 'settings', 'logs'];
       if (saved && validTabs.includes(saved as NavigationTab)) setCurrentTabState(saved as NavigationTab);
     } catch {
       /* ignore */
@@ -145,6 +147,36 @@ export default function App() {
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [selectedEventForModal, setSelectedEventForModal] = useState<EventItem | null>(null);
   const [editingEvent, setEditingEvent] = useState<EventItem | null>(null);
+  const [seatEventDropdownOpen, setSeatEventDropdownOpen] = useState(false);
+  const seatEventDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        seatEventDropdownRef.current &&
+        !seatEventDropdownRef.current.contains(event.target as Node)
+      ) {
+        setSeatEventDropdownOpen(false);
+      }
+    }
+    if (seatEventDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [seatEventDropdownOpen]);
+
+  // Group events by committee for switcher and role-based views
+  const eventsByCommittee = useMemo(() => {
+    const map = new Map<string, EventItem[]>();
+    eventsList.forEach((evt) => {
+      const cName = evt.committeeName?.trim() || evt.organizer?.trim() || 'General Committee';
+      if (!map.has(cName)) map.set(cName, []);
+      map.get(cName)!.push(evt);
+    });
+    return map;
+  }, [eventsList]);
 
   // Handlers: Add Booking (from POS Counter or Online)
   const handleAddBooking = async (
@@ -303,6 +335,14 @@ export default function App() {
             />
           )}
 
+          {currentTab === 'parties' && (
+            <PartiesView
+              events={eventsList}
+              onSelectEvent={setCurrentEvent}
+              onNavigateToEvents={() => setCurrentTab('events')}
+            />
+          )}
+
           {currentTab === 'tickets-types' && (
             <TicketTypesView
               currentEvent={currentEvent}
@@ -324,15 +364,146 @@ export default function App() {
 
           {currentTab === 'create-seat' && (
             <div className="px-6 pt-6 pb-6 space-y-4">
-              <div className="flex items-end justify-between gap-4">
-                <div>
-                  <h2 className="text-xl font-black text-slate-900">Create Seat</h2>
-                  <p className="text-xs text-slate-400 font-semibold mt-0.5">
-                    {currentEvent
-                      ? `Configured for: ${currentEvent.title}`
-                      : 'Select an event first from the Events section.'}
-                  </p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h2 className="text-xl font-black text-slate-900 leading-tight">Create Seat</h2>
+                  {/* Card-Style Event Switcher Dropdown */}
+                  <div className="relative" ref={seatEventDropdownRef}>
+                    <button
+                      type="button"
+                      onClick={() => setSeatEventDropdownOpen((prev) => !prev)}
+                      className="flex items-center gap-2.5 bg-white hover:bg-slate-50 text-slate-800 font-bold text-xs rounded-xl px-3 py-1.5 border border-slate-200 shadow-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-left max-w-[320px] sm:max-w-[440px]"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
+                            {currentEvent?.date || 'Date TBD'}
+                          </span>
+                          <span className="text-[11px] font-extrabold text-amber-700 truncate">
+                            {currentEvent?.partyName || currentEvent?.organizer || 'Party'}
+                          </span>
+                        </div>
+                        <div className="text-xs font-black text-slate-900 truncate mt-0.5">
+                          {currentEvent ? currentEvent.title : 'Select Event & Party'}
+                        </div>
+                      </div>
+                      <ChevronDown
+                        className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform ${
+                          seatEventDropdownOpen ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+
+                    {/* Card-Style List Dropdown Panel */}
+                    {seatEventDropdownOpen && (
+                      <div className="absolute left-0 mt-2 w-[min(94vw,460px)] bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150 max-h-[440px] overflow-y-auto">
+                        <div className="px-2.5 py-1.5 mb-1.5 flex items-center justify-between border-b border-slate-100">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                            Select Event • Party • Story
+                          </span>
+                          <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                            {eventsList.length} Shows
+                          </span>
+                        </div>
+
+                        {eventsList.length === 0 ? (
+                          <div className="p-4 text-center text-xs text-slate-400 font-semibold">
+                            No events found.
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {eventsList.map((evt) => {
+                              const isSelected = currentEvent?.id === evt.id;
+                              const party = evt.partyName || evt.organizer || 'Party';
+                              const committee = evt.committeeName || '';
+
+                              return (
+                                <button
+                                  key={evt.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setCurrentEvent(evt);
+                                    setSeatEventDropdownOpen(false);
+                                  }}
+                                  className={`w-full text-left p-2.5 rounded-xl border transition-all flex items-start gap-2.5 ${
+                                    isSelected
+                                      ? 'bg-indigo-50/90 border-indigo-300 ring-2 ring-indigo-500/20 shadow-xs'
+                                      : 'bg-slate-50/70 hover:bg-white border-slate-200/80 hover:border-slate-300 hover:shadow-xs'
+                                  }`}
+                                >
+                                  {/* Poster / Icon */}
+                                  {evt.poster ? (
+                                    <img
+                                      src={evt.poster}
+                                      alt={evt.title}
+                                      className="w-11 h-11 rounded-lg object-cover flex-shrink-0 border border-slate-200"
+                                    />
+                                  ) : (
+                                    <div className="w-11 h-11 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-sm flex-shrink-0">
+                                      🎭
+                                    </div>
+                                  )}
+
+                                  {/* Card Content: Date, Party Name, Story Name */}
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                                      {/* Date */}
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-700 bg-indigo-100/80 px-2 py-0.5 rounded-md">
+                                        <Calendar className="w-3 h-3 text-indigo-600" />
+                                        <span>{evt.date || 'Date TBD'}</span>
+                                      </span>
+
+                                      {/* Party Name */}
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-md truncate max-w-[180px]">
+                                        <span>🎭</span>
+                                        <span className="truncate">{party}</span>
+                                      </span>
+
+                                      {/* Committee Tag */}
+                                      {committee && (
+                                        <span className="text-[9px] font-bold text-slate-500 bg-slate-200/70 px-1.5 py-0.5 rounded truncate max-w-[130px]">
+                                          🏛️ {committee}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Story Name */}
+                                    <div className="text-xs font-black text-slate-900 leading-snug line-clamp-2">
+                                      {evt.title}
+                                    </div>
+
+                                    {/* Writer & Venue */}
+                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-semibold text-slate-400 mt-0.5">
+                                      {evt.writer && (
+                                        <span className="text-indigo-600 font-bold truncate max-w-[140px]">
+                                          ✍️ {evt.writer}
+                                        </span>
+                                      )}
+                                      {evt.writer && evt.venue && <span>•</span>}
+                                      {evt.venue && (
+                                        <span className="truncate">
+                                          📍 {evt.venue} {evt.city ? `• ${evt.city}` : ''}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Selection Checkmark */}
+                                  {isSelected && (
+                                    <div className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 mt-1 shadow-xs">
+                                      <Check className="w-3 h-3 stroke-[3]" />
+                                    </div>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
+
                 <button
                   type="button"
                   onClick={() => setSeatFormOpen(true)}
@@ -342,8 +513,77 @@ export default function App() {
                   <span>Create Seat</span>
                 </button>
               </div>
+
+              {/* Live Seat Statistics Strip (Compact) */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                {/* Total Seats */}
+                <div className="bg-white rounded-xl p-2 sm:p-2.5 border border-slate-200/80 shadow-xs flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0">
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block leading-tight truncate">Total Seats</span>
+                    <h3 className="text-sm font-black text-slate-900 leading-tight">{seats.length}</h3>
+                  </div>
+                </div>
+
+                {/* Available */}
+                <div className="bg-white rounded-xl p-2 sm:p-2.5 border border-slate-200/80 shadow-xs flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider block leading-tight truncate">Available</span>
+                    <h3 className="text-sm font-black text-emerald-600 leading-tight">
+                      {seats.filter((s) => s.status === 'available').length}
+                    </h3>
+                  </div>
+                </div>
+
+                {/* Booked / Sold */}
+                <div className="bg-white rounded-xl p-2 sm:p-2.5 border border-slate-200/80 shadow-xs flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center flex-shrink-0">
+                    <span className="w-2 h-2 rounded-full bg-rose-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[9px] font-bold text-rose-600 uppercase tracking-wider block leading-tight truncate">Booked / Sold</span>
+                    <h3 className="text-sm font-black text-rose-600 leading-tight">
+                      {seats.filter((s) => s.status === 'booked' || s.status === 'sold').length}
+                    </h3>
+                  </div>
+                </div>
+
+                {/* Reserved */}
+                <div className="bg-white rounded-xl p-2 sm:p-2.5 border border-slate-200/80 shadow-xs flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center flex-shrink-0">
+                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[9px] font-bold text-amber-600 uppercase tracking-wider block leading-tight truncate">Reserved</span>
+                    <h3 className="text-sm font-black text-amber-600 leading-tight">
+                      {seats.filter((s) => s.status === 'reserved').length}
+                    </h3>
+                  </div>
+                </div>
+
+                {/* Blocked */}
+                <div className="bg-white rounded-xl p-2 sm:p-2.5 border border-slate-200/80 shadow-xs flex items-center gap-2 col-span-2 sm:col-span-1">
+                  <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center flex-shrink-0">
+                    <span className="w-2 h-2 rounded-full bg-slate-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block leading-tight truncate">Blocked</span>
+                    <h3 className="text-sm font-black text-slate-700 leading-tight">
+                      {seats.filter((s) => s.status === 'blocked' || s.status === 'locked').length}
+                    </h3>
+                  </div>
+                </div>
+              </div>
+
               <SeatCreateSection
                 currentEventId={currentEvent?.id}
+                committeeId={currentEvent?.committeeId}
+                committeeName={currentEvent?.committeeName}
                 seats={seats}
                 ticketTypes={ticketTypes}
                 isOpen={seatFormOpen}
@@ -479,14 +719,7 @@ export default function App() {
           )}
 
           {currentTab === 'customers' && (
-            <div className="p-6">
-              <BookingsView
-                bookings={bookings}
-                onOpenNewBooking={() => setNewBookingOpen(true)}
-                onSelectBooking={(b) => setBookingDetailsTarget(b)}
-                onPrintTicket={(b) => setPrintTicketTarget(b)}
-              />
-            </div>
+            <CustomersView />
           )}
 
           {(currentTab === 'settings' || currentTab === 'logs') && (

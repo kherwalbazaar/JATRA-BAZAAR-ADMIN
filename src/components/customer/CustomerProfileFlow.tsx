@@ -284,8 +284,9 @@ export default function CustomerProfileFlow() {
     <div className="w-full max-w-md mx-auto bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden text-slate-800 transition-all">
       {/* Top Banner / Brand Header */}
       <div className="bg-gradient-to-r from-purple-700 via-indigo-700 to-indigo-900 p-6 text-white text-center relative">
-        <div className="w-12 h-12 mx-auto rounded-2xl bg-white/10 backdrop-blur-xs flex items-center justify-center mb-3 shadow-inner border border-white/20">
-          <Sparkles className="w-6 h-6 text-amber-300" />
+        <div className="w-14 h-14 mx-auto rounded-2xl bg-white p-1.5 flex items-center justify-center mb-3 shadow-lg border border-white/30">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/ic_launcher.png" alt="Jatra Bazaar Logo" className="w-full h-full object-contain rounded-xl" />
         </div>
         <h2 className="text-lg font-black tracking-wide">JATRA BAZAAR</h2>
         <p className="text-xs text-indigo-200 font-medium mt-0.5">Customer Profile Portal</p>

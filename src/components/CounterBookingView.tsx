@@ -384,7 +384,7 @@ export default function CounterBookingView({
                 onClick={() => !isDisabled && handleBlockSelect(blockId)}
                 disabled={isDisabled}
                 title={blockLabels[blockId] || `Block ${blockId}`}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border text-[11px] font-black whitespace-nowrap transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl border text-[11px] font-black whitespace-nowrap transition-colors ${
                   isActive
                     ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-600/25 animate-active-block-blink'
                     : isDisabled

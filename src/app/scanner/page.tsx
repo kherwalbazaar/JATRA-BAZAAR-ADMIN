@@ -498,7 +498,7 @@ export default function ScannerPortalPage() {
         case 'WRONG_EVENT':
           kind = 'invalid';
           title = '❌ WRONG EVENT';
-          subtitle = 'This ticket belongs to another event.';
+          subtitle = res.message || 'This ticket belongs to another event. Please visit the correct event location.';
           break;
         case 'INVALID':
         default:
@@ -696,8 +696,9 @@ export default function ScannerPortalPage() {
         <div className="flex-1 flex items-center justify-center p-6">
           <form onSubmit={handleLogin} className="max-w-xs w-full space-y-5">
             <div className="text-center space-y-2">
-              <div className="w-16 h-16 rounded-2xl bg-indigo-500/15 border border-indigo-500/40 flex items-center justify-center mx-auto">
-                <ScanLine className="w-8 h-8 text-indigo-400" />
+              <div className="w-16 h-16 rounded-2xl bg-white p-2 flex items-center justify-center mx-auto shadow-md">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/ic_launcher.png" alt="Jatra Bazaar Logo" className="w-full h-full object-contain rounded-xl" />
               </div>
               <h1 className="text-xl font-black tracking-tight">
                 <span className="text-amber-400">JATRA</span> BAZAAR Scanner

@@ -6,6 +6,7 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  deleteField,
   setDoc,
   onSnapshot,
   query,
@@ -40,6 +41,7 @@ import {
   sbMirrorScannerMember,
   sbMirrorScannerMemberUpdate,
   sbMirrorTicketEntry,
+  sbMirrorTicketEntryUpdate,
   sbMirrorGate,
   sbMirrorGateUpdate,
   sbMirrorCounter,
@@ -1275,10 +1277,12 @@ export async function createSeatRow(params: {
   /** Target seat numbers 1…totalSeats. Seats that already exist are SKIPPED. */
   totalSeats: number;
   price?: number;
+  committeeId?: string;
+  committeeName?: string;
 }): Promise<number> {
   const showId = params.showId || params.eventId || '';
   if (!showId) throw new Error('showId or eventId is required to create seats.');
-  const { blockId, rowId, totalSeats, price = 100 } = params;
+  const { blockId, rowId, totalSeats, price = 100, committeeId = '', committeeName = '' } = params;
   const target = Math.max(1, Math.floor(totalSeats));
   const block = blockId.trim().toUpperCase();
   const row = rowId.trim().toUpperCase();
@@ -1350,6 +1354,8 @@ export async function createSeatRow(params: {
         createdAt: serverTimestamp(),
         showId: showId,
         eventId: showId,
+        committeeId: committeeId,
+        committeeName: committeeName,
       };
 
       batch.set(seatRef, seatData);
@@ -1379,6 +1385,8 @@ export async function createSeatRow(params: {
       status: 'available',
       show_id: showId,
       event_id: showId,
+      committee_id: committeeId,
+      committee_name: committeeName,
       created_at: nowIso,
     })));
   }
@@ -1956,6 +1964,42 @@ async function findBookingByTicketNumber(raw: string): Promise<BookingItem | nul
 }
 
 /**
+ * Resolves an event's title and committee name by eventId for cross-event rejection messaging.
+ */
+export async function getEventTitleAndCommittee(eventId?: string): Promise<{ title: string; committeeName: string }> {
+  if (!eventId) return { title: 'Another Event', committeeName: 'Another Committee' };
+  try {
+    const evSnap = await getDoc(docRef(C.EVENTS, eventId));
+    if (evSnap.exists()) {
+      const data = evSnap.data() as Partial<EventItem>;
+      const title = data.title || data.eventTitle || 'Another Event';
+      const committeeName = data.committeeName || data.organizer || 'Another Committee';
+      return { title, committeeName };
+    }
+    const showSnap = await getDoc(docRef('shows', eventId));
+    if (showSnap.exists()) {
+      const data = showSnap.data() as Partial<EventItem>;
+      const title = data.title || data.eventTitle || 'Another Event';
+      const committeeName = data.committeeName || data.organizer || 'Another Committee';
+      return { title, committeeName };
+    }
+  } catch (err) {
+    console.warn('getEventTitleAndCommittee lookup failed:', err);
+  }
+  return { title: 'Another Event', committeeName: 'Another Committee' };
+}
+
+export async function buildWrongEventMessage(
+  foreignEventId?: string,
+  fallback?: { eventTitle?: string; committeeName?: string }
+): Promise<string> {
+  const { title, committeeName } = await getEventTitleAndCommittee(foreignEventId);
+  const resolvedTitle = fallback?.eventTitle || title;
+  const resolvedCommittee = fallback?.committeeName || committeeName;
+  return `Invalid Event Ticket — This ticket belongs to "${resolvedTitle}" (${resolvedCommittee}). Please visit the correct event location.`;
+}
+
+/**
  * Identifies the booking and all its individual tickets from any scanned QR or manual ID.
  * Returns the parent booking, all tickets in that booking, and which ticket was directly scanned (if any).
  */
@@ -2043,16 +2087,20 @@ export async function identifyBookingForEntry(
     const targetTicket = ticketRecord;
 
     if (targetTicket.eventId !== ctx.eventId) {
+      const wrongMsg = await buildWrongEventMessage(targetTicket.eventId, {
+        eventTitle: (targetTicket as any).eventTitle || (targetTicket as any).eventName,
+        committeeName: targetTicket.committeeName,
+      });
       await recordScanLog('WRONG_EVENT', targetTicket.ticketId, ctx, member, {
         bookingId: targetTicket.bookingId,
         audienceName: targetTicket.customerName,
         ticketType: targetTicket.ticketTypeName,
         seat: targetTicket.seat || undefined,
-        message: 'This ticket belongs to another event.',
+        message: wrongMsg,
       });
       return {
         status: 'WRONG_EVENT',
-        message: 'This ticket belongs to another event.',
+        message: wrongMsg,
       };
     }
 
@@ -2134,15 +2182,19 @@ export async function identifyBookingForEntry(
   }
 
   if (booking.eventId !== ctx.eventId) {
+    const wrongMsg = await buildWrongEventMessage(booking.eventId, {
+      eventTitle: (booking as any).eventTitle || (booking as any).eventName,
+      committeeName: booking.committeeName,
+    });
     await recordScanLog('WRONG_EVENT', code, ctx, member, {
       bookingId: booking.ticketNumber,
       audienceName: booking.customerName,
       ticketType: booking.ticketTypeName,
-      message: 'This ticket belongs to another event.',
+      message: wrongMsg,
     });
     return {
       status: 'WRONG_EVENT',
-      message: 'This ticket belongs to another event.',
+      message: wrongMsg,
     };
   }
 
@@ -2519,15 +2571,19 @@ export async function validateAndRecordBatchEntry(
     }
     if (msg.startsWith('WRONG_EVENT:')) {
       const badId = msg.split(':')[1];
+      const wrongMsg = await buildWrongEventMessage(booking?.eventId, {
+        eventTitle: (booking as any)?.eventTitle || (booking as any)?.eventName,
+        committeeName: booking?.committeeName,
+      });
       await recordScanLog('WRONG_EVENT', badId, ctx, member, {
         bookingId,
         audienceName: booking?.customerName || '',
         ticketType: booking?.ticketTypeName || '',
-        message: 'This ticket belongs to another event.',
+        message: wrongMsg,
       });
       return {
         result: 'WRONG_EVENT',
-        message: 'This ticket belongs to another event.',
+        message: wrongMsg,
         admittedTickets: [],
         admittedCount: 0,
         remainingCount: 0,
@@ -2805,12 +2861,16 @@ export async function validateAndRecordEntry(
 
     // A. Check event match
     if (tItem.eventId !== ctx.eventId) {
+      const wrongMsg = await buildWrongEventMessage(tItem.eventId, {
+        eventTitle: (tItem as any).eventTitle || (tItem as any).eventName,
+        committeeName: tItem.committeeName,
+      });
       return await logRejection('WRONG_EVENT', tItem.ticketId, {
         bookingId: tItem.bookingId,
         audienceName: tItem.customerName,
         ticketType: tItem.ticketTypeName,
         seat: tItem.seat || undefined,
-        message: 'This ticket belongs to another event.',
+        message: wrongMsg,
       });
     }
 
@@ -2939,10 +2999,14 @@ export async function validateAndRecordEntry(
         });
       }
       if (errMsg === 'WRONG_EVENT') {
+        const wrongMsg = await buildWrongEventMessage(tItem.eventId, {
+          eventTitle: (tItem as any).eventTitle || (tItem as any).eventName,
+          committeeName: tItem.committeeName,
+        });
         return await logRejection('WRONG_EVENT', tItem.ticketId, {
           bookingId: tItem.bookingId,
           audienceName: tItem.customerName,
-          message: 'This ticket belongs to another event.',
+          message: wrongMsg,
         });
       }
     }
@@ -3104,11 +3168,15 @@ export async function validateAndRecordEntry(
   }
 
   if (booking.eventId !== ctx.eventId) {
+    const wrongMsg = await buildWrongEventMessage(booking.eventId, {
+      eventTitle: (booking as any).eventTitle || (booking as any).eventName,
+      committeeName: booking.committeeName,
+    });
     return await logRejection('WRONG_EVENT', specificTicketId, {
       bookingId: canonicalBookingNumber,
       audienceName: booking.customerName,
       ticketType: booking.ticketTypeName,
-      message: 'This ticket belongs to another event.',
+      message: wrongMsg,
     });
   }
 
@@ -3383,5 +3451,78 @@ export function computeScannerStats(entries: TicketEntry[], memberId: string): S
     invalid: mine.filter((e) => e.scanResult === 'INVALID' || e.scanResult === 'WRONG_EVENT').length,
     recent: mine.slice(0, 8),
   };
+}
+
+/**
+ * Update an existing scan history record (ticket entry)
+ */
+export async function updateTicketEntry(id: string, patch: Partial<TicketEntry>): Promise<void> {
+  if (!id) return;
+  const ref = docRef(C.TICKET_ENTRIES, id);
+  await updateDoc(ref, patch as Record<string, unknown>);
+  try {
+    sbMirrorTicketEntryUpdate(id, patch as Record<string, unknown>);
+  } catch (err) {
+    console.warn('Failed to mirror ticket_entries update to Supabase:', err);
+  }
+}
+
+/**
+ * Delete a scan history record (ticket entry) and restore ticket validity if needed
+ */
+export async function deleteTicketEntry(
+  entry: TicketEntry | { id: string; ticketId?: string; scannerId?: string; scannedAt?: string }
+): Promise<void> {
+  const entryId = entry.id;
+  if (!entryId) return;
+
+  // 1. Delete from Firestore ticketEntries
+  await deleteDoc(docRef(C.TICKET_ENTRIES, entryId));
+
+  // 2. Delete from Supabase mirror
+  try {
+    sbMirrorDelete('ticket_entries', entryId);
+  } catch (err) {
+    console.warn('Failed to delete ticket_entries in Supabase:', err);
+  }
+
+  // 3. If ticketId is present, check if ticket doc status is ENTERED and restore it to CONFIRMED
+  if (entry.ticketId) {
+    try {
+      const tRef = docRef(C.TICKETS, entry.ticketId);
+      const snap = await getDoc(tRef);
+      if (snap.exists()) {
+        const tData = snap.data();
+        if (tData.status === 'ENTERED') {
+          await updateDoc(tRef, {
+            status: 'CONFIRMED',
+            scannedAt: deleteField(),
+            scanDate: deleteField(),
+            scanTime: deleteField(),
+            scannedBy: deleteField(),
+            scannerMemberId: deleteField(),
+            scannerMemberName: deleteField(),
+            scanGateId: deleteField(),
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Notice: Could not reset ticket doc status after scan entry deletion:', err);
+    }
+  }
+
+  // 4. Audit log entry
+  try {
+    await writeAuditLog({
+      action: 'entry.deleted',
+      performedBy: 'admin',
+      targetId: entryId,
+      metadata: {
+        ticketId: entry.ticketId || '',
+        scannerId: entry.scannerId || '',
+        scannedAt: entry.scannedAt || '',
+      },
+    });
+  } catch {}
 }
 

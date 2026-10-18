@@ -68,6 +68,8 @@ export interface FirestoreState {
     rowId: string;
     totalSeats: number;
     price?: number;
+    committeeId?: string;
+    committeeName?: string;
   }) => Promise<number>;
   deleteSeatRow: (params: { eventId: string; blockId: string; rowId: string }) => Promise<void>;
   trimSeatRow: (params: {
@@ -338,17 +340,17 @@ export function useFirestore(): FirestoreState {
 
     const eid = currentEvent.id;
 
-    // Hydrate sub-collections from local storage instantly
+    // Hydrate sub-collections from local storage instantly (or reset to empty for zero-flicker isolation)
     const cachedTypes = cacheRead<TicketType[]>(`ticketTypes_${eid}`);
-    if (cachedTypes) setTicketTypes(cachedTypes);
+    setTicketTypes(cachedTypes || []);
     const cachedBookings = cacheRead<BookingItem[]>(`bookings_${eid}`);
-    if (cachedBookings) setBookings(cachedBookings);
+    setBookings(cachedBookings || []);
     const cachedGates = cacheRead<GateInfo[]>(`gates_${eid}`);
-    if (cachedGates) setGates(cachedGates);
+    setGates(cachedGates || []);
     const cachedCounters = cacheRead<CounterBooth[]>(`counters_${eid}`);
-    if (cachedCounters) setCounters(cachedCounters);
+    setCounters(cachedCounters || []);
     const cachedSeats = cacheRead<Seat[]>(`seats_${eid}`);
-    if (cachedSeats) setSeats(dedupeSeats(cachedSeats));
+    setSeats(cachedSeats ? dedupeSeats(cachedSeats) : []);
 
     const unsubs: (() => void)[] = [];
 
@@ -885,6 +887,8 @@ export function useFirestore(): FirestoreState {
       rowId: string;
       totalSeats: number;
       price?: number;
+      committeeId?: string;
+      committeeName?: string;
     }) => {
       if (isOfflineMode || !isLiveConnected) {
         throw new Error('Offline — connect to create seats.');
