@@ -12,7 +12,8 @@ import {
   ListChecks,
   LayoutGrid,
   Layers,
-  Download
+  Download,
+  AlertCircle
 } from 'lucide-react';
 import { BookingItem, EventItem, TicketType, Seat } from '@/types';
 import StageDiagram, { buildSeatStats } from '@/components/StageDiagram';
@@ -42,6 +43,7 @@ export default function CounterBookingView({
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [activeBlock, setActiveBlock] = useState<string | null>(null);
   const [selectedSeats, setSelectedSeats] = useState<string[]>([]);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [view, setView] = useState<'seats' | 'history'>('seats');
   const [showStage, setShowStage] = useState(true);
   const { blocks: blockCategories, labels: blockLabels, channelLabels, disabledBlocks } = useBlockCategories();
@@ -115,6 +117,9 @@ export default function CounterBookingView({
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [seats, blockCategories]);
 
+  // Selected block for seat layout (defaults to first available block)
+  const currentActiveBlock = activeBlock || (blockChips.length > 0 ? blockChips[0][0] : null);
+
   // Find the ticket type that owns a seat (by block + row coverage).
   const getTicketTypeForSeat = (seat: Seat): TicketType | undefined => {
     return ticketTypes.find(tt => {
@@ -172,13 +177,9 @@ export default function CounterBookingView({
     });
   };
 
-  // Block tabs / diagram clicks jump to that block's section
-  // (all blocks stay visible in one scrollable list).
+  // Block tabs / diagram clicks select that block to display its seat rows
   const handleBlockSelect = (blockId: string) => {
     setActiveBlock(blockId);
-    requestAnimationFrame(() => {
-      document.getElementById(`counter-block-${blockId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
   };
 
   // Map diagram block labels to blocks that actually have seats (C1 → C, etc.)
@@ -190,8 +191,13 @@ export default function CounterBookingView({
     handleBlockSelect(blockId);
   };
 
-  // Handle seat selection — booked OR freshly reserved (online hold) are blocked
-  const handleSeatToggle = (seatId: string, isBlocked: boolean) => {
+  // Handle seat selection — booked, freshly reserved, OR Online-active seats are blocked
+  const handleSeatToggle = (seatId: string, isBlocked: boolean, isOnlineLocked: boolean = false, blockId?: string) => {
+    if (isOnlineLocked) {
+      setToastMessage(`Block ${blockId || ''} is active for Online selling only. Seats in this block cannot be sold at the counter.`);
+      setTimeout(() => setToastMessage(null), 4500);
+      return;
+    }
     if (isBlocked) return;
     setSelectedSeats(prev =>
       prev.includes(seatId)
@@ -213,8 +219,17 @@ export default function CounterBookingView({
 
   // Hand the picked seats to the booking modal — addBooking claims them atomically.
   const handleBookSelected = () => {
+    const selectedObjs = getSelectedSeatObjects();
+    const onlineSeats = selectedObjs.filter(s => channelLabels[s.blockId] === 'Online');
+    if (onlineSeats.length > 0) {
+      const badBlocks = Array.from(new Set(onlineSeats.map(s => s.blockId))).join(', ');
+      setToastMessage(`Cannot sell seats from Online-active block(s): ${badBlocks}. These blocks are reserved for Online booking only.`);
+      setTimeout(() => setToastMessage(null), 4500);
+      return;
+    }
+
     const groups = new Map<string, string[]>();
-    getSelectedSeatObjects().forEach((s) => {
+    selectedObjs.forEach((s) => {
       const block = (s.blockId || activeBlock || '').trim().toUpperCase();
       if (!block) return;
       if (!groups.has(block)) groups.set(block, []);
@@ -363,7 +378,7 @@ export default function CounterBookingView({
             gradientIdPrefix="counterStage"
             flush
             className="w-full max-w-[460px]"
-            activeBlock={activeBlock}
+            activeBlock={currentActiveBlock}
             onBlockClick={handleDiagramBlockSelect}
             labels={blockLabels}
             channelLabels={channelLabels}
@@ -374,26 +389,35 @@ export default function CounterBookingView({
         )}
 
         {/* All block categories — horizontal strip */}
-        <div className="bg-white border-b border-slate-200 px-3 py-2 flex items-center gap-2 w-full">
+        <div className="bg-white border-b border-slate-200 px-2.5 py-1.5 flex items-center gap-1.5 w-full overflow-x-auto">
           {blockChips.map(([blockId, stats]) => {
-            const isActive = activeBlock === blockId;
+            const isActive = currentActiveBlock === blockId;
             const isDisabled = disabledBlocks.includes(blockId);
+            const isOnline = channelLabels[blockId] === 'Online';
             return (
               <button
                 key={blockId}
                 onClick={() => !isDisabled && handleBlockSelect(blockId)}
                 disabled={isDisabled}
                 title={blockLabels[blockId] || `Block ${blockId}`}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl border text-[11px] font-black whitespace-nowrap transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded-md border text-[11px] font-black whitespace-nowrap transition-colors ${
                   isActive
-                    ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-600/25 animate-active-block-blink'
+                    ? 'bg-blue-600 border-blue-600 text-white shadow-xs animate-active-block-blink'
                     : isDisabled
                     ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                    : isOnline
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-900 hover:bg-emerald-100'
                     : 'bg-pink-200 border-pink-300 text-pink-900 hover:bg-pink-300'
                 }`}
               >
                 <span>{blockLabels[blockId] && blockLabels[blockId] !== blockId ? blockLabels[blockId] : `Block ${blockId}`}</span>
-                <span className={`text-[10px] font-bold ${isActive ? 'text-blue-100' : 'text-pink-700'}`}>
+                <span className={`text-[10px] font-bold ${
+                  isActive
+                    ? 'text-blue-100'
+                    : isOnline
+                    ? 'text-emerald-700'
+                    : 'text-pink-700'
+                }`}>
                   {stats.booked}/{stats.total}
                 </span>
               </button>
@@ -404,18 +428,38 @@ export default function CounterBookingView({
           )}
         </div>
 
+        {/* Floating Toast Notification for Counter Actions */}
+        {toastMessage && (
+          <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2 text-xs font-bold flex items-center justify-between gap-2 animate-in fade-in duration-150">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+              <span>{toastMessage}</span>
+            </div>
+            <button
+              onClick={() => setToastMessage(null)}
+              className="text-amber-700 hover:text-amber-950 font-black text-xs px-1.5 py-0.5 rounded hover:bg-amber-100"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* All blocks stacked — every block's seat rows in one scrollable list,
             groups serial per block: Star → VIP → Special → 3rd → Standing */}
         <div className="w-full bg-gray-900 border-t border-gray-800 overflow-hidden flex-1 flex flex-col min-h-0">
           <div className="p-3 border-b border-gray-800 flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-xs font-black text-sky-400 flex items-center gap-2">
               <Armchair className="w-3.5 h-3.5" />
-              <span>All blocks — tap seats to select</span>
+              <span>Block {currentActiveBlock || ''} — tap seats to select</span>
             </h3>
-            <div className="flex items-center gap-3 text-[10px] font-semibold">
+            <div className="flex items-center gap-3 text-[10px] font-semibold flex-wrap">
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded bg-gray-700 border border-gray-600"></span>
-                <span className="text-slate-300">Available</span>
+                <span className="text-slate-300">Counter Available</span>
+              </span>
+              <span className="flex items-center gap-1.5" title="Block active for Online selling — Counter sales disabled">
+                <span className="w-3 h-3 rounded bg-emerald-950/60 border border-emerald-500"></span>
+                <span className="text-emerald-400 font-bold">Online Active</span>
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded bg-emerald-500"></span>
@@ -432,7 +476,7 @@ export default function CounterBookingView({
               {selectedSeats.length > 0 && (
                 <button
                   onClick={() => setSelectedSeats([])}
-                  className="text-slate-400 hover:text-white font-bold"
+                  className="text-slate-400 hover:text-white font-bold ml-1"
                 >
                   Clear
                 </button>
@@ -442,116 +486,146 @@ export default function CounterBookingView({
 
           <div className="p-3 overflow-y-auto flex-1">
             {(() => {
-              const blocksWithSeats = blockChips.filter(([, stats]) => stats.total > 0);
-              if (!blocksWithSeats.length) {
+              if (!currentActiveBlock) {
                 return (
-                  <p className="text-xs text-gray-400 font-semibold text-center py-4">
-                    No seats created yet
-                  </p>
+                  <div className="py-8 px-4 text-center">
+                    <p className="text-xs text-gray-400 font-bold mb-1">
+                      No block selected.
+                    </p>
+                    <p className="text-[11px] text-gray-500">
+                      Click a block on the stage diagram or block tabs above to view its seats.
+                    </p>
+                  </div>
                 );
               }
+
+              const blockId = currentActiveBlock;
+              const chipEntry = blockChips.find(([id]) => id === blockId);
+              const stats = chipEntry ? chipEntry[1] : { total: 0, booked: 0 };
+              const isOnlineLockedBlock = channelLabels[blockId] === 'Online';
+              const typeGroups = getBlockSeatsByTicketType(blockId);
+
               return (
                 <div className="space-y-4">
-                  {blocksWithSeats.map(([blockId, stats]) => {
-                    const isActive = activeBlock === blockId;
-                    const typeGroups = getBlockSeatsByTicketType(blockId);
-                    return (
-                      <div
-                        key={blockId}
-                        id={`counter-block-${blockId}`}
-                        className={`scroll-mt-2 rounded-lg border overflow-hidden ${
-                          isActive ? 'border-blue-500 ring-1 ring-blue-500/60' : 'border-gray-800'
-                        }`}
-                      >
-                        <div
-                          onClick={() => setActiveBlock(blockId)}
-                          className={`sticky top-0 z-10 flex items-center gap-2 px-2.5 py-2 border-b cursor-pointer backdrop-blur-sm ${
-                            isActive
-                              ? 'bg-blue-600 border-blue-500'
-                              : 'bg-gray-800/95 border-gray-800 hover:bg-gray-700/95'
-                          }`}
-                        >
-                          <Armchair className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-sky-400'}`} />
-                          <span className={`text-[11px] font-black ${isActive ? 'text-white' : 'text-gray-100'}`}>
-                            Block {blockId}
-                          </span>
-                          <span className={`text-[10px] font-bold ${isActive ? 'text-blue-100' : 'text-gray-400'}`}>
-                            {stats.booked}/{stats.total} booked
-                          </span>
-                          {blockLabels[blockId] && blockLabels[blockId] !== blockId && (
-                            <span className={`text-[10px] font-semibold ${isActive ? 'text-blue-100' : 'text-gray-500'}`}>
-                              — {blockLabels[blockId]}
-                            </span>
-                          )}
-                        </div>
-                        {typeGroups.length === 0 ? (
-                          <p className="text-xs text-gray-500 font-semibold px-2.5 py-3">
-                            No seats created for this block yet
-                          </p>
-                        ) : (
-                          <div className="p-2.5 space-y-3">
-                            {typeGroups.map(([key, group]) => {
-                              const rows = Array.from(group.seatsByRow.keys()).sort();
-                              const typeName = group.type?.name || 'Standard';
-                              const groupColor = group.type?.color || '#38bdf8';
-                              return (
-                                <div key={key} className="rounded-lg border border-gray-800 bg-gray-900/40 overflow-hidden">
-                                  <div className="flex items-center gap-2 px-2.5 py-1.5 bg-gray-800/60 border-b border-gray-800">
-                                    <Star className="w-3.5 h-3.5 flex-shrink-0" style={{ color: groupColor }} fill={groupColor} />
-                                    <span className="text-[11px] font-black text-gray-200">{typeName} Group</span>
-                                    <span className="text-[10px] font-semibold text-gray-500">— {blockId}: {rows.join(', ')}</span>
-                                    <span
-                                      className="ml-auto flex items-center gap-0.5 text-[11px] font-black flex-shrink-0"
-                                      style={{ color: groupColor }}
-                                    >
-                                      <IndianRupee className="w-3 h-3" />
-                                      {group.type?.price ?? 100}
+                  <div
+                    key={blockId}
+                    id={`counter-block-${blockId}`}
+                    className={`rounded-lg border overflow-hidden ${
+                      isOnlineLockedBlock
+                        ? 'border-emerald-800/80 bg-emerald-950/10'
+                        : 'border-blue-500/80'
+                    }`}
+                  >
+                    <div
+                      className={`sticky top-0 z-10 flex items-center gap-2 px-3 py-2 border-b backdrop-blur-sm ${
+                        isOnlineLockedBlock
+                          ? 'bg-emerald-950/95 border-emerald-900/80'
+                          : 'bg-blue-600 border-blue-500'
+                      }`}
+                    >
+                      <Armchair className={`w-3.5 h-3.5 ${isOnlineLockedBlock ? 'text-emerald-400' : 'text-white'}`} />
+                      <span className="text-[12px] font-black text-white">
+                        Block {blockId}
+                      </span>
+                      <span className={`text-[10px] font-bold ${isOnlineLockedBlock ? 'text-emerald-200' : 'text-blue-100'}`}>
+                        {stats.booked}/{stats.total} booked ({Math.max(0, stats.total - stats.booked)} available)
+                      </span>
+                      {blockLabels[blockId] && blockLabels[blockId] !== blockId && (
+                        <span className={`text-[10px] font-semibold ${isOnlineLockedBlock ? 'text-emerald-200' : 'text-blue-100'}`}>
+                          — {blockLabels[blockId]}
+                        </span>
+                      )}
+                      {isOnlineLockedBlock ? (
+                        <span className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-900/90 text-emerald-200 border border-emerald-700">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                          Online Selling (Counter Sales Disabled)
+                        </span>
+                      ) : (
+                        <span className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-white/20 text-white border border-white/30">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                          Counter Selling
+                        </span>
+                      )}
+                    </div>
+
+
+                    {typeGroups.length === 0 ? (
+                      <p className="text-xs text-gray-500 font-semibold px-2.5 py-4 text-center">
+                        No seats created for Block {blockId} yet
+                      </p>
+                    ) : (
+                      <div className="p-2.5 space-y-3">
+                        {typeGroups.map(([key, group]) => {
+                          const rows = Array.from(group.seatsByRow.keys()).sort();
+                          const typeName = group.type?.name || 'Standard';
+                          const groupColor = group.type?.color || '#38bdf8';
+                          return (
+                            <div key={key} className="rounded-lg border border-gray-800 bg-gray-900/40 overflow-hidden">
+                              <div className="flex items-center gap-2 px-2.5 py-1.5 bg-gray-800/60 border-b border-gray-800">
+                                <Star className="w-3.5 h-3.5 flex-shrink-0" style={{ color: groupColor }} fill={groupColor} />
+                                <span className="text-[11px] font-black text-gray-200">{typeName} Group</span>
+                                <span className="text-[10px] font-semibold text-gray-500">— {blockId}: Rows {rows.join(', ')}</span>
+                                <span
+                                  className="ml-auto flex items-center gap-0.5 text-[11px] font-black flex-shrink-0"
+                                  style={{ color: groupColor }}
+                                >
+                                  <IndianRupee className="w-3 h-3" />
+                                  {group.type?.price ?? 100}
+                                </span>
+                              </div>
+                              <div className="p-2.5 space-y-2">
+                                {rows.map((rowId) => (
+                                  <div key={rowId} className="flex items-center gap-2">
+                                    <span className="w-14 text-right text-[10px] font-bold text-gray-400 flex-shrink-0">
+                                      Row {rowId}
                                     </span>
+                                    <div className="flex gap-1.5 flex-wrap">
+                                      {group.seatsByRow.get(rowId)?.map((seat) => {
+                                        const isBooked = seat.status === 'booked';
+                                        const isReserved = isSeatReserved(seat);
+                                        const isOnlineLocked = isOnlineLockedBlock;
+                                        const isBlocked = isBooked || isReserved || isOnlineLocked;
+                                        const isSelected = selectedSeats.includes(seat.id);
+                                        return (
+                                          <button
+                                            key={seat.id || `${seat.blockId}-${rowId}-${seat.seatNumber}`}
+                                            onClick={() => handleSeatToggle(seat.id, isBlocked, isOnlineLocked, seat.blockId)}
+                                            disabled={isBlocked}
+                                            className={`h-7 w-7 rounded text-[10px] font-bold flex items-center justify-center transition-all ${
+                                              isBooked
+                                                ? 'bg-rose-950/60 border border-rose-800/80 text-rose-400 cursor-not-allowed'
+                                                : isReserved
+                                                ? 'bg-yellow-500/20 border border-yellow-500/80 text-yellow-300 cursor-not-allowed'
+                                                : isOnlineLocked
+                                                ? 'bg-emerald-950/50 border border-emerald-700/80 text-emerald-400/80 cursor-not-allowed hover:border-emerald-500'
+                                                : isSelected
+                                                ? 'bg-emerald-500 text-gray-950 scale-110 shadow-md shadow-emerald-500/30'
+                                                : 'bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 hover:border-gray-500'
+                                            }`}
+                                            title={
+                                              isBooked
+                                                ? `Row ${rowId}, Seat ${seat.seatLabel || seat.seatNumber} — Booked`
+                                                : isReserved
+                                                ? `Row ${rowId}, Seat ${seat.seatLabel || seat.seatNumber} — Reserved (Online checkout in progress)`
+                                                : isOnlineLocked
+                                                ? `Block ${seat.blockId} is active for Online selling only — Counter booking disabled for Row ${rowId}, Seat ${seat.seatLabel || seat.seatNumber}`
+                                                : `${typeName} — Row ${rowId}, Seat ${seat.seatLabel || seat.seatNumber} — Available • ₹${seatPrice(seat)}`
+                                            }
+                                          >
+                                            {seat.seatLabel || seat.seatNumber}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
                                   </div>
-                                  <div className="p-2.5 space-y-2">
-                                    {rows.map((rowId) => (
-                                      <div key={rowId} className="flex items-center gap-2">
-                                        <span className="w-14 text-right text-[10px] font-bold text-gray-400 flex-shrink-0">
-                                          Row {rowId}
-                                        </span>
-                                        <div className="flex gap-1.5 flex-wrap">
-                                          {group.seatsByRow.get(rowId)?.map((seat) => {
-                                            const isBooked = seat.status === 'booked';
-                                            const isReserved = isSeatReserved(seat);
-                                            const isBlocked = isBooked || isReserved;
-                                            const isSelected = selectedSeats.includes(seat.id);
-                                            return (
-                                              <button
-                                                key={seat.id || `${seat.blockId}-${rowId}-${seat.seatNumber}`}
-                                                onClick={() => handleSeatToggle(seat.id, isBlocked)}
-                                                disabled={isBlocked}
-                                                className={`h-7 w-7 rounded text-[10px] font-bold flex items-center justify-center transition-all ${
-                                                  isBooked
-                                                    ? 'bg-rose-950/60 border border-rose-800/80 text-rose-400 cursor-not-allowed'
-                                                    : isReserved
-                                                    ? 'bg-yellow-500/20 border border-yellow-500/80 text-yellow-300 cursor-not-allowed'
-                                                    : isSelected
-                                                    ? 'bg-emerald-500 text-gray-950 scale-110 shadow-md shadow-emerald-500/30'
-                                                    : 'bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 hover:border-gray-500'
-                                                }`}
-                                                title={`${typeName} — Row ${rowId}, Seat ${seat.seatLabel || seat.seatNumber} — ${isBooked ? 'Booked (online or counter)' : isReserved ? 'Reserved — customer checkout in progress' : isSelected ? 'Selected' : 'Available'} • ₹${seatPrice(seat)}`}
-                                              >
-                                                {seat.seatLabel || seat.seatNumber}
-                                              </button>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
+                    )}
+                  </div>
                 </div>
               );
             })()}

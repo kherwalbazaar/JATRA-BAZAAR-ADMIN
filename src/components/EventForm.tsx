@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Save, Plus, Trash2, Link2, FileText, Check, MoreVertical, Pencil } from 'lucide-react';
-import { EventItem, EventActor } from '@/types';
+import { Save, Plus, Trash2, Link2, FileText, Check, MoreVertical, Pencil, Theater } from 'lucide-react';
+import { EventItem, EventActor, PartyItem } from '@/types';
 import { getEventsOnce } from '@/lib/firestore';
+import { computeParties, getPartyByName, syncRemoteParties } from '@/lib/parties';
 
 interface EventFormProps {
   initial?: Partial<EventItem> | null;
@@ -250,9 +251,19 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
     setActorMenuOpen(null);
   };
 
-  // ── Party / Story dropdown data (loaded from Firestore events) ──
+  // ── Party / Story dropdown data (loaded from Opera Parties Directory & Firestore events) ──
   const eventsRef = useRef<EventItem[]>([]);
-  const [partyOptions, setPartyOptions] = useState<string[]>([]);
+  const [partiesList, setPartiesList] = useState<PartyItem[]>(() => computeParties());
+  const [selectedPartyInfo, setSelectedPartyInfo] = useState<PartyItem | null>(() => {
+    const initParty = (src?.partyName || '').trim();
+    return initParty ? getPartyByName(initParty) || null : null;
+  });
+  const [partyOptions, setPartyOptions] = useState<string[]>(() => {
+    const init = computeParties().map((p) => p.name.trim()).filter(Boolean);
+    const cur = (src?.partyName || '').trim();
+    if (cur && !init.includes(cur)) init.push(cur);
+    return Array.from(new Set(init)).sort();
+  });
   const [storyOptions, setStoryOptions] = useState<string[]>([]);
   const [writerOptions, setWriterOptions] = useState<string[]>(['Kanhu Marndi', 'Maheswar Soren']);
   const [directorOptions, setDirectorOptions] = useState<string[]>(['Dasarath Sing', 'Dasarath Singh']);
@@ -262,7 +273,7 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
     const names = Array.from(
       new Set(
         evts
-          .filter((e) => !party || party === NEW_OPTION || (e.partyName || '').trim() === party)
+          .filter((e) => !party || party === NEW_OPTION || (e.partyName || '').trim().toUpperCase() === party.trim().toUpperCase())
           .map((e) => (e.title || '').trim())
           .filter(Boolean)
       )
@@ -272,21 +283,59 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
     setStoryOptions(names);
   };
 
+  const applyPartyData = (partyObj: PartyItem) => {
+    setSelectedPartyInfo(partyObj);
+    if (partyObj.director) setDirector((v) => keepIfSet(v, partyObj.director));
+    if (partyObj.writer) setWriter((v) => keepIfSet(v, partyObj.writer));
+    const contact = partyObj.phone && partyObj.phone2
+      ? `${partyObj.phone} / ${partyObj.phone2}`
+      : partyObj.phone || partyObj.phone2 || '';
+    if (contact) setPhone((v) => keepIfSet(v, contact));
+    if (partyObj.location) setAddress((v) => keepIfSet(v, partyObj.location));
+    if (partyObj.logo) setMainBanner((v) => keepIfSet(v, partyObj.logo));
+  };
+
   useEffect(() => {
     let cancelled = false;
+
+    // First ensure remote parties from Firestore are synced
+    syncRemoteParties().then(() => {
+      if (cancelled) return;
+      const unified = computeParties(eventsRef.current);
+      setPartiesList(unified);
+      const names = Array.from(new Set(unified.map((p) => p.name.trim()).filter(Boolean))).sort();
+      const currentParty = (src?.partyName || '').trim();
+      if (currentParty && !names.includes(currentParty)) names.push(currentParty);
+      setPartyOptions(names);
+    });
+
     getEventsOnce()
       .then((evts) => {
         if (cancelled) return;
         eventsRef.current = evts;
-        const parties = Array.from(new Set(evts.map((e) => (e.partyName || '').trim()).filter(Boolean))).sort();
+        const unified = computeParties(evts);
+        setPartiesList(unified);
+        const parties = Array.from(new Set(unified.map((p) => p.name.trim()).filter(Boolean))).sort();
         const currentParty = (src?.partyName || '').trim();
         if (currentParty && !parties.includes(currentParty)) parties.push(currentParty);
         setPartyOptions(parties);
         buildStoryOptions(currentParty, (src?.title || '').trim());
 
-        // Extract real writers and directors from events
+        // If party was already supplied in initial props / draft, apply its directory details
+        if (currentParty) {
+          const matched = unified.find((p) => p.name.trim().toUpperCase() === currentParty.toUpperCase());
+          if (matched) {
+            applyPartyData(matched);
+          }
+        }
+
+        // Extract real writers and directors from events and directory parties
         const writers = new Set<string>();
         const directors = new Set<string>();
+        unified.forEach((p) => {
+          if (p.writer?.trim()) writers.add(p.writer.trim());
+          if (p.director?.trim()) directors.add(p.director.trim());
+        });
         evts.forEach((e) => {
           if (e.writer?.trim()) writers.add(e.writer.trim());
           if (e.director?.trim()) directors.add(e.director.trim());
@@ -307,6 +356,7 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
         }
       })
       .catch((err) => console.warn('Failed to load party/story lists:', err));
+
     return () => {
       cancelled = true;
     };
@@ -315,38 +365,52 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
 
   const keepIfSet = (current: string, next?: string) => (next && next.trim() ? next.trim() : current);
 
-  // Selecting a party → auto-fill party defaults (story name, date & times stay untouched)
+  // Selecting a party → auto-fill party defaults from Opera Parties Directory & past events
   const handlePartyChange = (value: string) => {
     if (value === NEW_OPTION) {
       setPartyName(NEW_OPTION);
+      setSelectedPartyInfo(null);
       setStoryOptions([]);
       return;
     }
     setPartyName(value);
     buildStoryOptions(value);
-    const match = eventsRef.current.find((e) => (e.partyName || '').trim() === value);
-    if (!match) return;
-    setCommitteeName((c) => keepIfSet(c, match.committeeName));
-    setCommitteeLocation((c) => keepIfSet(c, match.committeeLocation));
-    setEventTitle((v) => keepIfSet(v, match.eventTitle));
-    setLanguage((v) => (match.language?.trim() ? match.language.trim() : v));
-    setAudience((v) => {
-      if (!match.audience?.trim()) return v;
-      return AUDIENCE_OPTIONS.includes(match.audience) ? match.audience : match.audience;
-    });
-    setSaleMode((v) => (match.saleMode ? match.saleMode : v));
-    setAddress((v) => keepIfSet(v, match.address || match.venue));
-    setPhone((v) => keepIfSet(v, match.phone));
-    setWriter((v) => keepIfSet(v, match.writer));
-    setDirector((v) => keepIfSet(v, match.director));
-    setMusicDirector((v) => keepIfSet(v, match.musicDirector));
-    setSinger((v) => keepIfSet(v, match.singer));
-    setTrailerUrl((v) => keepIfSet(v, match.trailerUrl));
-    setActors((prev) => (match.actors?.length ? match.actors : prev));
-    setMainBanner((v) => keepIfSet(v, match.poster));
-    setAdditionalBanners((prev) => (match.additionalBanners?.length ? match.additionalBanners : prev));
-    // Story Name, About, Event Date & Times are intentionally NOT filled —
-    // required per-show data (like date) must be entered fresh.
+
+    // 1. Look up Troupe in Opera Parties Directory
+    const partyObj =
+      partiesList.find((p) => p.name.trim().toUpperCase() === value.trim().toUpperCase()) ||
+      getPartyByName(value, eventsRef.current);
+
+    if (partyObj) {
+      applyPartyData(partyObj);
+    } else {
+      setSelectedPartyInfo(null);
+    }
+
+    // 2. Overlay any past event defaults if available (committee, audience, actors)
+    const match = eventsRef.current.find((e) => (e.partyName || '').trim().toUpperCase() === value.trim().toUpperCase());
+    if (match) {
+      setCommitteeName((c) => keepIfSet(c, match.committeeName));
+      setCommitteeLocation((c) => keepIfSet(c, match.committeeLocation));
+      setEventTitle((v) => keepIfSet(v, match.eventTitle));
+      setLanguage((v) => (match.language?.trim() ? match.language.trim() : v));
+      setAudience((v) => {
+        if (!match.audience?.trim()) return v;
+        return AUDIENCE_OPTIONS.includes(match.audience) ? match.audience : match.audience;
+      });
+      setSaleMode((v) => (match.saleMode ? match.saleMode : v));
+      setAddress((v) => keepIfSet(v, match.address || match.venue));
+      setPhone((v) => keepIfSet(v, match.phone));
+      setWriter((v) => keepIfSet(v, match.writer));
+      setDirector((v) => keepIfSet(v, match.director));
+      setMusicDirector((v) => keepIfSet(v, match.musicDirector));
+      setSinger((v) => keepIfSet(v, match.singer));
+      setTrailerUrl((v) => keepIfSet(v, match.trailerUrl));
+      setActors((prev) => (match.actors?.length ? match.actors : prev));
+      setMainBanner((v) => keepIfSet(v, match.poster));
+      setAdditionalBanners((prev) => (match.additionalBanners?.length ? match.additionalBanners : prev));
+    }
+    // Story Name, About, Event Date & Times stay untouched for fresh scheduling
   };
 
   // Selecting a story (as per party) → auto-fill that story's data (date & times stay untouched)
@@ -542,18 +606,23 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
           <label className={labelCls}>Committee Location</label>
           <input type="text" value={committeeLocation} onChange={(e) => setCommitteeLocation(e.target.value)} placeholder="e.g. Khunta, Mayurbhanj, Odisha" className={inputCls} />
         </div>
-        <div>
-          <label className={labelCls}>Party Name</label>
+        <div className="md:col-span-2">
+          <label className={labelCls}>
+            Party Name (Opera Troupe)
+            <span className="ml-2 text-[10px] font-bold text-indigo-600 normal-case">
+              Select from directory to auto-fill troupe details
+            </span>
+          </label>
           <select
             value={partyOptions.includes(partyName) ? partyName : partyName ? NEW_OPTION : ''}
             onChange={(e) => handlePartyChange(e.target.value)}
             className={inputCls}
           >
-            <option value="">Select party</option>
+            <option value="">-- Select Party from Opera Parties Directory --</option>
             {partyOptions.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
-            <option value={NEW_OPTION}>New party (type below)</option>
+            <option value={NEW_OPTION}>+ New party (type custom below)</option>
           </select>
           {(partyName === NEW_OPTION || (partyName && !partyOptions.includes(partyName))) ? (
             <input
@@ -564,6 +633,74 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
               className={`${inputCls} mt-2`}
             />
           ) : null}
+
+          {/* Party details preview banner when selected */}
+          {selectedPartyInfo && partyName && partyName !== NEW_OPTION && (
+            <div className="mt-2.5 p-3.5 bg-gradient-to-r from-indigo-50/90 via-purple-50/50 to-pink-50/40 border border-indigo-200/80 rounded-2xl shadow-xs animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-start gap-3">
+                <div className="w-14 aspect-[5/3] rounded-lg overflow-hidden bg-slate-900 border border-indigo-200 flex items-center justify-center flex-shrink-0 shadow-xs relative">
+                  {selectedPartyInfo.logo ? (
+                    <img
+                      src={selectedPartyInfo.logo}
+                      alt=""
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  ) : null}
+                  <div className="text-slate-400 font-black text-xs uppercase select-none">
+                    {selectedPartyInfo.name.substring(0, 2)}
+                  </div>
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-black text-slate-900 truncate">
+                      {selectedPartyInfo.name}
+                    </span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      Troupe Details Auto-filled
+                    </span>
+                  </div>
+
+                  <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-600 font-semibold">
+                    {selectedPartyInfo.director && (
+                      <div className="truncate">
+                        <span className="text-slate-400 font-bold mr-1">Director:</span>
+                        <span className="text-slate-800 font-bold">{selectedPartyInfo.director}</span>
+                      </div>
+                    )}
+                    {selectedPartyInfo.writer && (
+                      <div className="truncate">
+                        <span className="text-slate-400 font-bold mr-1">Writer:</span>
+                        <span className="text-slate-800 font-bold">{selectedPartyInfo.writer}</span>
+                      </div>
+                    )}
+                    {(selectedPartyInfo.phone || selectedPartyInfo.phone2) && (
+                      <div className="truncate font-mono">
+                        <span className="text-slate-400 font-bold font-sans mr-1">Contact:</span>
+                        <span className="text-slate-800 font-bold">
+                          {[selectedPartyInfo.phone, selectedPartyInfo.phone2].filter(Boolean).join(' / ')}
+                        </span>
+                      </div>
+                    )}
+                    {selectedPartyInfo.location && (
+                      <div className="truncate">
+                        <span className="text-slate-400 font-bold mr-1">Location:</span>
+                        <span className="text-slate-700">{selectedPartyInfo.location}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="mt-2 text-[10px] text-indigo-700 font-bold bg-white/80 px-2.5 py-1 rounded-lg border border-indigo-100 inline-block">
+                    ✓ Troupe details loaded into Director, Writer, Phone, Address &amp; Banner. Add Story Name, Dates &amp; Timings below to complete this event.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         <div>
           <label className={labelCls}>Story Name *</label>

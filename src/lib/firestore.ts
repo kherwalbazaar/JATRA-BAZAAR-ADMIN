@@ -50,6 +50,7 @@ import {
   sbMirrorSettings,
   sbMirrorAuditLog,
   sbMirrorDelete,
+  sb,
 } from './supabase-db';
 import { BlockCategory } from '@/lib/blockCategories';
 import {
@@ -569,6 +570,33 @@ export async function addBooking(
         ? [{ block: primaryBlock, seats }]
         : [];
 
+  // Enforce selling channel rule for counter bookings: if a block is active for Online selling,
+  // it cannot be sold at the counter.
+  if (booking.source === 'Counter') {
+    const blocksToCheck = new Set<string>();
+    if (primaryBlock) blocksToCheck.add(primaryBlock);
+    for (const g of groups) {
+      if (g.block) blocksToCheck.add(g.block);
+    }
+    for (const bId of Array.from(blocksToCheck)) {
+      try {
+        const { data: catData } = await sb
+          .from('block_categories')
+          .select('online, counter')
+          .eq('id', bId)
+          .maybeSingle();
+
+        if (catData && (catData.online === true || catData.counter === false)) {
+          throw new Error(`Block ${bId} is active for Online selling only. Seats in this block cannot be sold at the counter.`);
+        }
+      } catch (checkErr: any) {
+        if (checkErr.message && checkErr.message.includes('active for Online selling only')) {
+          throw checkErr;
+        }
+      }
+    }
+  }
+
   const targets: { key: string; liveRef: ReturnType<typeof doc>; legacyRef: ReturnType<typeof doc> }[] = [];
   for (const group of groups) {
     if (!group.block) continue;
@@ -677,7 +705,10 @@ export async function addBooking(
       }
     });
   } catch (err) {
-    if (err instanceof Error && /held or booked by someone else/.test(err.message)) throw err;
+    if (err instanceof Error) {
+      if (/held or booked by someone else/.test(err.message)) throw err;
+      if (/active for Online selling only/.test(err.message)) throw err;
+    }
     console.error('addBooking failed:', err);
     throw new Error('Failed to save booking');
   }

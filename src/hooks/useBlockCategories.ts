@@ -222,12 +222,21 @@ export function useBlockCategories() {
     [blocks]
   );
 
+  const onlineBlocks = useMemo(() => blocks.filter((b) => b.online).map((b) => b.id), [blocks]);
+  const counterBlocks = useMemo(() => blocks.filter((b) => b.counter).map((b) => b.id), [blocks]);
+  const isOnlineBlock = useCallback((id: string) => blocks.some((b) => b.id === id && b.online), [blocks]);
+  const isCounterBlock = useCallback((id: string) => blocks.some((b) => b.id === id && b.counter), [blocks]);
+
   return {
     blocks,
     setBlocks,
     labels,
     channelLabels,
     disabledBlocks,
+    onlineBlocks,
+    counterBlocks,
+    isOnlineBlock,
+    isCounterBlock,
     loading,
     error,
     updatingId,

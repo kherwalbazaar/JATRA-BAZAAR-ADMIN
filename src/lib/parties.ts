@@ -1,4 +1,6 @@
 import { PartyItem, EventItem } from '@/types';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db, FIRESTORE_COLLECTIONS } from './firebase';
 
 export function isCommitteeName(name: string): boolean {
   if (!name) return true;
@@ -83,7 +85,41 @@ export function saveLocalParties(list: PartyItem[]): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    // Asynchronously sync to Firestore settings/parties
+    setDoc(
+      doc(db, FIRESTORE_COLLECTIONS.SETTINGS, 'parties'),
+      { parties: list, updatedAt: new Date().toISOString() },
+      { merge: true }
+    ).catch(() => {});
   } catch {}
+}
+
+export async function syncRemoteParties(): Promise<PartyItem[]> {
+  try {
+    const snap = await getDoc(doc(db, FIRESTORE_COLLECTIONS.SETTINGS, 'parties'));
+    if (snap.exists()) {
+      const data = snap.data();
+      if (Array.isArray(data?.parties)) {
+        const remote = data.parties.filter(
+          (p: PartyItem) => p && p.name && !isCommitteeName(p.name) && !DUMMY_NAMES.has(p.name.trim().toUpperCase())
+        );
+        const local = getLocalParties();
+        const mergedMap = new Map<string, PartyItem>();
+        remote.forEach((p: PartyItem) => mergedMap.set(p.name.trim().toUpperCase(), p));
+        local.forEach((p: PartyItem) => mergedMap.set(p.name.trim().toUpperCase(), { ...(mergedMap.get(p.name.trim().toUpperCase()) || {}), ...p }));
+        const merged = Array.from(mergedMap.values());
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+          } catch {}
+        }
+        return merged;
+      }
+    }
+  } catch (err) {
+    console.warn('syncRemoteParties error:', err);
+  }
+  return getLocalParties();
 }
 
 export function addOrUpdateParty(party: PartyItem): PartyItem[] {
@@ -91,7 +127,9 @@ export function addOrUpdateParty(party: PartyItem): PartyItem[] {
     return getLocalParties();
   }
   const current = getLocalParties();
-  const index = current.findIndex((p) => p.id === party.id);
+  const index = current.findIndex(
+    (p) => p.id === party.id || p.name.trim().toUpperCase() === party.name.trim().toUpperCase()
+  );
   let updated: PartyItem[];
   if (index >= 0) {
     updated = [...current];
@@ -111,15 +149,45 @@ export function deleteLocalParty(id: string): PartyItem[] {
 }
 
 /**
- * Computes the unified parties list dynamically from real events in Jatra Bazaar Events Directory.
+ * Computes the unified parties list dynamically by combining DEFAULT_PARTIES,
+ * custom created/saved parties, and parties extracted from live events.
  */
 export function computeParties(events: EventItem[] = []): PartyItem[] {
-  if (Array.isArray(events) && events.length > 0) {
-    const map = new Map<string, PartyItem>();
+  const map = new Map<string, PartyItem>();
 
+  // 1. Seed with DEFAULT_PARTIES
+  DEFAULT_PARTIES.forEach((p) => {
+    const key = p.name.trim().toUpperCase();
+    map.set(key, { ...p, activeShows: 0 });
+  });
+
+  // 2. Overlay custom added/created parties from local/remote storage
+  const localList = getLocalParties();
+  localList.forEach((p) => {
+    if (!p || !p.name || isCommitteeName(p.name) || DUMMY_NAMES.has(p.name.trim().toUpperCase())) return;
+    const key = p.name.trim().toUpperCase();
+    const existing = map.get(key);
+    if (existing) {
+      map.set(key, {
+        ...existing,
+        ...p,
+        logo: p.logo || existing.logo,
+        director: p.director || existing.director,
+        writer: p.writer || existing.writer,
+        phone: p.phone || existing.phone,
+        phone2: p.phone2 || existing.phone2,
+        location: p.location || existing.location,
+        activeShows: existing.activeShows || 0,
+      });
+    } else {
+      map.set(key, { ...p, activeShows: 0 });
+    }
+  });
+
+  // 3. Overlay and calculate active shows from real events in database
+  if (Array.isArray(events) && events.length > 0) {
     events.forEach((ev) => {
       const rawParty = String(ev.partyName || (ev as unknown as Record<string, unknown>).party_name || '').trim();
-      // Never treat committee name or dummy name as party name
       if (!rawParty || isCommitteeName(rawParty) || DUMMY_NAMES.has(rawParty.toUpperCase())) return;
       const key = rawParty.toUpperCase();
 
@@ -165,12 +233,17 @@ export function computeParties(events: EventItem[] = []): PartyItem[] {
         });
       }
     });
-
-    const extracted = Array.from(map.values());
-    if (extracted.length > 0) {
-      return extracted;
-    }
   }
 
-  return DEFAULT_PARTIES;
+  return Array.from(map.values());
+}
+
+/**
+ * Finds party item by name (case-insensitive)
+ */
+export function getPartyByName(name: string, events: EventItem[] = []): PartyItem | undefined {
+  if (!name) return undefined;
+  const target = name.trim().toUpperCase();
+  const all = computeParties(events);
+  return all.find((p) => p.name.trim().toUpperCase() === target);
 }

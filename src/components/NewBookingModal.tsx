@@ -260,6 +260,30 @@ export default function NewBookingModal({
       setError('Please enter a valid 10-digit mobile number');
       return;
     }
+
+    // Strict selling channel validation: seats in Online-active blocks CANNOT be sold at Counter
+    if (isCounterSeatMode && counterSeats.length > 0) {
+      const onlineSeats = counterSeats.filter((sId) => {
+        const info = getSeatInfo(sId);
+        return channelLabels[info.block] === 'Online';
+      });
+      if (onlineSeats.length > 0) {
+        const badBlocks = Array.from(new Set(onlineSeats.map((sId) => getSeatInfo(sId).block))).join(', ');
+        setError(`Block ${badBlocks} is active for Online selling only. Seats in this block cannot be sold at the counter.`);
+        return;
+      }
+    } else if (selectedTier) {
+      const assignedBlocks = (selectedTier.blocks || []).map((b) => b.trim().toUpperCase()).filter(Boolean);
+      const isAll = assignedBlocks.length === 0 || assignedBlocks.includes('ALL');
+      if (!isAll && assignedBlocks.length > 0) {
+        const allAssignedOnline = assignedBlocks.every((b) => channelLabels[b] === 'Online');
+        if (allAssignedOnline) {
+          setError(`Ticket category "${selectedTier.name}" belongs to block(s) ${assignedBlocks.join(', ')} active for Online selling only. Counter sales are disabled for this category.`);
+          return;
+        }
+      }
+    }
+
     setError('');
     setSaving(true);
 
@@ -386,30 +410,54 @@ export default function NewBookingModal({
                   <div className="space-y-3">
                     {activeCounterSelection.map((group) => {
                       const blockName = (group.block || '').toUpperCase();
+                      const isOnlineLocked = channelLabels[blockName] === 'Online';
                       return (
                         <div key={blockName} className="space-y-1.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-black uppercase tracking-wider text-purple-800 bg-purple-100/90 border border-purple-200 px-2 py-0.5 rounded-md">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md border ${
+                              isOnlineLocked
+                                ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                : 'text-purple-800 bg-purple-100/90 border-purple-200'
+                            }`}>
                               Block {blockName}
                             </span>
                             <span className="text-[10px] font-semibold text-slate-500">
                               {group.seats.length} seat{group.seats.length !== 1 ? 's' : ''}
                             </span>
+                            {isOnlineLocked && (
+                              <span className="text-[10px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3 text-rose-600 flex-shrink-0" />
+                                Online Only (Counter Disabled)
+                              </span>
+                            )}
                           </div>
                           <div className="flex flex-wrap gap-2 pt-0.5">
                             {group.seats.map((seatId) => {
                               const info = getSeatInfo(seatId, group.block);
+                              const isSeatOnline = channelLabels[info.block] === 'Online';
                               return (
                                 <div
                                   key={seatId}
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border-2 border-purple-300 bg-white hover:bg-purple-50 shadow-xs transition-all group"
-                                  title={`Block ${info.block} • Seat ${info.label} • ₹${info.price}`}
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border-2 shadow-xs transition-all group ${
+                                    isSeatOnline
+                                      ? 'border-rose-400 bg-rose-50 text-rose-900'
+                                      : 'border-purple-300 bg-white hover:bg-purple-50'
+                                  }`}
+                                  title={
+                                    isSeatOnline
+                                      ? `Block ${info.block} is active for Online selling only (Cannot be sold at counter)`
+                                      : `Block ${info.block} • Seat ${info.label} • ₹${info.price}`
+                                  }
                                 >
-                                  <Armchair className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
-                                  <span className="font-black text-xs text-purple-950 tracking-tight font-mono">
+                                  <Armchair className={`w-3.5 h-3.5 flex-shrink-0 ${isSeatOnline ? 'text-rose-600' : 'text-purple-600'}`} />
+                                  <span className={`font-black text-xs tracking-tight font-mono ${isSeatOnline ? 'text-rose-950' : 'text-purple-950'}`}>
                                     [{info.label}]
                                   </span>
-                                  <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-200/80">
+                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${
+                                    isSeatOnline
+                                      ? 'text-rose-700 bg-rose-100 border-rose-300'
+                                      : 'text-emerald-700 bg-emerald-50 border-emerald-200/80'
+                                  }`}>
                                     ₹{info.price}
                                   </span>
                                   <button

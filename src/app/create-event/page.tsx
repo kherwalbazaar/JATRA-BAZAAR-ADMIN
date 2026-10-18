@@ -1,14 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, CalendarPlus } from 'lucide-react';
 import { addEvent } from '@/lib/firestore';
 import EventForm from '@/components/EventForm';
 import { EventItem } from '@/types';
 
-export default function CreateEventPage() {
+function CreateEventContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const partyParam = searchParams.get('partyName') || '';
   const [saving, setSaving] = useState(false);
 
   const goBack = () => {
@@ -50,7 +52,9 @@ export default function CreateEventPage() {
             </div>
             <div>
               <h1 className="text-sm font-black tracking-wide">Create New Event</h1>
-              <p className="text-[10px] text-slate-400 font-semibold">All sections as per database structure</p>
+              <p className="text-[10px] text-slate-400 font-semibold">
+                {partyParam ? `Scheduling for ${partyParam}` : 'All sections as per database structure'}
+              </p>
             </div>
           </div>
         </div>
@@ -59,9 +63,10 @@ export default function CreateEventPage() {
       {/* Form */}
       <div className="max-w-4xl mx-auto px-6 py-8">
         <EventForm
+          initial={partyParam ? { partyName: partyParam } : null}
           submitting={saving}
           submitLabel={saving ? 'Creating...' : 'Create Event'}
-          enableDraft
+          enableDraft={!partyParam}
           onSubmit={handleCreate}
           onCancel={goBack}
         />
@@ -69,3 +74,18 @@ export default function CreateEventPage() {
     </div>
   );
 }
+
+export default function CreateEventPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#f4f6fc] flex items-center justify-center text-xs font-bold text-slate-400">
+          Loading Event Form...
+        </div>
+      }
+    >
+      <CreateEventContent />
+    </Suspense>
+  );
+}
+

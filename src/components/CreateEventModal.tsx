@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, CalendarPlus, MapPin, Calendar, Image as ImageIcon } from 'lucide-react';
-import { EventItem } from '@/types';
+import { EventItem, PartyItem } from '@/types';
+import { computeParties } from '@/lib/parties';
 
 interface CreateEventModalProps {
   isOpen: boolean;
@@ -19,6 +20,8 @@ export default function CreateEventModal({
   onUpdateEvent,
   editingEvent
 }: CreateEventModalProps) {
+  const [parties, setParties] = useState<PartyItem[]>(() => computeParties());
+  const [isCustomParty, setIsCustomParty] = useState(false);
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [organization, setOrganization] = useState('');
@@ -32,6 +35,28 @@ export default function CreateEventModal({
   const [poster, setPoster] = useState('');
   const [description, setDescription] = useState('');
   const [totalCapacity, setTotalCapacity] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setParties(computeParties());
+    }
+  }, [isOpen]);
+
+  const handlePartySelect = (selectedName: string) => {
+    if (selectedName === '__custom__') {
+      setIsCustomParty(true);
+      setTitle('');
+      return;
+    }
+    setIsCustomParty(false);
+    setTitle(selectedName);
+    const p = parties.find((item) => item.name.toUpperCase() === selectedName.toUpperCase());
+    if (p) {
+      if (p.location && !venue) setVenue(p.location);
+      if (p.logo && !poster) setPoster(p.logo);
+      if (p.name && !description) setDescription(`${p.name} - Santali Cultural Opera`);
+    }
+  };
 
   useEffect(() => {
     if (editingEvent) {
@@ -90,6 +115,7 @@ export default function CreateEventModal({
     const eventData: EventItem = {
       id: editingEvent?.id || `EVT-${Date.now().toString().slice(-4)}`,
       title: title.trim().toUpperCase(),
+      partyName: title.trim(),
       subtitle: subtitle.trim(),
       date,
       day,
@@ -136,15 +162,35 @@ export default function CreateEventModal({
 
         <form onSubmit={handleSubmit} className="p-6 space-y-3.5 text-xs font-semibold overflow-y-auto flex-1">
           <div>
-            <label className="text-[11px] font-black uppercase text-slate-500 block mb-1">Party Name *</label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. ADIM OWAR JARPA OPERA"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:border-indigo-500 outline-none"
-            />
+            <label className="text-[11px] font-black uppercase text-slate-500 block mb-1">
+              Party Name *
+              <span className="ml-1.5 text-[10px] text-indigo-600 font-bold normal-case">
+                (From Opera Parties Directory)
+              </span>
+            </label>
+            <select
+              value={isCustomParty ? '__custom__' : parties.some((p) => p.name.toUpperCase() === title.toUpperCase()) ? title : title ? '__custom__' : ''}
+              onChange={(e) => handlePartySelect(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:border-indigo-500 outline-none mb-2"
+            >
+              <option value="">-- Select Opera Party --</option>
+              {parties.map((p) => (
+                <option key={p.id} value={p.name}>
+                  {p.name}
+                </option>
+              ))}
+              <option value="__custom__">+ Enter Custom Party Name</option>
+            </select>
+            {(isCustomParty || (title && !parties.some((p) => p.name.toUpperCase() === title.toUpperCase()))) && (
+              <input
+                type="text"
+                required
+                placeholder="e.g. ADIM OWAR JARPA OPERA"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:border-indigo-500 outline-none"
+              />
+            )}
           </div>
 
           <div>
