@@ -1,6 +1,7 @@
 import { PartyItem, EventItem } from '@/types';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, FIRESTORE_COLLECTIONS } from './firebase';
+import { sb, sbMirrorSettings } from './supabase-db';
 
 export function isCommitteeName(name: string): boolean {
   if (!name) return true;
@@ -91,10 +92,45 @@ export function saveLocalParties(list: PartyItem[]): void {
       { parties: list, updatedAt: new Date().toISOString() },
       { merge: true }
     ).catch(() => {});
+    // Asynchronously mirror to Supabase settings table
+    sbMirrorSettings('parties', {
+      id: 'parties',
+      key: 'parties',
+      data: { parties: list, updatedAt: new Date().toISOString() },
+      description: 'Configured Opera Parties Directory',
+      updated_at: new Date().toISOString(),
+    });
   } catch {}
 }
 
 export async function syncRemoteParties(): Promise<PartyItem[]> {
+  // 1. Try Supabase settings table first
+  try {
+    const { data, error } = await sb.from('settings').select('*').eq('id', 'parties');
+    if (!error && Array.isArray(data) && data.length > 0) {
+      const partiesData = data[0]?.data?.parties || (Array.isArray(data[0]?.data) ? data[0].data : null);
+      if (Array.isArray(partiesData) && partiesData.length > 0) {
+        const remote = partiesData.filter(
+          (p: PartyItem) => p && p.name && !isCommitteeName(p.name) && !DUMMY_NAMES.has(p.name.trim().toUpperCase())
+        );
+        const local = getLocalParties();
+        const mergedMap = new Map<string, PartyItem>();
+        remote.forEach((p: PartyItem) => mergedMap.set(p.name.trim().toUpperCase(), p));
+        local.forEach((p: PartyItem) => mergedMap.set(p.name.trim().toUpperCase(), { ...(mergedMap.get(p.name.trim().toUpperCase()) || {}), ...p }));
+        const merged = Array.from(mergedMap.values());
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+          } catch {}
+        }
+        return merged;
+      }
+    }
+  } catch (err) {
+    console.warn('syncRemoteParties Supabase error:', err);
+  }
+
+  // 2. Try Firestore fallback
   try {
     const snap = await getDoc(doc(db, FIRESTORE_COLLECTIONS.SETTINGS, 'parties'));
     if (snap.exists()) {
@@ -117,7 +153,7 @@ export async function syncRemoteParties(): Promise<PartyItem[]> {
       }
     }
   } catch (err) {
-    console.warn('syncRemoteParties error:', err);
+    console.warn('syncRemoteParties Firestore error:', err);
   }
   return getLocalParties();
 }
