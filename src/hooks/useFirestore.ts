@@ -7,6 +7,7 @@ import { getAugmentedTicketTypes } from '@/lib/ticketSales';
 
 // ─── Local cache (localStorage) — database data stored locally ────
 const CACHE_NS = 'jatra_cache_';
+const SELECTED_EVENT_STORAGE_KEY = 'jatra_selected_event_id';
 
 function cacheRead<T>(key: string): T | null {
   if (typeof window === 'undefined') return null;
@@ -25,6 +26,57 @@ function cacheWrite(key: string, value: unknown): void {
   } catch {
     /* quota exceeded — ignore */
   }
+}
+
+function getStoredEventId(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const direct = window.localStorage.getItem(SELECTED_EVENT_STORAGE_KEY);
+    if (direct) return direct;
+  } catch {
+    /* ignore */
+  }
+  return cacheRead<string>('selected_event_id');
+}
+
+function setStoredEventId(id: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(SELECTED_EVENT_STORAGE_KEY, id);
+  } catch {
+    /* ignore */
+  }
+  cacheWrite('selected_event_id', id);
+}
+
+function clearStoredEventId(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(SELECTED_EVENT_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+  try {
+    window.localStorage.removeItem(CACHE_NS + 'selected_event_id');
+  } catch {
+    /* ignore */
+  }
+}
+
+function resolveSelectedEvent(
+  evts: EventItem[],
+  current: EventItem | null,
+  preferredId?: string | null
+): EventItem | null {
+  if (!evts || evts.length === 0) return null;
+  const targetId = preferredId || current?.id || getStoredEventId();
+  if (targetId) {
+    const found = evts.find(
+      (e) => e.id === targetId || e.showId === targetId || e.eventId === targetId
+    );
+    if (found) return found;
+  }
+  return evts.find((e) => e.status === 'active') ?? evts[0];
 }
 
 export interface FirestoreState {
@@ -180,7 +232,7 @@ export function useFirestore(): FirestoreState {
     const cached = cacheRead<EventItem[]>('events');
     if (cached && cached.length) {
       setEvents(cached);
-      setCurrentEvent((prev) => prev ?? (cached.find((e) => e.status === 'active') ?? cached[0]));
+      setCurrentEvent((prev) => resolveSelectedEvent(cached, prev));
     }
   }, []);
 
@@ -224,13 +276,7 @@ export function useFirestore(): FirestoreState {
         if (directEvents.length > 0) {
           setEvents(directEvents);
           cacheWrite('events', directEvents);
-          setCurrentEvent((prev) => {
-            if (prev) {
-              const matched = directEvents.find((e) => e.id === prev.id);
-              if (matched) return matched;
-            }
-            return directEvents.find((e) => e.status === 'active') ?? directEvents[0];
-          });
+          setCurrentEvent((prev) => resolveSelectedEvent(directEvents, prev));
           setIsLiveConnected(true);
           setIsConnectionLost(false);
           setError(null);
@@ -281,13 +327,7 @@ export function useFirestore(): FirestoreState {
           if (evts.length > 0) {
             setEvents(evts);
             // Auto-select or preserve currently selected event
-            setCurrentEvent((prev) => {
-              if (prev) {
-                const matched = evts.find((e) => e.id === prev.id);
-                if (matched) return matched;
-              }
-              return evts.find((e) => e.status === 'active') ?? evts[0];
-            });
+            setCurrentEvent((prev) => resolveSelectedEvent(evts, prev));
           }
         },
         (err) => {
@@ -527,7 +567,7 @@ export function useFirestore(): FirestoreState {
       if (freshEvents.length > 0) {
         setEvents(freshEvents);
         cacheWrite('events', freshEvents);
-        setCurrentEvent(freshEvents[0]);
+        setCurrentEvent((prev) => resolveSelectedEvent(freshEvents, prev));
       }
       setIsOfflineMode(false);
       setIsLiveConnected(true);
@@ -551,6 +591,7 @@ export function useFirestore(): FirestoreState {
   }, []);
 
   const handleSetCurrentEvent = useCallback((event: EventItem) => {
+    setStoredEventId(event.id);
     setCurrentEvent(event);
   }, []);
 
@@ -563,25 +604,21 @@ export function useFirestore(): FirestoreState {
         cacheWrite('events', next);
         return next;
       });
+      setStoredEventId(newId);
       setCurrentEvent(newEvt);
       setLastUpdated(new Date());
       return newId;
     }
     isLocalActionRef.current = true;
     const id = await fs.addEvent(event);
+    setStoredEventId(id);
     
     // Immediately fetch fresh data from database
     try {
       const freshEvents = await fs.getEventsOnce();
       setEvents(freshEvents);
       cacheWrite('events', freshEvents);
-      setCurrentEvent((prev) => {
-        if (prev) {
-          const matched = freshEvents.find((e) => e.id === prev.id);
-          if (matched) return matched;
-        }
-        return freshEvents.find((e) => e.status === 'active') ?? freshEvents[0];
-      });
+      setCurrentEvent((prev) => resolveSelectedEvent(freshEvents, prev, id));
     } catch (err) {
       console.error('Failed to fetch fresh events after add:', err);
     }
@@ -601,6 +638,10 @@ export function useFirestore(): FirestoreState {
       await fs.deleteEvent(eventId);
       console.log('fs.deleteEvent completed successfully');
       
+      if (getStoredEventId() === eventId) {
+        clearStoredEventId();
+      }
+
       // Immediately fetch fresh data from database to confirm deletion
       console.log('Fetching fresh data from database...');
       const freshEvents = await fs.getEventsOnce();
@@ -609,13 +650,9 @@ export function useFirestore(): FirestoreState {
       // Update local state with fresh data
       setEvents(freshEvents);
       cacheWrite('events', freshEvents);
-      setCurrentEvent((prev) => {
-        if (prev) {
-          const matched = freshEvents.find((e) => e.id === prev.id);
-          if (matched) return matched;
-        }
-        return freshEvents.find((e) => e.status === 'active') ?? freshEvents[0];
-      });
+      setCurrentEvent((prev) =>
+        resolveSelectedEvent(freshEvents, prev?.id === eventId ? null : prev)
+      );
       
       console.log('Local state updated with fresh data');
     } catch (err) {
@@ -627,6 +664,7 @@ export function useFirestore(): FirestoreState {
         return next;
       });
       if (currentEvent?.id === eventId) {
+        clearStoredEventId();
         setCurrentEvent(null);
       }
       throw err; // Re-throw so caller knows deletion failed

@@ -147,25 +147,6 @@ export default function App() {
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [selectedEventForModal, setSelectedEventForModal] = useState<EventItem | null>(null);
   const [editingEvent, setEditingEvent] = useState<EventItem | null>(null);
-  const [seatEventDropdownOpen, setSeatEventDropdownOpen] = useState(false);
-  const seatEventDropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        seatEventDropdownRef.current &&
-        !seatEventDropdownRef.current.contains(event.target as Node)
-      ) {
-        setSeatEventDropdownOpen(false);
-      }
-    }
-    if (seatEventDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [seatEventDropdownOpen]);
 
   // Group events by committee for switcher and role-based views
   const eventsByCommittee = useMemo(() => {
@@ -365,149 +346,31 @@ export default function App() {
           {currentTab === 'create-seat' && (
             <div className="px-6 pt-6 pb-6 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex flex-wrap items-center gap-3">
+                <div>
                   <h2 className="text-xl font-black text-slate-900 leading-tight">Create Seat</h2>
-                  {/* Card-Style Event Switcher Dropdown */}
-                  <div className="relative" ref={seatEventDropdownRef}>
-                    <button
-                      type="button"
-                      onClick={() => setSeatEventDropdownOpen((prev) => !prev)}
-                      className="flex items-center gap-2.5 bg-white hover:bg-slate-50 text-slate-800 font-bold text-xs rounded-xl px-3 py-1.5 border border-slate-200 shadow-xs focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-left max-w-[320px] sm:max-w-[440px]"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded">
-                            {currentEvent?.date || 'Date TBD'}
-                          </span>
-                          <span className="text-[11px] font-extrabold text-amber-700 truncate">
-                            {currentEvent?.partyName || currentEvent?.organizer || 'Party'}
-                          </span>
-                        </div>
-                        <div className="text-xs font-black text-slate-900 truncate mt-0.5">
-                          {currentEvent ? currentEvent.title : 'Select Event & Party'}
-                        </div>
-                      </div>
-                      <ChevronDown
-                        className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform ${
-                          seatEventDropdownOpen ? 'rotate-180' : ''
-                        }`}
-                      />
-                    </button>
-
-                    {/* Card-Style List Dropdown Panel */}
-                    {seatEventDropdownOpen && (
-                      <div className="absolute left-0 mt-2 w-[min(94vw,460px)] bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150 max-h-[440px] overflow-y-auto">
-                        <div className="px-2.5 py-1.5 mb-1.5 flex items-center justify-between border-b border-slate-100">
-                          <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                            Select Event • Party • Story
-                          </span>
-                          <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-                            {eventsList.length} Shows
-                          </span>
-                        </div>
-
-                        {eventsList.length === 0 ? (
-                          <div className="p-4 text-center text-xs text-slate-400 font-semibold">
-                            No events found.
-                          </div>
-                        ) : (
-                          <div className="space-y-1.5">
-                            {eventsList.map((evt) => {
-                              const isSelected = currentEvent?.id === evt.id;
-                              const party = evt.partyName || evt.organizer || 'Party';
-                              const committee = evt.committeeName || '';
-
-                              return (
-                                <button
-                                  key={evt.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setCurrentEvent(evt);
-                                    setSeatEventDropdownOpen(false);
-                                  }}
-                                  className={`w-full text-left p-2.5 rounded-xl border transition-all flex items-start gap-2.5 ${
-                                    isSelected
-                                      ? 'bg-indigo-50/90 border-indigo-300 ring-2 ring-indigo-500/20 shadow-xs'
-                                      : 'bg-slate-50/70 hover:bg-white border-slate-200/80 hover:border-slate-300 hover:shadow-xs'
-                                  }`}
-                                >
-                                  {/* Poster / Icon */}
-                                  {evt.poster ? (
-                                    <img
-                                      src={evt.poster}
-                                      alt={evt.title}
-                                      className="w-11 h-11 rounded-lg object-cover flex-shrink-0 border border-slate-200"
-                                    />
-                                  ) : (
-                                    <div className="w-11 h-11 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-sm flex-shrink-0">
-                                      🎭
-                                    </div>
-                                  )}
-
-                                  {/* Card Content: Date, Party Name, Story Name */}
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                                      {/* Date */}
-                                      <span className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-700 bg-indigo-100/80 px-2 py-0.5 rounded-md">
-                                        <Calendar className="w-3 h-3 text-indigo-600" />
-                                        <span>{evt.date || 'Date TBD'}</span>
-                                      </span>
-
-                                      {/* Party Name */}
-                                      <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-md truncate max-w-[180px]">
-                                        <span>🎭</span>
-                                        <span className="truncate">{party}</span>
-                                      </span>
-
-                                      {/* Committee Tag */}
-                                      {committee && (
-                                        <span className="text-[9px] font-bold text-slate-500 bg-slate-200/70 px-1.5 py-0.5 rounded truncate max-w-[130px]">
-                                          🏛️ {committee}
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    {/* Story Name */}
-                                    <div className="text-xs font-black text-slate-900 leading-snug line-clamp-2">
-                                      {evt.title}
-                                    </div>
-
-                                    {/* Writer & Venue */}
-                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-semibold text-slate-400 mt-0.5">
-                                      {evt.writer && (
-                                        <span className="text-indigo-600 font-bold truncate max-w-[140px]">
-                                          ✍️ {evt.writer}
-                                        </span>
-                                      )}
-                                      {evt.writer && evt.venue && <span>•</span>}
-                                      {evt.venue && (
-                                        <span className="truncate">
-                                          📍 {evt.venue} {evt.city ? `• ${evt.city}` : ''}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  {/* Selection Checkmark */}
-                                  {isSelected && (
-                                    <div className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 mt-1 shadow-xs">
-                                      <Check className="w-3 h-3 stroke-[3]" />
-                                    </div>
-                                  )}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  {currentEvent ? (
+                    <p className="text-xs font-medium text-slate-500 mt-1">
+                      Managing layout & seats for{' '}
+                      <span className="font-bold text-indigo-700">{currentEvent.title}</span>
+                      {currentEvent.partyName && (
+                        <span className="text-amber-800 font-semibold"> • 🎭 {currentEvent.partyName}</span>
+                      )}
+                      {currentEvent.date && (
+                        <span className="text-slate-600 font-semibold"> • 📅 {currentEvent.date}</span>
+                      )}
+                    </p>
+                  ) : (
+                    <p className="text-xs font-semibold text-amber-600 mt-1">
+                      ⚠️ No event selected. Please select an event from the top header to manage seats.
+                    </p>
+                  )}
                 </div>
 
                 <button
                   type="button"
                   onClick={() => setSeatFormOpen(true)}
-                  className="flex items-center gap-2 bg-[#4f39f6] hover:bg-[#432ee0] text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-md shadow-indigo-600/30 transition-all active:scale-95 flex-shrink-0"
+                  disabled={!currentEvent}
+                  className="flex items-center gap-2 bg-[#4f39f6] hover:bg-[#432ee0] disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-md shadow-indigo-600/30 transition-all active:scale-95 flex-shrink-0"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Create Seat</span>

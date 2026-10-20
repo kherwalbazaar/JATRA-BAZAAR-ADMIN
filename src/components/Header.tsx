@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
   Calendar, 
   ChevronDown, 
@@ -52,6 +52,7 @@ export default function Header({
   onRefresh
 }: HeaderProps) {
   const [eventDropdownOpen, setEventDropdownOpen] = useState(false);
+  const [eventFilterQuery, setEventFilterQuery] = useState('');
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
@@ -60,6 +61,20 @@ export default function Header({
   const notifMenuRef = useRef<HTMLDivElement>(null);
   const [isBlinking, setIsBlinking] = useState(false);
   const blinkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const filteredEventsList: EventItem[] = useMemo(() => {
+    if (!eventFilterQuery.trim()) return eventsList;
+    const q = eventFilterQuery.toLowerCase();
+    return eventsList.filter((e) =>
+      e.title?.toLowerCase().includes(q) ||
+      e.partyName?.toLowerCase().includes(q) ||
+      e.organizer?.toLowerCase().includes(q) ||
+      e.date?.toLowerCase().includes(q) ||
+      e.venue?.toLowerCase().includes(q) ||
+      e.writer?.toLowerCase().includes(q) ||
+      e.committeeName?.toLowerCase().includes(q)
+    );
+  }, [eventsList, eventFilterQuery]);
 
   // Play chime sound using Web Audio API
   const playChime = useCallback(() => {
@@ -173,64 +188,173 @@ export default function Header({
           </button>
         )}
 
-        {/* Date Selector Pill */}
-        {currentEvent && (
-        <div className="hidden sm:flex items-center gap-2 bg-white/10 border border-white/10 px-3 py-2 rounded-xl text-xs font-bold text-white select-none">
-          <Calendar className="w-3.5 h-3.5 text-amber-400" />
-          <span>{currentEvent.date} ({currentEvent.day.slice(0, 3)})</span>
-        </div>
-        )}
-
-        {/* Event Dropdown Pill */}
+        {/* Header Events Selection Dropdown */}
         <div className="relative" ref={eventMenuRef}>
           <button
+            type="button"
             onClick={() => setEventDropdownOpen(!eventDropdownOpen)}
-            className="flex items-center gap-2.5 bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-colors"
+            className="flex items-center gap-2.5 bg-white/10 hover:bg-white/15 border border-white/15 hover:border-amber-400/50 px-3 py-1.5 rounded-xl text-xs font-bold text-white transition-all text-left max-w-[260px] sm:max-w-[340px] md:max-w-[420px] shadow-sm"
+            title="Click to switch active show/event"
           >
             {currentEvent ? (
               <>
-                <img 
-                  src={currentEvent.poster} 
-                  alt="Icon" 
-                  className="w-6 h-6 rounded-lg object-cover ring-1 ring-white/20"
-                />
-                <span className="max-w-[140px] truncate">{currentEvent.title}</span>
+                {currentEvent.poster ? (
+                  <img 
+                    src={currentEvent.poster} 
+                    alt={currentEvent.title} 
+                    className="w-8 h-8 rounded-lg object-cover ring-1 ring-white/20 flex-shrink-0"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-lg bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 flex items-center justify-center font-black text-sm flex-shrink-0">
+                    🎭
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 leading-none mb-1">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 bg-amber-400/20 px-1.5 py-0.5 rounded border border-amber-400/30 truncate">
+                      {currentEvent.date || 'Date TBD'}
+                    </span>
+                    <span className="text-[11px] font-extrabold text-indigo-200 truncate">
+                      {currentEvent.partyName || currentEvent.organizer || 'Party'}
+                    </span>
+                  </div>
+                  <div className="text-xs font-black text-white truncate leading-tight">
+                    {currentEvent.title}
+                  </div>
+                </div>
               </>
             ) : (
-              <span className="text-slate-300">Select Event</span>
+              <div className="flex items-center gap-2 py-0.5">
+                <Calendar className="w-4 h-4 text-amber-400" />
+                <span className="text-slate-300 font-bold">Select Event • Party • Story</span>
+              </div>
             )}
-            <ChevronDown className="w-3 h-3 text-slate-300 ml-1" />
+            <ChevronDown
+              className={`w-3.5 h-3.5 text-slate-300 flex-shrink-0 transition-transform duration-200 ml-1 ${
+                eventDropdownOpen ? 'rotate-180' : ''
+              }`}
+            />
           </button>
 
+          {/* Card-Style List Dropdown Panel */}
           {eventDropdownOpen && (
-            <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-xl border border-slate-100 p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-              <div className="px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                Switch Active Event
+            <div className="absolute right-0 mt-2 w-[min(94vw,440px)] bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-2.5 z-50 animate-in fade-in slide-in-from-top-2 duration-150 max-h-[460px] overflow-y-auto">
+              <div className="px-2.5 py-1.5 mb-2 flex items-center justify-between border-b border-slate-100">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  Select Event • Party • Story
+                </span>
+                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                  {eventsList.length} Shows
+                </span>
               </div>
-              <div className="py-1 space-y-1">
-                {eventsList.map((evt) => {
-                  const isSelected = currentEvent !== null && evt.id === currentEvent.id;
-                  return (
-                    <button
-                      key={evt.id}
-                      onClick={() => {
-                        onSelectEvent(evt);
-                        setEventDropdownOpen(false);
-                      }}
-                      className={`w-full flex items-center gap-2.5 p-2 rounded-xl text-left transition-all ${
-                        isSelected ? 'bg-indigo-50/80 text-indigo-900 border border-indigo-100 font-bold' : 'hover:bg-slate-50 text-slate-700'
-                      }`}
-                    >
-                      <img src={evt.poster} alt={evt.title} className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-black truncate">{evt.title}</div>
-                        <div className="text-[10px] text-slate-400 truncate">{evt.date} • {evt.venue}</div>
-                      </div>
-                      {isSelected && <CheckCircle2 className="w-4 h-4 text-indigo-600 flex-shrink-0" />}
-                    </button>
-                  );
-                })}
-              </div>
+
+              {eventsList.length > 3 && (
+                <div className="relative mb-2 px-1">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={eventFilterQuery}
+                    onChange={(e) => setEventFilterQuery(e.target.value)}
+                    placeholder="Search story, party, date, venue..."
+                    className="w-full pl-8 pr-3 py-1.5 bg-slate-50 hover:bg-slate-100/80 focus:bg-white text-xs font-medium text-slate-800 placeholder:text-slate-400 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"
+                  />
+                </div>
+              )}
+
+              {filteredEventsList.length === 0 ? (
+                <div className="p-4 text-center text-xs text-slate-400 font-semibold">
+                  No events found.
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {filteredEventsList.map((evt) => {
+                    const isSelected = currentEvent !== null && evt.id === currentEvent.id;
+                    const party = evt.partyName || evt.organizer || 'Party';
+                    const committee = evt.committeeName || '';
+
+                    return (
+                      <button
+                        key={evt.id}
+                        type="button"
+                        onClick={() => {
+                          onSelectEvent(evt);
+                          setEventDropdownOpen(false);
+                          setEventFilterQuery('');
+                        }}
+                        className={`w-full text-left p-2.5 rounded-xl border transition-all flex items-start gap-2.5 ${
+                          isSelected
+                            ? 'bg-indigo-50/90 border-indigo-300 ring-2 ring-indigo-500/20 shadow-xs'
+                            : 'bg-slate-50/70 hover:bg-white border-slate-200/80 hover:border-slate-300 hover:shadow-xs text-slate-700'
+                        }`}
+                      >
+                        {/* Poster / Icon */}
+                        {evt.poster ? (
+                          <img
+                            src={evt.poster}
+                            alt={evt.title}
+                            className="w-11 h-11 rounded-lg object-cover flex-shrink-0 border border-slate-200"
+                          />
+                        ) : (
+                          <div className="w-11 h-11 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-sm flex-shrink-0">
+                            🎭
+                          </div>
+                        )}
+
+                        {/* Card Content: Date, Party Name, Story Name */}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                            {/* Date */}
+                            <span className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-700 bg-indigo-100/80 px-2 py-0.5 rounded-md">
+                              <Calendar className="w-3 h-3 text-indigo-600" />
+                              <span>{evt.date || 'Date TBD'}</span>
+                            </span>
+
+                            {/* Party Name */}
+                            <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-md truncate max-w-[180px]">
+                              <span>🎭</span>
+                              <span className="truncate">{party}</span>
+                            </span>
+
+                            {/* Committee Tag */}
+                            {committee && (
+                              <span className="text-[9px] font-bold text-slate-500 bg-slate-200/70 px-1.5 py-0.5 rounded truncate max-w-[130px]">
+                                🏛️ {committee}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Story Name */}
+                          <div className="text-xs font-black text-slate-900 leading-snug line-clamp-2">
+                            {evt.title}
+                          </div>
+
+                          {/* Writer & Venue */}
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-semibold text-slate-400 mt-0.5">
+                            {evt.writer && (
+                              <span className="text-indigo-600 font-bold truncate max-w-[140px]">
+                                ✍️ {evt.writer}
+                              </span>
+                            )}
+                            {evt.writer && evt.venue && <span>•</span>}
+                            {evt.venue && (
+                              <span className="truncate">
+                                📍 {evt.venue} {evt.city ? `• ${evt.city}` : ''}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Selection Checkmark */}
+                        {isSelected && (
+                          <div className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 mt-1 shadow-xs">
+                            <Check className="w-3 h-3 stroke-[3]" />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
