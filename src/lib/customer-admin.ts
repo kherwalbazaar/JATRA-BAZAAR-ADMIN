@@ -30,7 +30,10 @@ export async function fetchAdminCustomers(): Promise<CustomerRecord[]> {
       .from('bookings')
       .select('customer_phone, customer_name, customer_email, amount, final_customer_amount, created_at');
 
-    const bookingStatsByPhone = new Map<string, { count: number; spent: number; name?: string; email?: string; firstDate?: string }>();
+    const bookingStatsByPhone = new Map<
+      string,
+      { count: number; spent: number; name?: string; email?: string; firstDate?: string; lastDate?: string }
+    >();
 
     if (Array.isArray(bookings)) {
       bookings.forEach((b) => {
@@ -44,12 +47,21 @@ export async function fetchAdminCustomers(): Promise<CustomerRecord[]> {
           name: b.customer_name || '',
           email: b.customer_email || '',
           firstDate: b.created_at,
+          lastDate: b.created_at,
         };
 
         existing.count += 1;
         existing.spent += amt;
         if (!existing.name && b.customer_name) existing.name = b.customer_name;
         if (!existing.email && b.customer_email) existing.email = b.customer_email;
+        if (b.created_at) {
+          if (!existing.firstDate || new Date(b.created_at) < new Date(existing.firstDate)) {
+            existing.firstDate = b.created_at;
+          }
+          if (!existing.lastDate || new Date(b.created_at) > new Date(existing.lastDate)) {
+            existing.lastDate = b.created_at;
+          }
+        }
         bookingStatsByPhone.set(phone, existing);
       });
     }
@@ -62,6 +74,19 @@ export async function fetchAdminCustomers(): Promise<CustomerRecord[]> {
         const cleanMobile = String(p.mobile || '').replace(/\D/g, '').slice(-10);
         const stats = bookingStatsByPhone.get(cleanMobile);
 
+        // Resolve real latest visit / login timestamp from Supabase
+        const candidates = [
+          p.last_login_at,
+          stats?.lastDate,
+          p.updated_at,
+          p.created_at,
+        ].filter(Boolean) as string[];
+
+        let realLastVisit = p.last_login_at || stats?.lastDate || p.updated_at || p.created_at;
+        if (candidates.length > 1) {
+          realLastVisit = candidates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
+        }
+
         customerMap.set(cleanMobile, {
           id: p.id,
           mobile: cleanMobile,
@@ -73,7 +98,7 @@ export async function fetchAdminCustomers(): Promise<CustomerRecord[]> {
           is_active: p.is_active !== false,
           created_at: p.created_at || new Date().toISOString(),
           updated_at: p.updated_at,
-          last_login_at: p.last_login_at || p.created_at,
+          last_login_at: realLastVisit,
           total_bookings: stats?.count || 0,
           total_spent: Math.round(stats?.spent || 0),
         });
@@ -93,7 +118,7 @@ export async function fetchAdminCustomers(): Promise<CustomerRecord[]> {
           status: 'active',
           is_active: true,
           created_at: stats.firstDate || new Date().toISOString(),
-          last_login_at: stats.firstDate,
+          last_login_at: stats.lastDate || stats.firstDate,
           total_bookings: stats.count,
           total_spent: Math.round(stats.spent),
         });

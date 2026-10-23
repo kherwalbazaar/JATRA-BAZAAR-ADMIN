@@ -17,9 +17,7 @@ import {
   ShieldCheck,
   Ban,
   ArrowUpDown,
-  Download,
-  Copy,
-  Check
+  Download
 } from 'lucide-react';
 import { CustomerRecord } from '@/types/customer';
 import {
@@ -37,7 +35,6 @@ export default function CustomersView() {
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Selected customer for modal
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
@@ -67,14 +64,6 @@ export default function CustomersView() {
     loadData();
   };
 
-  const copyToClipboard = (text: string, id: string) => {
-    try {
-      navigator.clipboard.writeText(text);
-      setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 1800);
-    } catch {}
-  };
-
   // Open Details Modal and fetch booking history
   const openCustomerDetails = async (customer: CustomerRecord) => {
     setSelectedCustomer(customer);
@@ -87,6 +76,27 @@ export default function CustomersView() {
       setCustomerBookings([]);
     } finally {
       setLoadingBookings(false);
+    }
+  };
+
+  const formatDateTime = (isoString?: string | null) => {
+    if (!isoString) return { date: '—', time: '' };
+    try {
+      const d = new Date(isoString);
+      if (isNaN(d.getTime())) return { date: '—', time: '' };
+      const date = d.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+      const time = d.toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+      return { date, time };
+    } catch {
+      return { date: '—', time: '' };
     }
   };
 
@@ -167,7 +177,7 @@ export default function CustomersView() {
   );
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -269,7 +279,7 @@ export default function CustomersView() {
                 setSearchQuery(e.target.value);
                 setCurrentPage(1);
               }}
-              placeholder="Search by customer name, mobile number (+91), or ID..."
+              placeholder="Search by customer name or mobile number (+91)..."
               className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
@@ -327,28 +337,27 @@ export default function CustomersView() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[11px] font-black uppercase tracking-wider text-slate-500">
-                <th className="py-3.5 px-4">Customer ID</th>
-                <th className="py-3.5 px-4">Customer Name</th>
-                <th className="py-3.5 px-4">Verified Mobile</th>
-                <th className="py-3.5 px-4">Registered Date</th>
-                <th className="py-3.5 px-4">Last Login</th>
-                <th className="py-3.5 px-4">Status</th>
-                <th className="py-3.5 px-4">Total Bookings</th>
-                <th className="py-3.5 px-4 text-right">Actions</th>
+              <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[11px] font-black uppercase tracking-wider text-slate-500 whitespace-nowrap">
+                <th className="py-3.5 px-4 sm:px-6">Customer Name</th>
+                <th className="py-3.5 px-4 sm:px-6">Verified Mobile</th>
+                <th className="py-3.5 px-4 sm:px-6">Registration</th>
+                <th className="py-3.5 px-4 sm:px-6">Last Visit</th>
+                <th className="py-3.5 px-4 sm:px-6">Status</th>
+                <th className="py-3.5 px-4 sm:px-6">Total Bookings</th>
+                <th className="py-3.5 px-4 sm:px-6 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
                     <RefreshCw className="w-6 h-6 animate-spin mx-auto text-indigo-600 mb-2" />
                     <p className="font-bold">Loading real customer data from Supabase...</p>
                   </td>
                 </tr>
               ) : paginatedCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
                     <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                     <p className="font-bold text-slate-600">No customers found.</p>
                     <p className="text-[11px] text-slate-400 mt-0.5">
@@ -366,25 +375,8 @@ export default function CustomersView() {
                       key={c.id || c.mobile}
                       className="hover:bg-slate-50/70 transition-colors"
                     >
-                      {/* Customer ID */}
-                      <td className="py-3.5 px-4">
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(c.id, `id_${c.id}`)}
-                          className="font-mono text-[11px] font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded-md inline-flex items-center gap-1 group transition-colors"
-                          title="Click to copy ID"
-                        >
-                          <span>{c.id.length > 12 ? `${c.id.slice(0, 10)}...` : c.id}</span>
-                          {copiedId === `id_${c.id}` ? (
-                            <Check className="w-3 h-3 text-emerald-600" />
-                          ) : (
-                            <Copy className="w-2.5 h-2.5 opacity-40 group-hover:opacity-100" />
-                          )}
-                        </button>
-                      </td>
-
                       {/* Customer Name */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-3.5 px-4 sm:px-6">
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-500 text-white font-black text-xs flex items-center justify-center flex-shrink-0 shadow-xs">
                             {c.full_name?.charAt(0)?.toUpperCase() || 'C'}
@@ -394,7 +386,7 @@ export default function CustomersView() {
                               {c.full_name}
                             </div>
                             {c.email && (
-                              <div className="text-[10px] text-slate-400 font-medium truncate max-w-[150px]">
+                              <div className="text-[10px] text-slate-400 font-medium truncate max-w-xs sm:max-w-sm md:max-w-md">
                                 {c.email}
                               </div>
                             )}
@@ -403,7 +395,7 @@ export default function CustomersView() {
                       </td>
 
                       {/* Verified Mobile Number */}
-                      <td className="py-3.5 px-4 font-mono">
+                      <td className="py-3.5 px-4 sm:px-6 font-mono whitespace-nowrap">
                         <div className="inline-flex items-center gap-1.5 font-bold text-slate-800">
                           <span className="text-slate-400 text-[10px]">+91</span>
                           <span>{c.mobile}</span>
@@ -413,30 +405,52 @@ export default function CustomersView() {
                         </div>
                       </td>
 
-                      {/* Registration Date */}
-                      <td className="py-3.5 px-4 text-slate-600 text-[11px]">
-                        {c.created_at
-                          ? new Date(c.created_at).toLocaleDateString('en-IN', {
-                              day: '2-digit',
-                              month: 'short',
-                              year: 'numeric',
-                            })
-                          : '—'}
+                      {/* Registration Date & Time */}
+                      <td className="py-3.5 px-4 sm:px-6 whitespace-nowrap">
+                        {(() => {
+                          const dt = formatDateTime(c.created_at);
+                          if (dt.date === '—') {
+                            return <span className="text-slate-400 text-[11px]">—</span>;
+                          }
+                          return (
+                            <div className="flex flex-col leading-tight">
+                              <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5">
+                                <Calendar className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                <span>{dt.date}</span>
+                              </span>
+                              <span className="text-[10px] font-mono text-slate-500 font-semibold flex items-center gap-1.5 mt-0.5">
+                                <Clock className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                <span>{dt.time}</span>
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </td>
 
-                      {/* Last Login */}
-                      <td className="py-3.5 px-4 text-slate-500 text-[11px]">
-                        {c.last_login_at
-                          ? new Date(c.last_login_at).toLocaleDateString('en-IN', {
-                              day: '2-digit',
-                              month: 'short',
-                              year: 'numeric',
-                            })
-                          : '—'}
+                      {/* Last Visit Date & Time */}
+                      <td className="py-3.5 px-4 sm:px-6 whitespace-nowrap">
+                        {(() => {
+                          const dt = formatDateTime(c.last_login_at);
+                          if (dt.date === '—') {
+                            return <span className="text-slate-400 text-[11px]">—</span>;
+                          }
+                          return (
+                            <div className="flex flex-col leading-tight">
+                              <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5">
+                                <Calendar className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                <span>{dt.date}</span>
+                              </span>
+                              <span className="text-[10px] font-mono text-indigo-600 font-bold flex items-center gap-1.5 mt-0.5">
+                                <Clock className="w-3 h-3 text-indigo-500 flex-shrink-0" />
+                                <span>{dt.time}</span>
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Account Status */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-3.5 px-4 sm:px-6 whitespace-nowrap">
                         <span
                           className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide ${
                             isBlocked
@@ -459,7 +473,7 @@ export default function CustomersView() {
                       </td>
 
                       {/* Total Bookings */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-3.5 px-4 sm:px-6 whitespace-nowrap">
                         <div className="inline-flex items-center gap-1.5">
                           <span className="font-extrabold text-slate-800">
                             {c.total_bookings || 0}
@@ -471,7 +485,7 @@ export default function CustomersView() {
                       </td>
 
                       {/* Actions */}
-                      <td className="py-3.5 px-4 text-right">
+                      <td className="py-3.5 px-4 sm:px-6 text-right whitespace-nowrap">
                         <button
                           type="button"
                           onClick={() => openCustomerDetails(c)}
@@ -561,8 +575,6 @@ export default function CustomersView() {
                   <div className="text-xs text-indigo-200 font-mono flex items-center gap-2 mt-1">
                     <Phone className="w-3.5 h-3.5 text-indigo-400" />
                     <span>+91 {selectedCustomer.mobile}</span>
-                    <span className="text-slate-400">•</span>
-                    <span>ID: {selectedCustomer.id}</span>
                   </div>
                 </div>
               </div>
@@ -598,22 +610,42 @@ export default function CustomersView() {
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                    Member Since
+                    Registration
                   </span>
                   <span className="font-bold text-slate-700 mt-0.5 block">
-                    {selectedCustomer.created_at
-                      ? new Date(selectedCustomer.created_at).toLocaleDateString('en-IN')
-                      : '—'}
+                    {(() => {
+                      const dt = formatDateTime(selectedCustomer.created_at);
+                      if (dt.date === '—') return '—';
+                      return (
+                        <span className="inline-flex items-center gap-1.5 flex-wrap">
+                          <span>{dt.date}</span>
+                          <span className="text-slate-300">•</span>
+                          <span className="text-slate-600 font-mono font-bold">
+                            {dt.time}
+                          </span>
+                        </span>
+                      );
+                    })()}
                   </span>
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                    Last Activity
+                    Last Visit
                   </span>
                   <span className="font-bold text-slate-700 mt-0.5 block">
-                    {selectedCustomer.last_login_at
-                      ? new Date(selectedCustomer.last_login_at).toLocaleDateString('en-IN')
-                      : '—'}
+                    {(() => {
+                      const dt = formatDateTime(selectedCustomer.last_login_at);
+                      if (dt.date === '—') return '—';
+                      return (
+                        <span className="inline-flex items-center gap-1.5 flex-wrap">
+                          <span>{dt.date}</span>
+                          <span className="text-slate-300">•</span>
+                          <span className="text-indigo-600 font-mono font-bold">
+                            {dt.time}
+                          </span>
+                        </span>
+                      );
+                    })()}
                   </span>
                 </div>
               </div>

@@ -312,7 +312,14 @@ export function sbMirrorBooking(data: Record<string, unknown>): void {
 }
 
 export function sbMirrorBookingUpdate(id: string, data: Record<string, unknown>): void {
-  sbUpdate('bookings', id, applyMap(data, BOOKING_FIELD_MAP));
+  if (!id || Object.keys(data).length === 0) return;
+  const mapped = applyMap(data, BOOKING_FIELD_MAP);
+  sb.from('bookings')
+    .update(mapped)
+    .or(`id.eq.${id},ticket_number.eq.${id}`)
+    .then(({ error }) => {
+      if (error) logFail('bookings', `updateBooking (${id})`, error.message);
+    });
 }
 
 export function sbMirrorTicket(data: Record<string, unknown>): void {
@@ -320,7 +327,14 @@ export function sbMirrorTicket(data: Record<string, unknown>): void {
 }
 
 export function sbMirrorTicketUpdate(id: string, data: Record<string, unknown>): void {
-  sbUpdate('tickets', id, applyMap(data, TICKET_FIELD_MAP));
+  if (!id || Object.keys(data).length === 0) return;
+  const mapped = applyMap(data, TICKET_FIELD_MAP);
+  sb.from('tickets')
+    .update(mapped)
+    .or(`id.eq.${id},ticket_id.eq.${id},serial_number.eq.${id},qr_token.eq.${id}`)
+    .then(({ error }) => {
+      if (error) logFail('tickets', `updateTicket (${id})`, error.message);
+    });
 }
 
 export function sbMirrorSeat(data: Record<string, unknown>): void {

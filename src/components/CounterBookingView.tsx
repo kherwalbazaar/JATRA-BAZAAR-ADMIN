@@ -13,11 +13,13 @@ import {
   LayoutGrid,
   Layers,
   Download,
-  AlertCircle
+  AlertCircle,
+  Clock
 } from 'lucide-react';
 import { BookingItem, EventItem, TicketType, Seat } from '@/types';
 import StageDiagram, { buildSeatStats } from '@/components/StageDiagram';
 import { useBlockCategories } from '@/hooks/useBlockCategories';
+import { getEventExpiryInfo } from '@/lib/utils';
 
 interface CounterBookingViewProps {
   currentEvent: EventItem | null;
@@ -300,6 +302,20 @@ export default function CounterBookingView({
   return (
     <div className="p-6 flex-1 flex flex-col min-h-0">
       {/* Flush top block: stats strip + toolbar + stage diagram with no gap */}
+      {(() => {
+        const expiry = getEventExpiryInfo(currentEvent || undefined);
+        return expiry.isExpired ? (
+          <div className="bg-rose-600 text-white px-4 py-2 text-xs font-black flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 shrink-0" />
+              <span>This event is expired on date {expiry.formattedDate}. Show has concluded.</span>
+            </div>
+            <span className="bg-white/20 text-white text-[10px] font-black uppercase px-2 py-0.5 rounded-full">
+              Expired
+            </span>
+          </div>
+        ) : null;
+      })()}
       <div className="-mx-6 -mt-6 -mb-6 flex-1 flex flex-col min-h-0">
       {/* Stats Bar — single compact line, flush to top/left/right */}
       <div className="bg-pink-100 border-b border-pink-200 shadow-xs px-4 py-2 flex items-center justify-between gap-2 overflow-x-auto">

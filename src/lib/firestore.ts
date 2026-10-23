@@ -2631,7 +2631,7 @@ export async function validateAndRecordBatchEntry(
     throw err;
   }
 
-  // 3. Update parent booking record
+  // 3. Update parent booking record & mirror to Supabase
   let audienceName = booking?.customerName || admittedTickets[0]?.customerName || '';
   let ticketType = booking?.ticketTypeName || admittedTickets[0]?.ticketTypeName || '';
   let totalTickets = booking?.quantity || (Array.isArray(booking?.seats) ? booking.seats.length : 1);
@@ -2639,9 +2639,14 @@ export async function validateAndRecordBatchEntry(
 
   try {
     const bQuery = query(colRef(C.BOOKINGS), where('ticketNumber', '==', bookingId));
-    const bSnap = await getDocs(bQuery);
-    if (!bSnap.empty) {
-      const bDoc = bSnap.docs[0];
+    let bSnap = await getDocs(bQuery);
+    let bDoc: any = !bSnap.empty ? bSnap.docs[0] : null;
+    if (!bDoc) {
+      const directDoc = await getDoc(docRef(C.BOOKINGS, bookingId));
+      if (directDoc.exists()) bDoc = directDoc;
+    }
+
+    if (bDoc) {
       const bData = bDoc.data() as BookingItem;
       audienceName = bData.customerName || audienceName;
       ticketType = bData.ticketTypeName || ticketType;
@@ -2657,18 +2662,61 @@ export async function validateAndRecordBatchEntry(
       const enteredCount = nextUsed.length;
       remainingCount = Math.max(0, totalTickets - enteredCount);
 
-      await updateDoc(bDoc.ref, {
+      const bookingPatch = {
         usedTickets: nextUsed,
         usedSeats: nextSeats,
         usedCount: enteredCount,
         enteredCount,
         remainingCount,
         lastScannedAt: scannedAt,
-        ...(enteredCount >= totalTickets ? { status: 'Checked-in', usedAt: scannedAt } : {}),
-      });
+        ...(enteredCount >= totalTickets ? { status: 'Checked-in', bookingStatus: 'Checked-in', usedAt: scannedAt } : {}),
+      };
+
+      await updateDoc(bDoc.ref, bookingPatch);
+      sbMirrorBookingUpdate(bDoc.id, bookingPatch);
+      if (bData.ticketNumber) {
+        sbMirrorBookingUpdate(bData.ticketNumber, bookingPatch);
+      }
+      if (bookingId && bookingId !== bDoc.id && bookingId !== bData.ticketNumber) {
+        sbMirrorBookingUpdate(bookingId, bookingPatch);
+      }
     }
   } catch (err) {
     console.warn('Failed to update parent booking after batch entry:', err);
+  }
+
+  // Mirror admitted tickets and ticket entries to Supabase
+  for (const t of admittedTickets) {
+    sbMirrorTicketUpdate(t.ticketId, {
+      status: 'ENTERED',
+      scannedAt: t.scannedAt,
+      scanDate: t.scanDate,
+      scanTime: t.scanTime,
+      scannedBy: member.scannerId,
+      scannerMemberId: member.id,
+      scannerMemberName: member.name,
+      scanGateId: ctx.gateId,
+    });
+    sbMirrorTicketEntry({
+      id: `${ctx.eventId}__${t.ticketId}__${Date.now()}`,
+      eventId: ctx.eventId,
+      scannerId: member.scannerId,
+      memberId: member.id,
+      scannerName: member.name,
+      gateId: ctx.gateId,
+      ticketId: t.ticketId,
+      bookingId,
+      ticketNumber: t.ticketId,
+      seat: t.seat || undefined,
+      audienceName: t.customerName || booking?.customerName || '',
+      persons: 1,
+      ticketType: t.ticketTypeName || booking?.ticketTypeName || '',
+      entryStatus: 'entered',
+      scanResult: 'SUCCESS',
+      scannedAt: t.scannedAt,
+      scanDate: t.scanDate,
+      scanTime: t.scanTime,
+    });
   }
 
   // 4. Update gate counters
@@ -3055,12 +3103,49 @@ export async function validateAndRecordEntry(
       });
     }
 
+    // Mirror admitted ticket and entry log to Supabase
+    sbMirrorTicketUpdate(tItem.ticketId, {
+      status: 'ENTERED',
+      scannedAt,
+      scanDate,
+      scanTime,
+      scannedBy: member.scannerId,
+      scannerMemberId: member.id,
+      scannerMemberName: member.name,
+      scanGateId: ctx.gateId,
+    });
+    sbMirrorTicketEntry({
+      id: `${ctx.eventId}__${tItem.ticketId}__${Date.now()}`,
+      eventId: ctx.eventId,
+      scannerId: member.scannerId,
+      memberId: member.id,
+      scannerName: member.name,
+      gateId: ctx.gateId,
+      ticketId: tItem.ticketId,
+      bookingId: tItem.bookingId,
+      ticketNumber: tItem.ticketId,
+      seat: tItem.seat || undefined,
+      audienceName: tItem.customerName,
+      persons: 1,
+      ticketType: tItem.ticketTypeName,
+      entryStatus: 'entered',
+      scanResult: 'SUCCESS',
+      scannedAt,
+      scanDate,
+      scanTime,
+    });
+
     // E. Best-effort update of parent booking counters & progress
     try {
       const bQuery = query(colRef(C.BOOKINGS), where('ticketNumber', '==', tItem.bookingId));
-      const bSnap = await getDocs(bQuery);
-      if (!bSnap.empty) {
-        const bDoc = bSnap.docs[0];
+      let bSnap = await getDocs(bQuery);
+      let bDoc: any = !bSnap.empty ? bSnap.docs[0] : null;
+      if (!bDoc) {
+        const directDoc = await getDoc(docRef(C.BOOKINGS, tItem.bookingId));
+        if (directDoc.exists()) bDoc = directDoc;
+      }
+
+      if (bDoc) {
         const bData = bDoc.data() as BookingItem;
         const existingUsed = (Array.isArray(bData.usedTickets) ? bData.usedTickets : []).map(String);
         const nextUsed = Array.from(new Set([...existingUsed, tItem.ticketId]));
@@ -3072,15 +3157,24 @@ export async function validateAndRecordEntry(
         const enteredCount = nextUsed.length;
         const remainingCount = Math.max(0, totalTickets - enteredCount);
 
-        await updateDoc(bDoc.ref, {
+        const bookingPatch = {
           usedTickets: nextUsed,
           usedSeats: nextUsedSeats,
           usedCount: enteredCount,
           enteredCount,
           remainingCount,
           lastScannedAt: scannedAt,
-          ...(enteredCount >= totalTickets ? { status: 'Checked-in', usedAt: scannedAt } : {}),
-        });
+          ...(enteredCount >= totalTickets ? { status: 'Checked-in', bookingStatus: 'Checked-in', usedAt: scannedAt } : {}),
+        };
+
+        await updateDoc(bDoc.ref, bookingPatch);
+        sbMirrorBookingUpdate(bDoc.id, bookingPatch);
+        if (bData.ticketNumber) {
+          sbMirrorBookingUpdate(bData.ticketNumber, bookingPatch);
+        }
+        if (tItem.bookingId && tItem.bookingId !== bDoc.id && tItem.bookingId !== bData.ticketNumber) {
+          sbMirrorBookingUpdate(tItem.bookingId, bookingPatch);
+        }
       }
     } catch (err) {
       console.warn('Failed to update parent booking:', err);
@@ -3303,7 +3397,7 @@ export async function validateAndRecordEntry(
     });
   }
 
-  // Update parent booking & create tickets record
+  // Update parent booking & create tickets record & mirror to Supabase
   try {
     const nextUsed = Array.from(new Set([...(booking.usedTickets || []), specificTicketId]));
     const nextUsedSeats = seatLabel
@@ -3312,18 +3406,23 @@ export async function validateAndRecordEntry(
     const enteredCount = nextUsed.length;
     const remainingCount = Math.max(0, totalSeats - enteredCount);
 
-    await updateDoc(docRef(C.BOOKINGS, booking.id), {
+    const bookingPatch = {
       usedTickets: nextUsed,
       usedSeats: nextUsedSeats,
       usedCount: enteredCount,
       enteredCount,
       remainingCount,
       lastScannedAt: legacyScannedAt,
-      ...(enteredCount >= totalSeats ? { status: 'Checked-in', usedAt: legacyScannedAt } : {}),
-    });
+      ...(enteredCount >= totalSeats ? { status: 'Checked-in', bookingStatus: 'Checked-in', usedAt: legacyScannedAt } : {}),
+    };
 
-    // Create tickets doc for future scans
-    await setDoc(docRef(C.TICKETS, specificTicketId), {
+    await updateDoc(docRef(C.BOOKINGS, booking.id), bookingPatch);
+    sbMirrorBookingUpdate(booking.id, bookingPatch);
+    if (canonicalBookingNumber && canonicalBookingNumber !== booking.id) {
+      sbMirrorBookingUpdate(canonicalBookingNumber, bookingPatch);
+    }
+
+    const legacyTicketItem: TicketItem = {
       id: specificTicketId,
       ticketId: specificTicketId,
       bookingId: canonicalBookingNumber,
@@ -3351,7 +3450,43 @@ export async function validateAndRecordEntry(
       scannerMemberName: member.name,
       scanGateId: ctx.gateId,
       createdAt: booking.time || legacyScannedAt,
-    } satisfies TicketItem);
+    };
+
+    // Create tickets doc for future scans
+    await setDoc(docRef(C.TICKETS, specificTicketId), legacyTicketItem);
+    sbMirrorTicket(legacyTicketItem as unknown as Record<string, unknown>);
+    sbMirrorTicketUpdate(specificTicketId, {
+      status: 'ENTERED',
+      scannedAt: legacyScannedAt,
+      scanDate: legacyScanDate,
+      scanTime: legacyScanTime,
+      scannedBy: member.scannerId,
+      scannerMemberId: member.id,
+      scannerMemberName: member.name,
+      scanGateId: ctx.gateId,
+    });
+
+    sbMirrorTicketEntry({
+      id: legacyEntryRef.id,
+      eventId: ctx.eventId,
+      scannerId: member.scannerId,
+      memberId: member.id,
+      scannerName: member.name,
+      gateId: ctx.gateId,
+      ticketId: specificTicketId,
+      bookingId: canonicalBookingNumber,
+      ticketNumber: specificTicketId,
+      audienceName: booking.customerName,
+      persons: 1,
+      ticketType: booking.ticketTypeName,
+      bookingSource: booking.source,
+      entryStatus: 'entered',
+      scanResult: 'SUCCESS',
+      scannedAt: legacyScannedAt,
+      scanDate: legacyScanDate,
+      scanTime: legacyScanTime,
+      seat: seatLabel || undefined,
+    });
   } catch (err) {
     console.warn('Failed to update legacy booking counters:', err);
   }

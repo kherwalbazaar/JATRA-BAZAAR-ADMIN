@@ -16,9 +16,11 @@ import {
   MoreVertical,
   AlertTriangle,
   PenTool,
+  Clock,
   X
 } from 'lucide-react';
 import { EventItem } from '@/types';
+import { getEventExpiryInfo } from '@/lib/utils';
 
 interface EventsViewProps {
   eventsList: EventItem[];
@@ -114,6 +116,7 @@ export default function EventsView({
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {filteredEvents.map((evt) => {
           const isCurrent = currentEvent !== null && evt.id === currentEvent.id;
+          const expiry = getEventExpiryInfo(evt);
 
           return (
             <div 
@@ -203,6 +206,12 @@ export default function EventsView({
                   <h3 className="text-xs font-black text-slate-900 tracking-tight leading-tight">
                     {evt.partyName || evt.title}
                   </h3>
+                  {expiry.isExpired && (
+                    <div className="mt-1.5 bg-rose-50 border border-rose-200 text-rose-700 px-2 py-1 rounded-md text-[10px] font-black flex items-center gap-1.5">
+                      <Clock className="w-3 h-3 text-rose-500 shrink-0" />
+                      <span className="truncate">This event is expired on date {expiry.formattedDate}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-1.5 text-[11px] text-slate-600">

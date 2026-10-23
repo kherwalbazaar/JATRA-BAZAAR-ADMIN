@@ -8,6 +8,7 @@ import {
   Clock
 } from 'lucide-react';
 import { EventItem } from '@/types';
+import { getEventExpiryInfo } from '@/lib/utils';
 
 interface EventDetailsModalProps {
   event: EventItem | null;
@@ -19,6 +20,7 @@ export default function EventDetailsModal({
   onClose
 }: EventDetailsModalProps) {
   if (!event) return null;
+  const expiry = getEventExpiryInfo(event);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -60,6 +62,14 @@ export default function EventDetailsModal({
 
         {/* Content */}
         <div className="p-6 space-y-4 text-xs font-semibold text-slate-700">
+          {expiry.isExpired && (
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 flex items-center gap-2.5">
+              <Clock className="w-4 h-4 text-rose-600 shrink-0" />
+              <span className="text-xs font-bold text-rose-700">
+                This event is expired on date {expiry.formattedDate}
+              </span>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-indigo-600 flex-shrink-0" />

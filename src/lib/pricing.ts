@@ -2,7 +2,7 @@
  * Gateway-Independent Customer Charge Calculation System
  *
  * Designed to separate pricing and customer charge calculation from any payment gateway.
- * A payment gateway (e.g. Razorpay, Cashfree, PhonePe, Paytm, Stripe) can be integrated
+ * A payment gateway (e.g. Razorpay, Cashfree, PhonePe, Stripe) can be integrated
  * later without altering this customer charge calculation system.
  *
  * Charge structure:
