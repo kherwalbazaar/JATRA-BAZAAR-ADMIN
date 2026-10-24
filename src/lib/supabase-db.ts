@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { resolveCanonicalPaymentMethod } from './paymentMethods';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey =
@@ -308,12 +309,27 @@ function applyMap(data: Record<string, unknown>, map: Record<string, string>): R
 // ─── Mapped upsert helpers (call these from firestore.ts) ────────
 
 export function sbMirrorBooking(data: Record<string, unknown>): void {
-  sbUpsert('bookings', applyMap(data, BOOKING_FIELD_MAP));
+  const mapped = applyMap(data, BOOKING_FIELD_MAP);
+  if (mapped.payment_method) {
+    try {
+      mapped.payment_method = resolveCanonicalPaymentMethod(String(mapped.payment_method));
+    } catch (e) {
+      console.warn('sbMirrorBooking payment_method normalization warning:', e);
+    }
+  }
+  sbUpsert('bookings', mapped);
 }
 
 export function sbMirrorBookingUpdate(id: string, data: Record<string, unknown>): void {
   if (!id || Object.keys(data).length === 0) return;
   const mapped = applyMap(data, BOOKING_FIELD_MAP);
+  if (mapped.payment_method) {
+    try {
+      mapped.payment_method = resolveCanonicalPaymentMethod(String(mapped.payment_method));
+    } catch (e) {
+      console.warn('sbMirrorBookingUpdate payment_method normalization warning:', e);
+    }
+  }
   sb.from('bookings')
     .update(mapped)
     .or(`id.eq.${id},ticket_number.eq.${id}`)
