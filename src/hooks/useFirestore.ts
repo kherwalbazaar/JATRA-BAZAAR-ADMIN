@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { EventItem, TicketType, BookingItem, GateInfo, CounterBooth, KPIStats, Seat } from '@/types';
 import * as fs from '@/lib/firestore';
 import { getAugmentedTicketTypes } from '@/lib/ticketSales';
+import { getEventExpiryInfo } from '@/lib/utils';
 
 // ─── Local cache (localStorage) — database data stored locally ────
 const CACHE_NS = 'jatra_cache_';
@@ -63,20 +64,84 @@ function clearStoredEventId(): void {
   }
 }
 
+function isEventUpcoming(e?: EventItem | null): boolean {
+  if (!e) return false;
+  const expiry = getEventExpiryInfo(e);
+  return !expiry.isExpired && e.status !== 'completed';
+}
+
 function resolveSelectedEvent(
   evts: EventItem[],
   current: EventItem | null,
   preferredId?: string | null
 ): EventItem | null {
   if (!evts || evts.length === 0) return null;
-  const targetId = preferredId || current?.id || getStoredEventId();
-  if (targetId) {
+
+  // 1. Explicit preferredId requested
+  const targetId = preferredId || current?.id;
+  if (preferredId) {
     const found = evts.find(
-      (e) => e.id === targetId || e.showId === targetId || e.eventId === targetId
+      (e) => e.id === preferredId || e.showId === preferredId || e.eventId === preferredId
     );
     if (found) return found;
   }
-  return evts.find((e) => e.status === 'active') ?? evts[0];
+
+  // 2. Already active in current React memory
+  if (current) {
+    const found = evts.find(
+      (e) => e.id === current.id || e.showId === current.id || e.eventId === current.id
+    );
+    if (found) return found;
+  }
+
+  // 3. User explicitly picked this event in this browser tab/session
+  if (typeof window !== 'undefined') {
+    try {
+      const sessionPicked = window.sessionStorage.getItem('jatra_user_picked_event_id');
+      if (sessionPicked) {
+        const found = evts.find(
+          (e) => e.id === sessionPicked || e.showId === sessionPicked || e.eventId === sessionPicked
+        );
+        if (found) return found;
+      }
+    } catch {}
+  }
+
+  // 4. Stored event from localStorage, if it is still upcoming
+  const storedId = getStoredEventId();
+  if (storedId) {
+    const found = evts.find(
+      (e) => e.id === storedId || e.showId === storedId || e.eventId === storedId
+    );
+    if (found && isEventUpcoming(found)) return found;
+  }
+
+  // 5. Default priority: Always auto-select an upcoming event (nearest upcoming date first)
+  const upcomingList = evts
+    .filter((e) => isEventUpcoming(e))
+    .sort((a, b) => {
+      const tA = a.date ? new Date(a.date).getTime() : 0;
+      const tB = b.date ? new Date(b.date).getTime() : 0;
+      return tA - tB;
+    });
+  if (upcomingList.length > 0) {
+    return upcomingList[0];
+  }
+
+  // 6. If no upcoming event, check if stored event exists (even if past)
+  if (storedId) {
+    const found = evts.find(
+      (e) => e.id === storedId || e.showId === storedId || e.eventId === storedId
+    );
+    if (found) return found;
+  }
+
+  // 7. Active status
+  const activeEvt = evts.find((e) => e.status === 'active');
+  if (activeEvt) return activeEvt;
+
+  // 8. Fallback to first event
+  return evts[0];
 }
 
 export interface FirestoreState {
@@ -592,6 +657,11 @@ export function useFirestore(): FirestoreState {
 
   const handleSetCurrentEvent = useCallback((event: EventItem) => {
     setStoredEventId(event.id);
+    try {
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem('jatra_user_picked_event_id', event.id);
+      }
+    } catch {}
     setCurrentEvent(event);
   }, []);
 

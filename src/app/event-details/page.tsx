@@ -22,6 +22,7 @@ import {
 import { doc, getDoc } from 'firebase/firestore';
 import { db, FIRESTORE_COLLECTIONS } from '@/lib/firebase';
 import { EventItem } from '@/types';
+import { getEventBannerImage } from '@/lib/utils';
 
 function Row({ icon, label, value }: { icon: React.ReactNode; label: string; value?: string }) {
   if (!value) return null;
@@ -135,14 +136,14 @@ function EventDetailsPage() {
       </div>
 
       <div className="max-w-4xl mx-auto px-6 py-8 space-y-6">
-        {/* Poster Header */}
+        {/* Banner Header */}
         <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-gradient-to-br from-indigo-700 via-purple-700 to-fuchsia-700 min-h-[16rem]">
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/90">
             <span className="text-xs font-black uppercase tracking-wider">Jatra Bazaar</span>
           </div>
-          {event.poster && (
+          {getEventBannerImage(event) && (
             <img
-              src={event.poster}
+              src={getEventBannerImage(event)}
               alt={event.title}
               className="relative w-full h-auto block"
               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}

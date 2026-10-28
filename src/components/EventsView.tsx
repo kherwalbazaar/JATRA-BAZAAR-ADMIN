@@ -20,7 +20,7 @@ import {
   X
 } from 'lucide-react';
 import { EventItem } from '@/types';
-import { getEventExpiryInfo } from '@/lib/utils';
+import { getEventExpiryInfo, getEventBannerImage } from '@/lib/utils';
 
 interface EventsViewProps {
   eventsList: EventItem[];
@@ -47,6 +47,9 @@ export default function EventsView({
 
   const filteredEvents = eventsList.filter(evt => {
     if (filter === 'all') return true;
+    if (filter === 'upcoming') return !getEventExpiryInfo(evt).isExpired && evt.status !== 'completed';
+    if (filter === 'completed') return getEventExpiryInfo(evt).isExpired || evt.status === 'completed';
+    if (filter === 'active') return evt.status === 'active';
     return evt.status === filter;
   });
 
@@ -117,6 +120,7 @@ export default function EventsView({
         {filteredEvents.map((evt) => {
           const isCurrent = currentEvent !== null && evt.id === currentEvent.id;
           const expiry = getEventExpiryInfo(evt);
+          const bannerImg = getEventBannerImage(evt);
 
           return (
             <div 
@@ -127,18 +131,18 @@ export default function EventsView({
                   : 'border-slate-200 shadow-xs hover:shadow-slate-200/50'
               }`}
             >
-              {/* Event Poster Image */}
-              <div className="relative h-32 w-full overflow-hidden group bg-gradient-to-br from-indigo-700 via-purple-700 to-fuchsia-700">
-                {/* Fallback shown when poster is missing or fails to load */}
+              {/* Event Banner Image (not logo) */}
+              <div className="relative h-36 sm:h-40 w-full overflow-hidden group bg-gradient-to-br from-indigo-700 via-purple-700 to-fuchsia-700">
+                {/* Fallback shown when banner is missing or fails to load */}
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/90">
                   <div className="w-14 h-14 rounded-2xl bg-white/15 flex items-center justify-center">
                     <Calendar className="w-7 h-7" />
                   </div>
                   <span className="text-[11px] font-black uppercase tracking-wider">Jatra Bazaar</span>
                 </div>
-                {evt.poster && (
+                {bannerImg && (
                   <img 
-                    src={evt.poster} 
+                    src={bannerImg} 
                     alt={evt.title} 
                     className="relative w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                     onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -203,41 +207,53 @@ export default function EventsView({
               {/* Event Details Body */}
               <div className="p-3 space-y-2.5 flex-1 flex flex-col justify-between">
                 <div>
-                  <h3 className="text-xs font-black text-slate-900 tracking-tight leading-tight">
+                  <h3 className="text-xs font-black text-slate-900 tracking-tight leading-tight" title={evt.partyName || evt.title}>
                     {evt.partyName || evt.title}
                   </h3>
-                  {expiry.isExpired && (
-                    <div className="mt-1.5 bg-rose-50 border border-rose-200 text-rose-700 px-2 py-1 rounded-md text-[10px] font-black flex items-center gap-1.5">
-                      <Clock className="w-3 h-3 text-rose-500 shrink-0" />
-                      <span className="truncate">This event is expired on date {expiry.formattedDate}</span>
-                    </div>
+                  {evt.title && evt.partyName && evt.title.trim().toUpperCase() !== evt.partyName.trim().toUpperCase() && (
+                    <p className="text-[11px] font-bold text-indigo-700 truncate mt-0.5" title={evt.title}>
+                      {evt.title}
+                    </p>
                   )}
                 </div>
 
                 <div className="space-y-1.5 text-[11px] text-slate-600">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-3.5 h-3.5 text-indigo-600 flex-shrink-0" />
-                    <span className="font-bold text-slate-800">{evt.date} ({evt.day})</span>
+                  {/* Date with (Upcoming / Expired) badge — Strictly in ONE line */}
+                  <div className="flex items-center justify-between gap-1.5 flex-nowrap w-full min-w-0 overflow-hidden">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1 truncate">
+                      <Calendar className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      <span className="font-bold text-slate-800 text-[10.5px] sm:text-[11px] xl:text-xs truncate whitespace-nowrap">
+                        {evt.date} {evt.day ? `(${evt.day})` : ''}
+                      </span>
+                    </div>
+
+                    {expiry.isExpired || evt.status === 'completed' ? (
+                      <span className="inline-flex items-center gap-1 text-[8.5px] sm:text-[9px] font-black uppercase text-rose-700 bg-rose-100/90 px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap">
+                        <Clock className="w-2.5 h-2.5 text-rose-600 shrink-0" />
+                        <span>Expired</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[8.5px] sm:text-[9px] font-black uppercase text-emerald-700 bg-emerald-100/90 px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                        <span>Upcoming</span>
+                      </span>
+                    )}
                   </div>
 
+                  {/* Committee Name */}
                   {evt.committeeName && (
-                    <div className="flex items-center gap-2">
-                      <Users className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                    <div className="flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                       <span className="truncate font-semibold text-slate-700">{evt.committeeName}</span>
                     </div>
                   )}
 
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
-                    <span className="truncate font-semibold text-slate-700">{evt.committeeLocation || evt.venue}</span>
-                  </div>
-
-                  {evt.writer && (
-                    <div className="flex items-center gap-2">
-                      <PenTool className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                  {/* Location / Venue */}
+                  {(evt.committeeLocation || evt.venue) && (
+                    <div className="flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                       <span className="truncate font-semibold text-slate-700">
-                        <span className="text-slate-400 font-medium mr-1">Writer:</span>
-                        <span className="text-slate-800 font-bold">{evt.writer}</span>
+                        {evt.committeeLocation || evt.venue}
                       </span>
                     </div>
                   )}

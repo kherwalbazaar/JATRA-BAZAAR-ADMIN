@@ -8,7 +8,7 @@ import {
   Clock
 } from 'lucide-react';
 import { EventItem } from '@/types';
-import { getEventExpiryInfo } from '@/lib/utils';
+import { getEventExpiryInfo, getEventBannerImage } from '@/lib/utils';
 
 interface EventDetailsModalProps {
   event: EventItem | null;
@@ -21,11 +21,12 @@ export default function EventDetailsModal({
 }: EventDetailsModalProps) {
   if (!event) return null;
   const expiry = getEventExpiryInfo(event);
+  const bannerImg = getEventBannerImage(event);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150">
-        {/* Poster Header */}
+        {/* Banner Header */}
         <div className="relative h-48 w-full bg-gradient-to-br from-indigo-700 via-purple-700 to-fuchsia-700">
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/90">
             <div className="w-14 h-14 rounded-2xl bg-white/15 flex items-center justify-center">
@@ -33,9 +34,9 @@ export default function EventDetailsModal({
             </div>
             <span className="text-[11px] font-black uppercase tracking-wider">Jatra Bazaar</span>
           </div>
-          {event.poster && (
+          {bannerImg && (
             <img
-              src={event.poster}
+              src={bannerImg}
               alt={event.title}
               className="relative w-full h-full object-cover"
               onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}

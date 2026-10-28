@@ -14,9 +14,11 @@ import {
   LogOut,
   Sliders,
   RefreshCw,
-  Check
+  Check,
+  Clock
 } from 'lucide-react';
 import { EventItem } from '@/types';
+import { getEventExpiryInfo, getEventLogoImage } from '@/lib/utils';
 
 interface HeaderProps {
   sectionTitle?: string;
@@ -53,6 +55,7 @@ export default function Header({
 }: HeaderProps) {
   const [eventDropdownOpen, setEventDropdownOpen] = useState(false);
   const [eventFilterQuery, setEventFilterQuery] = useState('');
+  const [eventTab, setEventTab] = useState<'upcoming' | 'all' | 'past'>('upcoming');
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
@@ -62,10 +65,49 @@ export default function Header({
   const [isBlinking, setIsBlinking] = useState(false);
   const blinkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const upcomingEvents = useMemo(() => {
+    return eventsList.filter((e) => !getEventExpiryInfo(e).isExpired && e.status !== 'completed');
+  }, [eventsList]);
+
+  const pastEvents = useMemo(() => {
+    return eventsList.filter((e) => getEventExpiryInfo(e).isExpired || e.status === 'completed');
+  }, [eventsList]);
+
+  const currentExpiry = useMemo(() => (currentEvent ? getEventExpiryInfo(currentEvent) : null), [currentEvent]);
+  const isCurrentUpcoming = currentEvent ? (!currentExpiry?.isExpired && currentEvent.status !== 'completed') : false;
+  const isCurrentActive = currentEvent?.status === 'active';
+
   const filteredEventsList: EventItem[] = useMemo(() => {
-    if (!eventFilterQuery.trim()) return eventsList;
+    let list: EventItem[] = [];
+    if (eventTab === 'upcoming') {
+      list = [...upcomingEvents].sort((a, b) => {
+        const tA = a.date ? new Date(a.date).getTime() : 0;
+        const tB = b.date ? new Date(b.date).getTime() : 0;
+        return tA - tB;
+      });
+    } else if (eventTab === 'past') {
+      list = [...pastEvents].sort((a, b) => {
+        const tA = a.date ? new Date(a.date).getTime() : 0;
+        const tB = b.date ? new Date(b.date).getTime() : 0;
+        return tB - tA;
+      });
+    } else {
+      const up = [...upcomingEvents].sort((a, b) => {
+        const tA = a.date ? new Date(a.date).getTime() : 0;
+        const tB = b.date ? new Date(b.date).getTime() : 0;
+        return tA - tB;
+      });
+      const pst = [...pastEvents].sort((a, b) => {
+        const tA = a.date ? new Date(a.date).getTime() : 0;
+        const tB = b.date ? new Date(b.date).getTime() : 0;
+        return tB - tA;
+      });
+      list = [...up, ...pst];
+    }
+
+    if (!eventFilterQuery.trim()) return list;
     const q = eventFilterQuery.toLowerCase();
-    return eventsList.filter((e) =>
+    return list.filter((e) =>
       e.title?.toLowerCase().includes(q) ||
       e.partyName?.toLowerCase().includes(q) ||
       e.organizer?.toLowerCase().includes(q) ||
@@ -74,7 +116,7 @@ export default function Header({
       e.writer?.toLowerCase().includes(q) ||
       e.committeeName?.toLowerCase().includes(q)
     );
-  }, [eventsList, eventFilterQuery]);
+  }, [eventTab, upcomingEvents, pastEvents, eventFilterQuery]);
 
   // Play chime sound using Web Audio API
   const playChime = useCallback(() => {
@@ -211,6 +253,22 @@ export default function Header({
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 leading-none mb-1">
+                    {/* Status Pill on Header button */}
+                    {isCurrentUpcoming ? (
+                      <span className="text-[9px] font-black uppercase tracking-wider text-emerald-300 bg-emerald-500/25 px-1.5 py-0.5 rounded border border-emerald-400/40 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>Upcoming</span>
+                      </span>
+                    ) : isCurrentActive ? (
+                      <span className="text-[9px] font-black uppercase tracking-wider text-amber-300 bg-amber-500/25 px-1.5 py-0.5 rounded border border-amber-400/40">
+                        Active
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-black uppercase tracking-wider text-rose-300 bg-rose-500/25 px-1.5 py-0.5 rounded border border-rose-400/40 flex items-center gap-1">
+                        <Clock className="w-2.5 h-2.5 text-rose-300" />
+                        <span>Past</span>
+                      </span>
+                    )}
                     <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 bg-amber-400/20 px-1.5 py-0.5 rounded border border-amber-400/30 truncate">
                       {currentEvent.date || 'Date TBD'}
                     </span>
@@ -238,37 +296,128 @@ export default function Header({
 
           {/* Card-Style List Dropdown Panel */}
           {eventDropdownOpen && (
-            <div className="absolute right-0 mt-2 w-[min(94vw,440px)] bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-2.5 z-50 animate-in fade-in slide-in-from-top-2 duration-150 max-h-[460px] overflow-y-auto">
+            <div className="absolute right-0 mt-2 w-[min(94vw,460px)] bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-2.5 z-50 animate-in fade-in slide-in-from-top-2 duration-150 max-h-[500px] overflow-y-auto">
               <div className="px-2.5 py-1.5 mb-2 flex items-center justify-between border-b border-slate-100">
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
                   Select Event • Party • Story
                 </span>
                 <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-                  {eventsList.length} Shows
+                  {eventsList.length} Total Shows
                 </span>
               </div>
 
-              {eventsList.length > 3 && (
-                <div className="relative mb-2 px-1">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={eventFilterQuery}
-                    onChange={(e) => setEventFilterQuery(e.target.value)}
-                    placeholder="Search story, party, date, venue..."
-                    className="w-full pl-8 pr-3 py-1.5 bg-slate-50 hover:bg-slate-100/80 focus:bg-white text-xs font-medium text-slate-800 placeholder:text-slate-400 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"
-                  />
-                </div>
-              )}
+              {/* Status Filter Tabs: Upcoming (Selected by default), All, Past */}
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl mb-2">
+                <button
+                  type="button"
+                  onClick={() => setEventTab('upcoming')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                    eventTab === 'upcoming'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                  }`}
+                >
+                  <span>Upcoming</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                      eventTab === 'upcoming'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-emerald-100 text-emerald-700'
+                    }`}
+                  >
+                    {upcomingEvents.length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEventTab('all')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                    eventTab === 'all'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                  }`}
+                >
+                  <span>All</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                      eventTab === 'all'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {eventsList.length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEventTab('past')}
+                  className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                    eventTab === 'past'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                  }`}
+                >
+                  <span>Past</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                      eventTab === 'past'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-slate-200 text-slate-600'
+                    }`}
+                  >
+                    {pastEvents.length}
+                  </span>
+                </button>
+              </div>
+
+              {/* Search Bar */}
+              <div className="relative mb-2 px-1">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
+                <input
+                  type="text"
+                  value={eventFilterQuery}
+                  onChange={(e) => setEventFilterQuery(e.target.value)}
+                  placeholder={
+                    eventTab === 'upcoming'
+                      ? 'Search upcoming shows, party, venue...'
+                      : eventTab === 'past'
+                      ? 'Search past shows, party, venue...'
+                      : 'Search all shows, party, date, venue...'
+                  }
+                  className="w-full pl-8 pr-3 py-1.5 bg-slate-50 hover:bg-slate-100/80 focus:bg-white text-xs font-medium text-slate-800 placeholder:text-slate-400 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all"
+                />
+              </div>
 
               {filteredEventsList.length === 0 ? (
-                <div className="p-4 text-center text-xs text-slate-400 font-semibold">
-                  No events found.
+                <div className="p-5 text-center space-y-2">
+                  <p className="text-xs text-slate-500 font-semibold">
+                    {eventFilterQuery.trim()
+                      ? 'No events match your search query.'
+                      : eventTab === 'upcoming'
+                      ? 'No upcoming events found.'
+                      : eventTab === 'past'
+                      ? 'No past events found.'
+                      : 'No events found.'}
+                  </p>
+                  {eventTab === 'upcoming' && eventsList.length > 0 && !eventFilterQuery.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => setEventTab('all')}
+                      className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline inline-block"
+                    >
+                      View All Shows ({eventsList.length})
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-1.5">
                   {filteredEventsList.map((evt) => {
                     const isSelected = currentEvent !== null && evt.id === currentEvent.id;
+                    const evtExpiry = getEventExpiryInfo(evt);
+                    const isEvtUpcoming = !evtExpiry.isExpired && evt.status !== 'completed';
+                    const isEvtActive = evt.status === 'active';
                     const party = evt.partyName || evt.organizer || 'Party';
                     const committee = evt.committeeName || '';
 
@@ -287,12 +436,13 @@ export default function Header({
                             : 'bg-slate-50/70 hover:bg-white border-slate-200/80 hover:border-slate-300 hover:shadow-xs text-slate-700'
                         }`}
                       >
-                        {/* Poster / Icon */}
-                        {evt.poster ? (
+                        {/* Logo / Icon */}
+                        {getEventLogoImage(evt) ? (
                           <img
-                            src={evt.poster}
+                            src={getEventLogoImage(evt)}
                             alt={evt.title}
                             className="w-11 h-11 rounded-lg object-cover flex-shrink-0 border border-slate-200"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                           />
                         ) : (
                           <div className="w-11 h-11 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-sm flex-shrink-0">
@@ -300,47 +450,57 @@ export default function Header({
                           </div>
                         )}
 
-                        {/* Card Content: Date, Party Name, Story Name */}
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                            {/* Date */}
-                            <span className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-700 bg-indigo-100/80 px-2 py-0.5 rounded-md">
+                        {/* Card Content:
+                            1. Upcoming/past - events date - party name
+                            2. below: committee name
+                            3. below: story name in one line */}
+                        <div className="min-w-0 flex-1 space-y-1">
+                          {/* Row 1: Upcoming/past - events date - party name */}
+                          <div className="flex items-center gap-1.5 min-w-0 flex-wrap sm:flex-nowrap">
+                            {/* Upcoming / Past / Active Badge */}
+                            {isEvtUpcoming ? (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-100/90 px-1.5 py-0.5 rounded-md shrink-0">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                <span>Upcoming</span>
+                              </span>
+                            ) : isEvtActive ? (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-amber-800 bg-amber-100/90 px-1.5 py-0.5 rounded-md shrink-0">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                <span>Active</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-slate-600 bg-slate-200/90 px-1.5 py-0.5 rounded-md shrink-0">
+                                <Clock className="w-2.5 h-2.5 text-slate-500" />
+                                <span>Past</span>
+                              </span>
+                            )}
+
+                            {/* Events Date */}
+                            <span className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-700 bg-indigo-100/80 px-1.5 py-0.5 rounded-md shrink-0">
                               <Calendar className="w-3 h-3 text-indigo-600" />
                               <span>{evt.date || 'Date TBD'}</span>
                             </span>
 
                             {/* Party Name */}
-                            <span className="inline-flex items-center gap-1 text-[10px] font-black text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-md truncate max-w-[180px]">
-                              <span>🎭</span>
-                              <span className="truncate">{party}</span>
+                            <span className="text-[10px] font-black text-amber-800 bg-amber-100/80 px-1.5 py-0.5 rounded-md truncate min-w-0">
+                              🎭 {party}
                             </span>
-
-                            {/* Committee Tag */}
-                            {committee && (
-                              <span className="text-[9px] font-bold text-slate-500 bg-slate-200/70 px-1.5 py-0.5 rounded truncate max-w-[130px]">
-                                🏛️ {committee}
-                              </span>
-                            )}
                           </div>
 
-                          {/* Story Name */}
-                          <div className="text-xs font-black text-slate-900 leading-snug line-clamp-2">
+                          {/* Row 2: Committee Name */}
+                          {committee && (
+                            <div className="text-[10px] font-bold text-slate-500 truncate flex items-center gap-1">
+                              <span>🏛️</span>
+                              <span className="truncate">{committee}</span>
+                            </div>
+                          )}
+
+                          {/* Row 3: Story Name in one line */}
+                          <div 
+                            className="text-xs font-black text-slate-900 truncate whitespace-nowrap overflow-hidden leading-tight"
+                            title={evt.title}
+                          >
                             {evt.title}
-                          </div>
-
-                          {/* Writer & Venue */}
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-semibold text-slate-400 mt-0.5">
-                            {evt.writer && (
-                              <span className="text-indigo-600 font-bold truncate max-w-[140px]">
-                                ✍️ {evt.writer}
-                              </span>
-                            )}
-                            {evt.writer && evt.venue && <span>•</span>}
-                            {evt.venue && (
-                              <span className="truncate">
-                                📍 {evt.venue} {evt.city ? `• ${evt.city}` : ''}
-                              </span>
-                            )}
                           </div>
                         </div>
 

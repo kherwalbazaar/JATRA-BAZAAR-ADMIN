@@ -92,3 +92,74 @@ export function getEventExpiryInfo(evt?: { date?: string; time?: string; status?
     message: isExpired ? `This event is expired on date ${formattedDate}` : "",
   };
 }
+
+export function isLikelyLogoUrl(url?: string | null): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const lower = url.toLowerCase();
+  if (lower.includes('logo')) return true;
+  if (lower.includes('jarpa%20opera.png') || lower.includes('jarpa opera.png')) return true;
+  if (lower.includes('ramraj%20gayan%20mahal.png') || lower.includes('ramraj gayan mahal.png')) return true;
+  return false;
+}
+
+export interface EventImageSource {
+  poster?: string;
+  banner?: string;
+  banners?: string[];
+  additionalBanners?: string[];
+  bannerUrl?: string;
+  mainBanner?: string;
+  logo?: string;
+  partyName?: string;
+  organizer?: string;
+}
+
+export function getEventBannerImage(evt?: EventImageSource | null): string {
+  if (!evt) return '';
+
+  const candidates: string[] = [
+    typeof evt.banner === 'string' ? evt.banner : null,
+    Array.isArray(evt.banners) && typeof evt.banners[0] === 'string' ? evt.banners[0] : null,
+    Array.isArray(evt.additionalBanners) && typeof evt.additionalBanners[0] === 'string' ? evt.additionalBanners[0] : null,
+    typeof evt.bannerUrl === 'string' ? evt.bannerUrl : null,
+    typeof evt.mainBanner === 'string' ? evt.mainBanner : null,
+    typeof evt.poster === 'string' ? evt.poster : null,
+  ].filter((s): s is string => typeof s === 'string' && s.trim().length > 0);
+
+  // Pick first candidate that is not a logo
+  const nonLogos = candidates.filter((url) => !isLikelyLogoUrl(url));
+  if (nonLogos.length > 0) return nonLogos[0];
+
+  // Known Opera Party banner fallbacks if candidate only had logo
+  const partyKey = String(evt.partyName || evt.organizer || '').toUpperCase();
+  if (partyKey.includes('JARPA')) {
+    return 'https://ik.imagekit.io/kherwalbazaar/MANDAWA/JARPA%202026.jpg?updatedAt=1789577829940';
+  }
+  if (partyKey.includes('RAMRAJ')) {
+    return 'https://raw.githubusercontent.com/kherwalbazaar/Jatra-bazaar-assest/refs/heads/main/ramaraja.jpeg';
+  }
+  if (partyKey.includes('NAHAH')) {
+    return 'https://ik.imagekit.io/kherwalbazaar/Nahah%20Opera.jpeg';
+  }
+
+  return candidates[0] || '';
+}
+
+export function getEventLogoImage(evt?: EventImageSource | null): string {
+  if (!evt) return '';
+  if (typeof evt.logo === 'string' && evt.logo.trim()) return evt.logo.trim();
+  if (typeof evt.poster === 'string' && isLikelyLogoUrl(evt.poster)) return evt.poster.trim();
+
+  const partyKey = String(evt.partyName || evt.organizer || '').toUpperCase();
+  if (partyKey.includes('JARPA')) {
+    return 'https://ik.imagekit.io/kherwalbazaar/JARPA%20Opera.png';
+  }
+  if (partyKey.includes('RAMRAJ')) {
+    return 'https://ik.imagekit.io/kherwalbazaar/Ramraj%20Gayan%20Mahal.png?updatedAt=1792327416537';
+  }
+  if (partyKey.includes('NAHAH')) {
+    return 'https://ik.imagekit.io/kherwalbazaar/Nahah%20Opera%20Logo.png';
+  }
+
+  return typeof evt.poster === 'string' ? evt.poster : '';
+}

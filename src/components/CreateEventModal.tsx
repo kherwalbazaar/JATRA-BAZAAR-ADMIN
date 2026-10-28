@@ -53,7 +53,7 @@ export default function CreateEventModal({
     const p = parties.find((item) => item.name.toUpperCase() === selectedName.toUpperCase());
     if (p) {
       if (p.location && !venue) setVenue(p.location);
-      if (p.logo && !poster) setPoster(p.logo);
+      // Main banner is not set from party logo - admin pastes manually
       if (p.name && !description) setDescription(`${p.name} - Santali Cultural Opera`);
     }
   };
@@ -325,12 +325,12 @@ export default function CreateEventModal({
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none"
             />
             {poster && (
-              <div className="mt-2 rounded-xl overflow-hidden border border-slate-200 h-40">
+              <div className="mt-2 rounded-xl overflow-hidden border border-slate-200 min-h-[140px] max-h-[300px] bg-slate-50 p-2 flex items-center justify-center">
                 <img
                   key={poster}
                   src={poster}
                   alt="Poster preview"
-                  className="w-full h-full object-cover"
+                  className="max-h-[280px] max-w-full w-auto h-auto object-contain rounded-lg"
                   onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                   onLoad={(e) => { (e.target as HTMLImageElement).style.display = 'block'; }}
                 />

@@ -292,7 +292,7 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
       : partyObj.phone || partyObj.phone2 || '';
     if (contact) setPhone((v) => keepIfSet(v, contact));
     if (partyObj.location) setAddress((v) => keepIfSet(v, partyObj.location));
-    if (partyObj.logo) setMainBanner((v) => keepIfSet(v, partyObj.logo));
+    // Main Banner is manually pasted by admin — do not auto-fill with Opera Party logo
   };
 
   useEffect(() => {
@@ -407,7 +407,7 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
       setSinger((v) => keepIfSet(v, match.singer));
       setTrailerUrl((v) => keepIfSet(v, match.trailerUrl));
       setActors((prev) => (match.actors?.length ? match.actors : prev));
-      setMainBanner((v) => keepIfSet(v, match.poster));
+      // Main Banner is manually pasted by admin — do not auto-fill when party changes
       setAdditionalBanners((prev) => (match.additionalBanners?.length ? match.additionalBanners : prev));
     }
     // Story Name, About, Event Date & Times stay untouched for fresh scheduling
@@ -1076,18 +1076,77 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
       <SectionHeader n={5} title="Banner" />
       <div className="space-y-4">
         <div>
-          <label className={labelCls}>Main Banner URL</label>
-          <input type="text" value={mainBanner} onChange={(e) => setMainBanner(e.target.value)} placeholder="e.g. https://example.com/main-banner.jpg" className={inputCls} />
-          {mainBanner && (
-            <div className="mt-2 rounded-xl overflow-hidden border border-slate-200 h-40">
-              <img
-                key={mainBanner}
-                src={mainBanner}
-                alt="Main banner preview"
-                className="w-full h-full object-cover"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                onLoad={(e) => { (e.target as HTMLImageElement).style.display = 'block'; }}
-              />
+          <div className="flex items-center justify-between mb-1.5">
+            <label className={labelCls}>Main Banner URL</label>
+            <span className="text-[10px] font-bold text-slate-400">Manual URL (Independent of Party Logo)</span>
+          </div>
+          <div className="flex gap-2">
+            <input 
+              type="text" 
+              value={mainBanner} 
+              onChange={(e) => setMainBanner(e.target.value)} 
+              placeholder="Paste main banner image URL (e.g. https://example.com/poster.jpg)" 
+              className={inputCls} 
+            />
+            {mainBanner && (
+              <button
+                type="button"
+                onClick={() => setMainBanner('')}
+                className="px-3 py-2 text-xs font-bold text-slate-500 hover:text-red-600 bg-slate-100 hover:bg-red-50 border border-slate-200 rounded-xl transition-colors shrink-0"
+                title="Clear banner URL"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {/* Full Image Preview Fitted in Card */}
+          {mainBanner ? (
+            <div className="mt-3 rounded-2xl border border-slate-200/90 bg-slate-50/70 p-3 shadow-xs">
+              <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-200/60">
+                <span className="text-[11px] font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                  <span>🖼️</span>
+                  <span>Full Banner Preview</span>
+                </span>
+                <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md">
+                  Fitted in Card
+                </span>
+              </div>
+              <div className="w-full flex items-center justify-center rounded-xl bg-slate-900/[0.04] border border-slate-200/50 overflow-hidden min-h-[220px] max-h-[500px] p-2.5">
+                <img
+                  key={mainBanner}
+                  src={mainBanner}
+                  alt="Main banner preview"
+                  className="max-h-[460px] max-w-full w-auto h-auto object-contain rounded-lg shadow-sm"
+                  onError={(e) => {
+                    const el = e.target as HTMLImageElement;
+                    el.style.display = 'none';
+                    const fallback = el.parentElement?.querySelector('.img-error-fallback');
+                    if (fallback) (fallback as HTMLElement).style.display = 'flex';
+                  }}
+                  onLoad={(e) => {
+                    const el = e.target as HTMLImageElement;
+                    el.style.display = 'block';
+                    const fallback = el.parentElement?.querySelector('.img-error-fallback');
+                    if (fallback) (fallback as HTMLElement).style.display = 'none';
+                  }}
+                />
+                <div className="img-error-fallback hidden flex-col items-center justify-center p-8 text-center text-slate-400">
+                  <span className="text-2xl mb-1">⚠️</span>
+                  <p className="text-xs font-bold text-slate-700">Unable to load image from URL</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5 max-w-xs">
+                    Please ensure the image link is valid, direct (ends in .jpg, .png, etc.), and publicly accessible.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-2.5 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 p-6 flex flex-col items-center justify-center text-center">
+              <span className="text-2xl mb-1 opacity-50">🖼️</span>
+              <p className="text-xs font-bold text-slate-600">No Main Banner URL provided</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                Paste a direct image link above to view the full banner preview fitted inside this card.
+              </p>
             </div>
           )}
         </div>
@@ -1103,11 +1162,11 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
                   className={inputCls}
                 />
                 {banner && (
-                  <div className="mt-2 h-20 w-full rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
+                  <div className="mt-2 w-full rounded-xl overflow-hidden border border-slate-200 bg-slate-50 p-2 flex items-center justify-center min-h-[100px] max-h-[260px]">
                     <img
                       src={banner}
                       alt="Banner preview"
-                      className="w-full h-full object-cover"
+                      className="max-h-[240px] max-w-full w-auto h-auto object-contain rounded-lg shadow-sm"
                       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                       onLoad={(e) => { (e.target as HTMLImageElement).style.display = 'block'; }}
                     />
