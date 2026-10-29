@@ -135,11 +135,15 @@ export default function ScanHistoryView() {
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
-  const handleCopy = (text?: string) => {
+  const handleCopy = async (text?: string) => {
     if (!text) return;
-    navigator.clipboard.writeText(text);
-    setCopiedText(text);
-    setTimeout(() => setCopiedText(null), 1500);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedText(text);
+      setTimeout(() => setCopiedText(null), 1500);
+    } catch {
+      /* clipboard permission denied — nothing else to do */
+    }
   };
 
   const handleDeleteEntry = async () => {

@@ -71,7 +71,11 @@ export default function CreateScannerUserModal({ isOpen, onClose, gates = [] }: 
       onClose();
     } catch (err) {
       console.error('Create user failed:', err);
-      setError('Failed to create user — check connection and try again.');
+      setError(
+        err instanceof Error && err.message.startsWith('A scanner with this name')
+          ? err.message
+          : 'Failed to create user — check connection and try again.'
+      );
     } finally {
       setSaving(false);
     }

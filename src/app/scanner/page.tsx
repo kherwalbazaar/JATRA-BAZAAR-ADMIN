@@ -703,7 +703,7 @@ export default function ScannerPortalPage() {
               <h1 className="text-xl font-black tracking-tight">
                 <span className="text-amber-400">JATRA</span> BAZAAR Scanner
               </h1>
-              <p className="text-xs font-semibold text-slate-400">Sign in with your Scanner ID (SCN-xxx)</p>
+              <p className="text-xs font-semibold text-slate-400">Sign in with your Scanner ID</p>
             </div>
 
             <div>
@@ -712,7 +712,7 @@ export default function ScannerPortalPage() {
                 type="text"
                 value={loginId}
                 onChange={(e) => setLoginId(e.target.value)}
-                placeholder="SCN-001"
+                placeholder="SCN-XXX"
                 autoCapitalize="characters"
                 autoComplete="off"
                 className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm font-black font-mono text-white placeholder-slate-600 outline-none focus:border-indigo-500 text-center tracking-widest"
@@ -1337,7 +1337,7 @@ export default function ScannerPortalPage() {
                     </div>
                     <div className="text-right flex-shrink-0">
                       <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${ok ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-red-100 text-red-600 border-red-200'}`}>
-                        {ok ? '✓ Entered' : e.scanResult.replace('_', ' ')}
+                        {ok ? '✓ Entered' : (e.scanResult || '—').replace(/_/g, ' ')}
                       </span>
                       <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">{fmtTime(e.scannedAt)}</span>
                     </div>

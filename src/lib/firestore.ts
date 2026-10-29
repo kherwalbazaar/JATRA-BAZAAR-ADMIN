@@ -51,6 +51,7 @@ import {
   sbMirrorAuditLog,
   sbMirrorDelete,
   sb,
+  sbUpdate,
 } from './supabase-db';
 import { BlockCategory } from '@/lib/blockCategories';
 import {
@@ -1762,6 +1763,25 @@ export type NewScannerMemberInput = Omit<
 
 // New members always start as pending + active (pending ⇒ no scan access)
 export async function addScannerMember(input: NewScannerMemberInput): Promise<ScannerMember> {
+  // One scanner account per name + mobile number.
+  const nameKey = input.name.trim().replace(/\s+/g, ' ').toLowerCase();
+  const mobileKey = input.mobile.replace(/\D/g, '').slice(-10);
+  if (nameKey && mobileKey.length >= 10) {
+    const snap = await getDocs(colRef(C.SCANNER_MEMBERS));
+    const duplicate = snap.docs
+      .map((d) => d.data() as ScannerMember)
+      .find(
+        (m) =>
+          (m.name || '').trim().replace(/\s+/g, ' ').toLowerCase() === nameKey &&
+          (m.mobile || '').replace(/\D/g, '').slice(-10) === mobileKey
+      );
+    if (duplicate) {
+      throw new Error(
+        `A scanner with this name and mobile number already exists (${duplicate.scannerId}).`
+      );
+    }
+  }
+
   const scannerId = await generateScannerId();
   // Firestore rejects undefined values — strip them before writing
   const clean = Object.fromEntries(
@@ -1789,6 +1809,111 @@ export async function addScannerMember(input: NewScannerMemberInput): Promise<Sc
 export async function updateScannerMember(id: string, patch: Partial<ScannerMember>): Promise<void> {
   await updateDoc(docRef(C.SCANNER_MEMBERS, id), patch);
   sbMirrorScannerMemberUpdate(id, patch as Record<string, unknown>);
+}
+
+/** Map a Supabase `scanner_members` row to the Firestore document shape. */
+function mapSupabaseScannerMember(row: Record<string, unknown>): ScannerMember | null {
+  const id = typeof row.id === 'string' ? row.id : '';
+  const scannerId = typeof row.scanner_id === 'string' ? row.scanner_id.trim() : '';
+  if (!id || !scannerId) return null;
+
+  const gate = typeof row.assigned_gate_id === 'string' ? row.assigned_gate_id.trim() : '';
+  const str = (v: unknown) => (typeof v === 'string' ? v : '');
+
+  const member: ScannerMember = {
+    id,
+    scannerId,
+    name: str(row.name).trim() || scannerId,
+    email: str(row.email),
+    mobile: str(row.mobile),
+    profilePhoto: str(row.profile_photo),
+    approvalStatus:
+      row.approval_status === 'approved' || row.approval_status === 'rejected'
+        ? row.approval_status
+        : 'pending',
+    accountStatus: row.account_status === 'deactivated' ? 'deactivated' : 'active',
+    createdAt: str(row.created_at) || new Date().toISOString(),
+    totalScans: Number(row.total_scans) || 0,
+  };
+
+  if (gate && gate.toLowerCase() !== 'not assigned') member.assignedGateId = gate;
+  if (str(row.address)) member.address = str(row.address);
+  if (str(row.id_proof)) member.idProof = str(row.id_proof);
+  if (str(row.notes)) member.notes = str(row.notes);
+  if (str(row.approved_at)) member.approvedAt = str(row.approved_at);
+  if (str(row.approved_by)) member.approvedBy = str(row.approved_by);
+  if (str(row.deactivated_at)) member.deactivatedAt = str(row.deactivated_at);
+  if (str(row.deactivated_by)) member.deactivatedBy = str(row.deactivated_by);
+  if (str(row.last_scan_at)) member.lastScanAt = str(row.last_scan_at);
+
+  return member;
+}
+
+/**
+ * Scanner accounts registered in the SCANNER app live only in Supabase, while
+ * this admin reads `scannerMembers` from Firestore. Import any missing rows so
+ * pending registrations show up in the member list and can be approved.
+ * The Supabase row id is reused as the Firestore doc id so approval updates
+ * mirror back to the same Supabase row.
+ */
+export async function syncScannerMembersFromSupabase(): Promise<number> {
+  try {
+    const [{ data, error }, snap] = await Promise.all([
+      sb.from('scanner_members').select('*'),
+      getDocs(colRef(C.SCANNER_MEMBERS)),
+    ]);
+    if (error || !data) return 0;
+
+    const knownIds = new Set(snap.docs.map((d) => d.id));
+    const knownScannerIds = new Set(
+      snap.docs.map((d) => (d.data() as ScannerMember).scannerId).filter(Boolean)
+    );
+
+    let imported = 0;
+    for (const row of data as Record<string, unknown>[]) {
+      const member = mapSupabaseScannerMember(row);
+      if (!member || knownIds.has(member.id) || knownScannerIds.has(member.scannerId)) continue;
+      const { id, ...payload } = member;
+      await setDoc(docRef(C.SCANNER_MEMBERS, id), payload);
+      knownIds.add(id);
+      knownScannerIds.add(member.scannerId);
+      imported += 1;
+    }
+
+    // Admin (Firestore) is the source of truth for approval/account status.
+    // Heal rows that drifted when a mirror request was rejected.
+    const rowsById = new Map(
+      (data as Record<string, unknown>[]).map((r) => [String(r.id), r])
+    );
+    let healed = 0;
+    for (const d of snap.docs) {
+      const member = { id: d.id, ...d.data() } as ScannerMember;
+      const row = rowsById.get(member.id);
+      if (!row) continue;
+      if (
+        row.approval_status === member.approvalStatus &&
+        row.account_status === member.accountStatus
+      ) {
+        continue;
+      }
+      const patch: Record<string, unknown> = {
+        approval_status: member.approvalStatus,
+        account_status: member.accountStatus,
+      };
+      if (member.accountStatus === 'active') {
+        patch.deactivated_at = null;
+        patch.deactivated_by = null;
+      }
+      sbUpdate('scanner_members', member.id, patch);
+      healed += 1;
+    }
+    if (healed) console.info(`Synced status for ${healed} scanner member(s) to Supabase.`);
+
+    return imported;
+  } catch (err) {
+    console.warn('syncScannerMembersFromSupabase failed:', err);
+    return 0;
+  }
 }
 
 // ─── Audit Log ────────────────────────────────────────────────────

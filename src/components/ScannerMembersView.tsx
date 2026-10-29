@@ -65,7 +65,16 @@ export default function ScannerMembersView() {
     } catch {
       /* ignore */
     }
-    return () => unsubs.forEach((u) => u());
+
+    // Pull scanner accounts registered in the SCANNER app (Supabase-only) into Firestore.
+    void fs.syncScannerMembersFromSupabase();
+    const onFocus = () => { void fs.syncScannerMembersFromSupabase(); };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      unsubs.forEach((u) => u());
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   const today = fs.todayStr();
@@ -152,7 +161,7 @@ export default function ScannerMembersView() {
       setAddOpen(false);
     } catch (err) {
       console.error('Add scanner failed:', err);
-      alert('Failed to add scanner member.');
+      alert(err instanceof Error ? err.message : 'Failed to add scanner member.');
     } finally {
       setSaving(false);
     }

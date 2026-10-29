@@ -18,20 +18,30 @@ function logFail(table: string, op: string, err: unknown) {
 }
 
 /** Upsert a row (insert or update by id). */
-export function sbUpsert(table: string, data: Record<string, unknown>): void {
+export function sbUpsert(
+  table: string,
+  data: Record<string, unknown>,
+  options?: { onConflict?: string }
+): void {
   if (!data || Object.keys(data).length === 0) return;
+  const opts = options || (table === 'seats' ? { onConflict: 'event_id,block_id,row_id,seat_number' } : undefined);
   sb.from(table)
-    .upsert(data)
+    .upsert(data, opts)
     .then(({ error }) => {
       if (error) logFail(table, 'upsert', error.message);
     });
 }
 
 /** Upsert many rows at once. */
-export function sbUpsertMany(table: string, rows: Record<string, unknown>[]): void {
+export function sbUpsertMany(
+  table: string,
+  rows: Record<string, unknown>[],
+  options?: { onConflict?: string }
+): void {
   if (!rows.length) return;
+  const opts = options || (table === 'seats' ? { onConflict: 'event_id,block_id,row_id,seat_number' } : undefined);
   sb.from(table)
-    .upsert(rows)
+    .upsert(rows, opts)
     .then(({ error }) => {
       if (error) logFail(table, 'upsertMany', error.message);
     });
@@ -303,13 +313,93 @@ function applyMap(data: Record<string, unknown>, map: Record<string, string>): R
     out.updated_at = out.updatedAt;
     delete out.updatedAt;
   }
+  // Firestore clears optional timestamps with ''. PostgREST rejects '' for
+  // timestamptz columns and discards the whole update, so map them to NULL.
+  for (const [key, val] of Object.entries(out)) {
+    if (val === '' && key.endsWith('_at')) out[key] = null;
+  }
   return out;
 }
 
 // ─── Mapped upsert helpers (call these from firestore.ts) ────────
 
+const BOOKING_RESERVATION_STATUSES = new Set(['Confirmed', 'Cancelled', 'Pending']);
+
+const BOOKING_COLUMNS = new Set([
+  'id',
+  'ticket_number',
+  'event_id',
+  'event_name',
+  'customer_name',
+  'customer_phone',
+  'customer_email',
+  'user_id',
+  'ticket_type_id',
+  'ticket_type_name',
+  'quantity',
+  'unit_price',
+  'amount',
+  'source',
+  'counter_name',
+  'payment_method',
+  'transaction_id',
+  'date',
+  'time',
+  'status',
+  'booking_status',
+  'assigned_gate',
+  'block',
+  'seats',
+  'seat_number',
+  'seat_count',
+  'used_tickets',
+  'used_seats',
+  'used_count',
+  'entered_count',
+  'remaining_count',
+  'used_at',
+  'ticket_amount',
+  'base_amount',
+  'convenience_fee',
+  'gst_on_convenience_fee',
+  'platform_charge',
+  'total_fees',
+  'final_customer_amount',
+  'payment_status',
+  'payment_channel',
+  'gateway_transaction_id',
+  'payment_date',
+  'ticket_ids',
+  'other_charges',
+  'gateway_fee',
+  'actual_cost',
+  'profit',
+  'created_at',
+  'updated_at',
+  'show_id',
+  'booking_id',
+  'booking_date',
+  'booking_time',
+  'total_amount',
+]);
+
+/** Drop/normalize fields that the Supabase bookings table cannot accept. */
+function cleanBookingRow(mapped: Record<string, unknown>): Record<string, unknown> {
+  // booking_status only tracks the reservation; check-in lives in status/used_*.
+  if (
+    typeof mapped.booking_status === 'string' &&
+    !BOOKING_RESERVATION_STATUSES.has(mapped.booking_status)
+  ) {
+    delete mapped.booking_status;
+  }
+  for (const key of Object.keys(mapped)) {
+    if (!BOOKING_COLUMNS.has(key)) delete mapped[key];
+  }
+  return mapped;
+}
+
 export function sbMirrorBooking(data: Record<string, unknown>): void {
-  const mapped = applyMap(data, BOOKING_FIELD_MAP);
+  const mapped = cleanBookingRow(applyMap(data, BOOKING_FIELD_MAP));
   if (mapped.payment_method) {
     try {
       mapped.payment_method = resolveCanonicalPaymentMethod(String(mapped.payment_method));
@@ -322,7 +412,7 @@ export function sbMirrorBooking(data: Record<string, unknown>): void {
 
 export function sbMirrorBookingUpdate(id: string, data: Record<string, unknown>): void {
   if (!id || Object.keys(data).length === 0) return;
-  const mapped = applyMap(data, BOOKING_FIELD_MAP);
+  const mapped = cleanBookingRow(applyMap(data, BOOKING_FIELD_MAP));
   if (mapped.payment_method) {
     try {
       mapped.payment_method = resolveCanonicalPaymentMethod(String(mapped.payment_method));
@@ -353,12 +443,44 @@ export function sbMirrorTicketUpdate(id: string, data: Record<string, unknown>):
     });
 }
 
+// Public seats table columns. PostgREST rejects the whole upsert when any
+// payload key is not a real column, so unknown fields must be dropped here.
+const SEAT_COLUMNS = new Set([
+  'id',
+  'seat_id',
+  'show_id',
+  'event_id',
+  'block',
+  'block_id',
+  'row',
+  'row_id',
+  'number',
+  'seat_number',
+  'seat_label',
+  'status',
+  'price',
+  'ticket_type_id',
+  'booking_id',
+  'reserved_by',
+  'reserved_at',
+  'booked_at',
+  'created_at',
+  'updated_at',
+]);
+
+function cleanSeatRow(mapped: Record<string, unknown>): Record<string, unknown> {
+  for (const key of Object.keys(mapped)) {
+    if (!SEAT_COLUMNS.has(key)) delete mapped[key];
+  }
+  return mapped;
+}
+
 export function sbMirrorSeat(data: Record<string, unknown>): void {
-  sbUpsert('seats', applyMap(data, SEAT_FIELD_MAP));
+  sbUpsert('seats', cleanSeatRow(applyMap(data, SEAT_FIELD_MAP)));
 }
 
 export function sbMirrorSeatMany(rows: Record<string, unknown>[]): void {
-  sbUpsertMany('seats', rows.map((r) => applyMap(r, SEAT_FIELD_MAP)));
+  sbUpsertMany('seats', rows.map((r) => cleanSeatRow(applyMap(r, SEAT_FIELD_MAP))));
 }
 
 export function sbMirrorSeatUpdate(
@@ -366,7 +488,7 @@ export function sbMirrorSeatUpdate(
   data: Record<string, unknown>,
   showId?: string
 ): void {
-  const mapped = applyMap(data, SEAT_FIELD_MAP);
+  const mapped = cleanSeatRow(applyMap(data, SEAT_FIELD_MAP));
   const sk = id.trim().toUpperCase();
   const prefixed = showId ? `${showId}_${sk}` : '';
   const filter = prefixed
@@ -522,12 +644,63 @@ export function sbMirrorScannerMemberUpdate(id: string, data: Record<string, unk
   sbUpdate('scanner_members', id, applyMap(data, SCANNER_FIELD_MAP));
 }
 
+const ENTRY_COLUMNS = new Set([
+  'id',
+  'entry_key',
+  'ticket_id',
+  'event_id',
+  'scanner_id',
+  'member_id',
+  'scanner_name',
+  'gate_id',
+  'entry_status',
+  'scan_result',
+  'scanned_at',
+  'scan_date',
+  'scan_time',
+  'booking_id',
+  'audience_name',
+  'persons',
+  'ticket_type',
+  'booking_source',
+  'previous_entry_time',
+  'previous_scanner_id',
+  'previous_scanner_name',
+  'previous_gate_id',
+  'ticket_number',
+  'base_ticket_id',
+  'seat',
+  'created_at',
+]);
+
+/** `previous_entry_time` is a timestamptz column; clock strings must not be sent. */
+function cleanEntryRow(mapped: Record<string, unknown>): Record<string, unknown> {
+  if (!mapped.ticket_id && mapped.ticket_number) {
+    mapped.ticket_id = mapped.ticket_number;
+  }
+  if (!mapped.entry_status) {
+    mapped.entry_status = mapped.status === 'entered' ? 'entered' : 'entered';
+  }
+  if (!mapped.scan_result) {
+    mapped.scan_result = mapped.entry_status === 'entered' ? 'SUCCESS' : 'INVALID';
+  }
+  const previous = mapped.previous_entry_time;
+  if (previous !== undefined && previous !== null) {
+    const parsed = Date.parse(String(previous));
+    if (Number.isNaN(parsed)) mapped.previous_entry_time = null;
+  }
+  for (const key of Object.keys(mapped)) {
+    if (!ENTRY_COLUMNS.has(key)) delete mapped[key];
+  }
+  return mapped;
+}
+
 export function sbMirrorTicketEntry(data: Record<string, unknown>): void {
-  sbUpsert('ticket_entries', applyMap(data, ENTRY_FIELD_MAP));
+  sbUpsert('ticket_entries', cleanEntryRow(applyMap(data, ENTRY_FIELD_MAP)));
 }
 
 export function sbMirrorTicketEntryUpdate(id: string, data: Record<string, unknown>): void {
-  sbUpdate('ticket_entries', id, applyMap(data, ENTRY_FIELD_MAP));
+  sbUpdate('ticket_entries', id, cleanEntryRow(applyMap(data, ENTRY_FIELD_MAP)));
 }
 
 export function sbMirrorGate(data: Record<string, unknown>): void {
@@ -791,8 +964,24 @@ export function sbMirrorSettings(docId: string, data: Record<string, unknown>): 
   sbUpsert('settings', row);
 }
 
+const AUDIT_COLUMNS = new Set([
+  'id',
+  'action',
+  'performed_by',
+  'target_id',
+  'timestamp',
+  'metadata',
+]);
+
+function cleanAuditRow(mapped: Record<string, unknown>): Record<string, unknown> {
+  for (const key of Object.keys(mapped)) {
+    if (!AUDIT_COLUMNS.has(key)) delete mapped[key];
+  }
+  return mapped;
+}
+
 export function sbMirrorAuditLog(data: Record<string, unknown>): void {
-  sbUpsert('audit_logs', applyMap(data, AUDIT_FIELD_MAP));
+  sbUpsert('audit_logs', cleanAuditRow(applyMap(data, AUDIT_FIELD_MAP)));
 }
 
 export function sbMirrorDelete(table: string, id: string): void {

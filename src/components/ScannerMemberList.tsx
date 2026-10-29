@@ -75,7 +75,16 @@ export default function ScannerMemberList() {
     } catch {
       /* ignore */
     }
-    return () => unsubs.forEach((u) => u());
+
+    // Pull scanner accounts registered in the SCANNER app (Supabase-only) into Firestore.
+    void fs.syncScannerMembersFromSupabase();
+    const onFocus = () => { void fs.syncScannerMembersFromSupabase(); };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      unsubs.forEach((u) => u());
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   const today = fs.todayStr();
