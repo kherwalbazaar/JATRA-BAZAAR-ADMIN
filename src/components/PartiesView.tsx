@@ -29,6 +29,7 @@ import {
   deleteLocalParty,
   syncRemoteParties,
 } from '@/lib/parties';
+import { useAdminPopup } from '@/context/AdminPopupContext';
 
 interface PartiesViewProps {
   events: EventItem[];
@@ -61,6 +62,7 @@ export default function PartiesView({
   onNavigateToEvents,
 }: PartiesViewProps) {
   const router = useRouter();
+  const { confirm: adminConfirm, alert: adminAlert } = useAdminPopup();
   const [search, setSearch] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -82,7 +84,6 @@ export default function PartiesView({
   // Modal states
   const [modalOpen, setModalOpen] = useState(false);
   const [editingParty, setEditingParty] = useState<PartyItem | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<PartyItem | null>(null);
   const [viewTarget, setViewTarget] = useState<PartyItem | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
@@ -224,10 +225,11 @@ export default function PartiesView({
     setModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name?.trim()) return;
 
+    const isEditing = Boolean(editingParty);
     const partyToSave: PartyItem = {
       id: editingParty?.id || formData.id || `party-${Date.now()}`,
       name: formData.name.trim(),
@@ -246,13 +248,51 @@ export default function PartiesView({
     addOrUpdateParty(partyToSave);
     setRefreshKey((k) => k + 1);
     setModalOpen(false);
+
+    if (isEditing) {
+      await adminAlert({
+        title: 'Opera Party Updated!',
+        subtitle: 'Changes Saved',
+        message: `Troupe details for "${partyToSave.name}" have been updated successfully.`,
+        type: 'updated',
+        itemTitle: partyToSave.name,
+        itemSubtitle: partyToSave.location || 'Odisha',
+      });
+    } else {
+      await adminAlert({
+        title: 'Opera Party Added!',
+        subtitle: 'Added to Directory',
+        message: `"${partyToSave.name}" has been registered into the opera party troupe directory.`,
+        type: 'created',
+        celebrate: true,
+        itemTitle: partyToSave.name,
+        itemSubtitle: partyToSave.location || 'Odisha',
+      });
+    }
   };
 
-  const handleDelete = () => {
-    if (!deleteTarget) return;
-    deleteLocalParty(deleteTarget.id);
+  const handleDeleteParty = async (party: PartyItem) => {
+    const ok = await adminConfirm({
+      title: 'Delete Opera Party?',
+      subtitle: 'Permanent Action',
+      message: `Are you sure you want to delete "${party.name}"? This will remove custom troupe records and cannot be undone.`,
+      type: 'delete',
+      confirmText: 'Yes, Delete Troupe',
+      cancelText: 'Keep Party',
+      itemTitle: party.name,
+      itemSubtitle: party.location || 'Opera Troupe',
+    });
+    if (!ok) return;
+
+    deleteLocalParty(party.id);
     setRefreshKey((k) => k + 1);
-    setDeleteTarget(null);
+    await adminAlert({
+      title: 'Opera Party Deleted',
+      subtitle: 'Removed from Directory',
+      message: `"${party.name}" was successfully deleted from the troupe directory.`,
+      type: 'deleted',
+      itemTitle: party.name,
+    });
   };
 
   // Filtered list
@@ -465,7 +505,7 @@ export default function PartiesView({
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setOpenMenuId(null);
-                                  setDeleteTarget(party);
+                                  handleDeleteParty(party);
                                 }}
                                 className="w-full px-3 py-1.5 text-left text-[11px] font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-1.5 transition-colors border-t border-slate-100"
                               >
@@ -777,37 +817,6 @@ export default function PartiesView({
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Confirm Delete Modal */}
-      {deleteTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-4">
-              <AlertTriangle className="w-6 h-6" />
-            </div>
-            <h3 className="text-base font-bold text-slate-900 mb-1">Delete Opera Party?</h3>
-            <p className="text-xs text-slate-500 mb-6">
-              Are you sure you want to delete <span className="font-bold text-slate-800">"{deleteTarget.name}"</span>? This will remove custom troupe records.
-            </p>
-            <div className="flex items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={() => setDeleteTarget(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-md shadow-rose-600/20"
-              >
-                Yes, Delete
-              </button>
-            </div>
           </div>
         </div>
       )}

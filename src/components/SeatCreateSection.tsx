@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Trash2, LayoutGrid, Plus, Minus, ChevronDown, Check, MoreVertical, Edit, AlertTriangle, X } from 'lucide-react';
+import { Trash2, LayoutGrid, Plus, Minus, ChevronDown, Check, MoreVertical, Edit, AlertTriangle, X, RefreshCw } from 'lucide-react';
 import { Seat, TicketType } from '@/types';
 
 const BLOCK_OPTIONS = [
@@ -485,8 +485,18 @@ export default function SeatCreateSection({
         setFormRows(emptyFormRows());
         onClose();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('createSeatRow failed:', err);
+      // The seats exist in Firestore but the customer app could not be
+      // updated. Rolling them back would destroy valid work, so they are
+      // kept and the admin is told the sync is pending.
+      if (err?.code === 'SEAT_SYNC_FAILED') {
+        setMsg({
+          type: 'error',
+          text: `Seats were saved, but they are NOT yet visible in the customer app. ${err.message} Retry the same row to sync it again.`,
+        });
+        return;
+      }
       let rolledBack = 0;
       for (const fresh of freshRows) {
         try {
@@ -1126,39 +1136,93 @@ export default function SeatCreateSection({
 
       {/* Delete Confirmation Modal */}
       {deleteConfirm && (
-        <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150">
-            <div className="p-6 text-center relative">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+          {/* Backdrop blur */}
+          <div
+            className="fixed inset-0 bg-slate-950/70 backdrop-blur-md transition-opacity animate-in fade-in duration-200"
+            onClick={() => !busy && setDeleteConfirm(null)}
+          />
+
+          {/* Centered Modal Card */}
+          <div className="relative w-full max-w-sm bg-white rounded-3xl shadow-[0_25px_70px_rgba(0,0,0,0.35)] overflow-hidden border border-white/20 animate-in zoom-in-95 fade-in duration-200 z-10 my-auto">
+            {/* Vibrant Rose/Pink Header */}
+            <div className="relative bg-gradient-to-br from-rose-600 via-pink-600 to-red-600 px-6 pt-7 pb-8 text-center text-white overflow-hidden">
+              <div className="absolute -top-10 -left-10 w-36 h-36 rounded-full bg-white/10 blur-xs pointer-events-none" />
+              <div className="absolute -bottom-14 -right-8 w-40 h-40 rounded-full bg-white/10 blur-xs pointer-events-none" />
+              <div className="absolute top-4 right-12 w-8 h-8 rounded-full bg-white/15 pointer-events-none" />
+
               <button
                 type="button"
                 onClick={() => setDeleteConfirm(null)}
-                className="absolute top-4 right-4 w-8 h-8 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center transition-colors"
+                disabled={busy}
+                className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-white/20 hover:bg-white/35 active:scale-95 text-white flex items-center justify-center transition-all duration-150 backdrop-blur-sm disabled:opacity-50"
               >
                 <X className="w-4 h-4" />
               </button>
-              <div className="w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center bg-red-100">
-                <AlertTriangle className="w-7 h-7 text-red-600" />
+
+              <div className="relative inline-flex items-center justify-center w-18 h-18 rounded-3xl bg-white/20 backdrop-blur-md mb-3 shadow-xl ring-4 ring-white/20">
+                <Trash2 className="w-9 h-9 text-white drop-shadow-md" />
               </div>
-              <h3 className="text-lg font-black text-slate-900 mb-1">Delete Row?</h3>
-              <p className="text-sm text-slate-500 font-semibold">
-                Are you sure you want to delete Block {deleteConfirm.blockId} Row {deleteConfirm.rowId} (all seats)? This action cannot be undone.
+
+              <h3 className="text-xl font-black text-white tracking-tight drop-shadow-sm">
+                Delete Seat Row?
+              </h3>
+              <p className="text-[11px] font-extrabold text-white/85 tracking-wider uppercase mt-1">
+                Permanent Action • Cannot Be Undone
               </p>
             </div>
-            <div className="px-6 pb-6 flex gap-3">
+
+            {/* Body */}
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm font-semibold text-slate-600 text-center leading-relaxed">
+                Are you sure you want to permanently delete all seats in this row?
+              </p>
+
+              {/* Row info card */}
+              <div className="flex items-center gap-3 p-3.5 bg-gradient-to-r from-rose-50 to-pink-50 rounded-2xl border border-rose-200/80 shadow-xs">
+                <div className="w-10 h-10 rounded-xl bg-white shadow-xs border border-rose-200/60 flex items-center justify-center flex-shrink-0">
+                  <span className="text-xs font-black text-rose-600 font-mono">
+                    {deleteConfirm.blockId}
+                  </span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-black text-slate-800">
+                    Block {deleteConfirm.blockId} • Row {deleteConfirm.rowId}
+                  </p>
+                  <p className="text-[11px] font-bold text-rose-600">
+                    All unsold seats in this row will be removed
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="px-6 pb-6 pt-1 flex items-center gap-3">
               <button
                 type="button"
                 onClick={() => setDeleteConfirm(null)}
-                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black rounded-xl transition-colors"
+                disabled={busy}
+                className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-700 text-xs font-black rounded-2xl transition-all duration-150 disabled:opacity-50"
               >
-                Cancel
+                Keep Row
               </button>
               <button
                 type="button"
                 onClick={confirmDeleteRow}
                 disabled={busy}
-                className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-black rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 py-3 px-4 text-white text-xs font-black rounded-2xl shadow-md shadow-rose-500/25 active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-1.5 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 disabled:opacity-60"
               >
-                {busy ? 'Deleting…' : 'Yes, Delete'}
+                {busy ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Deleting…</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Yes, Delete Row</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

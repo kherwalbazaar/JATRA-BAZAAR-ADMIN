@@ -5,6 +5,7 @@ import { Save, Plus, Trash2, Link2, FileText, Check, MoreVertical, Pencil, Theat
 import { EventItem, EventActor, PartyItem } from '@/types';
 import { getEventsOnce } from '@/lib/firestore';
 import { computeParties, getPartyByName, syncRemoteParties } from '@/lib/parties';
+import { useAdminPopup } from '@/context/AdminPopupContext';
 
 interface EventFormProps {
   initial?: Partial<EventItem> | null;
@@ -140,6 +141,7 @@ const inputCls =
 const labelCls = 'text-[11px] font-black uppercase text-slate-500 block mb-1.5';
 
 export default function EventForm({ initial, submitting, submitLabel, enableDraft, onSubmit, onCancel }: EventFormProps) {
+  const { alert: adminAlert } = useAdminPopup();
   // Boot source: saved draft (create page only) takes priority over initial data
   const [boot] = useState(() => {
     if (enableDraft) {
@@ -210,7 +212,12 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
     const name = actorNameInput.trim();
     const photo = actorPhotoInput.trim();
     if (!name && !photo) {
-      alert('Enter actor name or photo URL first.');
+      adminAlert({
+        title: 'Missing Actor Info',
+        subtitle: 'Validation Warning',
+        message: 'Enter actor name or photo URL first before adding.',
+        type: 'warning',
+      });
       return;
     }
     if (editingActorIdx !== null) {
@@ -508,7 +515,12 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
     e.preventDefault();
     const cleanTitle = title === NEW_OPTION ? '' : title.trim();
     if (!cleanTitle || !eventTitle.trim() || !address.trim() || !year || !month || !dayOfMonth) {
-      alert('Please fill required fields: Story Name, Event Title, Address, Year, Month, Day');
+      adminAlert({
+        title: 'Required Fields Missing',
+        subtitle: 'Validation Warning',
+        message: 'Please fill all required fields: Story Name, Event Title, Address, Year, Month, and Day.',
+        type: 'warning',
+      });
       return;
     }
 
@@ -568,7 +580,12 @@ export default function EventForm({ initial, submitting, submitLabel, enableDraf
       setDraftRestored(true);
       setTimeout(() => setDraftSaved(false), 2500);
     } catch {
-      alert('Failed to save draft to local storage.');
+      adminAlert({
+        title: 'Draft Save Failed',
+        subtitle: 'Storage Error',
+        message: 'Failed to save draft to local storage. Check your browser storage settings.',
+        type: 'error',
+      });
     }
   };
 

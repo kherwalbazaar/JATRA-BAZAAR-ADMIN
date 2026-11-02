@@ -7,28 +7,60 @@ const supabaseKey =
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   '';
 
-const sb = createClient(supabaseUrl, supabaseKey);
+// The mirror never needs an auth session, and letting this client touch the
+// GoTrue storage key makes it a second GoTrueClient alongside
+// utils/supabase/client.ts (browser console: "Multiple GoTrueClient
+// instances detected").
+const sb = createClient(supabaseUrl, supabaseKey, {
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+});
 
 // ─── Fire-and-forget helpers ─────────────────────────────────────
 // These NEVER throw and NEVER block the Firebase write.
 // They run AFTER the Firebase write succeeds (via .then()).
+//
+// Every helper resolves to { ok, error } instead of rejecting, so a
+// failed mirror can be detected by the caller. A silent mirror failure
+// leaves the admin panel and the customer app out of sync with no
+// visible sign, which is exactly what must never happen again.
 
 function logFail(table: string, op: string, err: unknown) {
   console.error(`[supabase-mirror ERROR] ${op} on ${table} failed:`, err);
 }
+
+// Postgres rejects INSERT/UPDATE/DELETE on a view, so a mirror aimed at one of
+// these fails on every call. `public.shows` is a view over `events`; the
+// `events` mirror is what actually persists.
+const READ_ONLY_RELATIONS = new Set([
+  'shows',
+  'block_categories_view',
+  'ticket_types_view',
+  'banners_view',
+]);
+
+export type MirrorResult = { ok: boolean; error?: string };
 
 /** Upsert a row (insert or update by id). */
 export function sbUpsert(
   table: string,
   data: Record<string, unknown>,
   options?: { onConflict?: string }
-): void {
-  if (!data || Object.keys(data).length === 0) return;
+): Promise<MirrorResult> {
+  if (!data || Object.keys(data).length === 0) return Promise.resolve({ ok: true });
+  if (READ_ONLY_RELATIONS.has(table)) return Promise.resolve({ ok: true });
   const opts = options || (table === 'seats' ? { onConflict: 'event_id,block_id,row_id,seat_number' } : undefined);
-  sb.from(table)
-    .upsert(data, opts)
+  return Promise.resolve(sb.from(table).upsert(data, opts))
     .then(({ error }) => {
-      if (error) logFail(table, 'upsert', error.message);
+      if (error) {
+        logFail(table, 'upsert', error.message);
+        return { ok: false, error: error.message };
+      }
+      return { ok: true };
+    })
+    .catch((err: any) => {
+      const message = err?.message || String(err);
+      logFail(table, 'upsert', message);
+      return { ok: false, error: message };
     });
 }
 
@@ -37,57 +69,70 @@ export function sbUpsertMany(
   table: string,
   rows: Record<string, unknown>[],
   options?: { onConflict?: string }
-): void {
-  if (!rows.length) return;
+): Promise<MirrorResult> {
+  if (!rows.length) return Promise.resolve({ ok: true });
+  if (READ_ONLY_RELATIONS.has(table)) return Promise.resolve({ ok: true });
   const opts = options || (table === 'seats' ? { onConflict: 'event_id,block_id,row_id,seat_number' } : undefined);
-  sb.from(table)
-    .upsert(rows, opts)
+  return Promise.resolve(sb.from(table).upsert(rows, opts))
     .then(({ error }) => {
-      if (error) logFail(table, 'upsertMany', error.message);
+      if (error) {
+        logFail(table, 'upsertMany', error.message);
+        return { ok: false, error: error.message };
+      }
+      return { ok: true };
+    })
+    .catch((err: any) => {
+      const message = err?.message || String(err);
+      logFail(table, 'upsertMany', message);
+      return { ok: false, error: message };
     });
 }
 
 /** Update a row by id. Falls back to insert if row was missing in Supabase. */
 export function sbUpdate(table: string, id: string, data: Record<string, unknown>): void {
   if (!id || Object.keys(data).length === 0) return;
-  sb.from(table)
-    .update(data)
-    .eq('id', id)
-    .select('id')
+  if (READ_ONLY_RELATIONS.has(table)) return;
+  Promise.resolve(
+    sb.from(table)
+      .update(data)
+      .eq('id', id)
+      .select('id')
+  )
     .then(({ data: rows, error }) => {
       if (error) {
         logFail(table, 'update', error.message);
       } else if (!rows || rows.length === 0) {
         // Row did not exist in Supabase yet — insert with id if title or required fields exist
         if (data.title || table !== 'events') {
-          sb.from(table)
-            .upsert({ ...data, id })
+          Promise.resolve(sb.from(table).upsert({ ...data, id }))
             .then(({ error: upsertErr }) => {
               if (upsertErr) logFail(table, 'fallback-insert', upsertErr.message);
-            });
+            })
+            .catch((err: any) => logFail(table, 'fallback-insert', err?.message || String(err)));
         }
       }
-    });
+    })
+    .catch((err: any) => logFail(table, 'update', err?.message || String(err)));
 }
 
 /** Delete a row by id. */
 export function sbDelete(table: string, id: string): void {
-  sb.from(table)
-    .delete()
-    .eq('id', id)
+  if (READ_ONLY_RELATIONS.has(table)) return;
+  Promise.resolve(sb.from(table).delete().eq('id', id))
     .then(({ error }) => {
       if (error) logFail(table, 'delete', error.message);
-    });
+    })
+    .catch((err: any) => logFail(table, 'delete', err?.message || String(err)));
 }
 
 /** Delete rows matching a filter. */
 export function sbDeleteWhere(table: string, column: string, value: unknown): void {
-  sb.from(table)
-    .delete()
-    .eq(column, value)
+  if (READ_ONLY_RELATIONS.has(table)) return;
+  Promise.resolve(sb.from(table).delete().eq(column, value))
     .then(({ error }) => {
       if (error) logFail(table, 'deleteWhere', error.message);
-    });
+    })
+    .catch((err: any) => logFail(table, 'deleteWhere', err?.message || String(err)));
 }
 
 /**
@@ -404,7 +449,10 @@ export function sbMirrorBooking(data: Record<string, unknown>): void {
     try {
       mapped.payment_method = resolveCanonicalPaymentMethod(String(mapped.payment_method));
     } catch (e) {
+      // The column has a CHECK constraint, so leaving the raw value would reject the
+      // whole mirrored row. 'Other' is always valid.
       console.warn('sbMirrorBooking payment_method normalization warning:', e);
+      mapped.payment_method = 'Other';
     }
   }
   sbUpsert('bookings', mapped);
@@ -418,14 +466,18 @@ export function sbMirrorBookingUpdate(id: string, data: Record<string, unknown>)
       mapped.payment_method = resolveCanonicalPaymentMethod(String(mapped.payment_method));
     } catch (e) {
       console.warn('sbMirrorBookingUpdate payment_method normalization warning:', e);
+      mapped.payment_method = 'Other';
     }
   }
-  sb.from('bookings')
-    .update(mapped)
-    .or(`id.eq.${id},ticket_number.eq.${id}`)
+  Promise.resolve(
+    sb.from('bookings')
+      .update(mapped)
+      .or(`id.eq.${id},ticket_number.eq.${id}`)
+  )
     .then(({ error }) => {
       if (error) logFail('bookings', `updateBooking (${id})`, error.message);
-    });
+    })
+    .catch((err: any) => logFail('bookings', `updateBooking (${id})`, err?.message || String(err)));
 }
 
 export function sbMirrorTicket(data: Record<string, unknown>): void {
@@ -435,12 +487,15 @@ export function sbMirrorTicket(data: Record<string, unknown>): void {
 export function sbMirrorTicketUpdate(id: string, data: Record<string, unknown>): void {
   if (!id || Object.keys(data).length === 0) return;
   const mapped = applyMap(data, TICKET_FIELD_MAP);
-  sb.from('tickets')
-    .update(mapped)
-    .or(`id.eq.${id},ticket_id.eq.${id},serial_number.eq.${id},qr_token.eq.${id}`)
+  Promise.resolve(
+    sb.from('tickets')
+      .update(mapped)
+      .or(`id.eq.${id},ticket_id.eq.${id},serial_number.eq.${id},qr_token.eq.${id}`)
+  )
     .then(({ error }) => {
       if (error) logFail('tickets', `updateTicket (${id})`, error.message);
-    });
+    })
+    .catch((err: any) => logFail('tickets', `updateTicket (${id})`, err?.message || String(err)));
 }
 
 // Public seats table columns. PostgREST rejects the whole upsert when any
@@ -475,12 +530,42 @@ function cleanSeatRow(mapped: Record<string, unknown>): Record<string, unknown> 
   return mapped;
 }
 
-export function sbMirrorSeat(data: Record<string, unknown>): void {
-  sbUpsert('seats', cleanSeatRow(applyMap(data, SEAT_FIELD_MAP)));
+export function sbMirrorSeat(data: Record<string, unknown>): Promise<MirrorResult> {
+  return sbUpsert('seats', cleanSeatRow(applyMap(data, SEAT_FIELD_MAP)));
 }
 
-export function sbMirrorSeatMany(rows: Record<string, unknown>[]): void {
-  sbUpsertMany('seats', rows.map((r) => cleanSeatRow(applyMap(r, SEAT_FIELD_MAP))));
+export function sbMirrorSeatMany(rows: Record<string, unknown>[]): Promise<MirrorResult> {
+  return sbUpsertMany('seats', rows.map((r) => cleanSeatRow(applyMap(r, SEAT_FIELD_MAP))));
+}
+
+/**
+ * Seat rows already stored in Supabase for one block/row of an event.
+ * Used to repair drift: a seat that exists in Firestore but not in
+ * Supabase can be re-mirrored without touching seats that are already
+ * booked on the customer side.
+ */
+export async function sbFetchSeatRow(
+  eventId: string,
+  blockId: string,
+  rowId: string
+): Promise<{ ok: boolean; rows: { seatNumber: number; status: string }[] }> {
+  const { data, error } = await sb
+    .from('seats')
+    .select('seat_number,status')
+    .eq('event_id', eventId)
+    .eq('block_id', blockId.trim().toUpperCase())
+    .eq('row_id', rowId.trim().toUpperCase());
+  if (error) {
+    logFail('seats', `fetchSeatRow (${blockId}-${rowId})`, error.message);
+    return { ok: false, rows: [] };
+  }
+  return {
+    ok: true,
+    rows: (data || []).map((r: { seat_number: number; status: string }) => ({
+      seatNumber: Number(r.seat_number),
+      status: String(r.status || 'available'),
+    })),
+  };
 }
 
 export function sbMirrorSeatUpdate(
@@ -495,12 +580,50 @@ export function sbMirrorSeatUpdate(
     ? `id.eq.${sk},seat_id.eq.${sk},id.eq.${prefixed}`
     : `id.eq.${sk},seat_id.eq.${sk}`;
 
-  sb.from('seats')
-    .update(mapped)
-    .or(filter)
+  // Scoped to the event: `seat_id` is not event-unique, so an unscoped
+  // update would also change the same seat of every other show.
+  let query = sb.from('seats').update(mapped);
+  if (showId) query = query.eq('event_id', showId);
+
+  Promise.resolve(query.or(filter))
     .then(({ error }) => {
       if (error) logFail('seats', 'updateSeat', error.message);
-    });
+    })
+    .catch((err: any) => logFail('seats', 'updateSeat', err?.message || String(err)));
+}
+
+/**
+ * Awaited seat status update for the Supabase-primary seat flow.
+ * Same event-scoped matching as sbMirrorSeatUpdate, but reports the result
+ * so counter bookings can verify the claim instead of fire-and-forgetting.
+ */
+export async function sbSeatUpdateSync(
+  id: string,
+  data: Record<string, unknown>,
+  showId?: string
+): Promise<MirrorResult> {
+  const mapped = cleanSeatRow(applyMap(data, SEAT_FIELD_MAP));
+  const sk = id.trim().toUpperCase();
+  const prefixed = showId ? `${showId}_${sk}` : '';
+  const filter = prefixed
+    ? `id.eq.${sk},seat_id.eq.${sk},id.eq.${prefixed}`
+    : `id.eq.${sk},seat_id.eq.${sk}`;
+
+  let query = sb.from('seats').update(mapped);
+  if (showId) query = query.eq('event_id', showId);
+
+  try {
+    const { error } = await Promise.resolve(query.or(filter));
+    if (error) {
+      logFail('seats', 'updateSeatSync', error.message);
+      return { ok: false, error: error.message };
+    }
+    return { ok: true };
+  } catch (err: any) {
+    const message = err?.message || String(err);
+    logFail('seats', 'updateSeatSync', message);
+    return { ok: false, error: message };
+  }
 }
 
 /** Delete an entire row of seats for an event from Supabase */
@@ -511,26 +634,37 @@ export function sbMirrorDeleteSeatRow(
 ): void {
   const b = blockId.trim().toUpperCase();
   const r = rowId.trim().toUpperCase();
-  sb.from('seats')
-    .delete()
-    .eq('event_id', eventId)
-    .eq('block_id', b)
-    .eq('row_id', r)
+  Promise.resolve(
+    sb.from('seats')
+      .delete()
+      .eq('event_id', eventId)
+      .eq('block_id', b)
+      .eq('row_id', r)
+  )
     .then(({ error }) => {
       if (error) logFail('seats', `deleteSeatRow (${b}-${r})`, error.message);
-    });
+    })
+    .catch((err: any) => logFail('seats', `deleteSeatRow (${b}-${r})`, err?.message || String(err)));
 }
 
-/** Delete a specific seat by key for an event from Supabase */
+/**
+ * Delete a specific seat by key for an event from Supabase.
+ * Scoped to the event: `seat_id` is not event-unique, so an unscoped
+ * delete would also remove the same seat of every other show.
+ */
 export function sbMirrorDeleteSeat(showId: string, seatKey: string): void {
   const sk = seatKey.trim().toUpperCase();
   const prefixed = `${showId}_${sk}`;
-  sb.from('seats')
-    .delete()
-    .or(`id.eq.${sk},seat_id.eq.${sk},id.eq.${prefixed}`)
+  Promise.resolve(
+    sb.from('seats')
+      .delete()
+      .eq('event_id', showId)
+      .or(`id.eq.${sk},seat_id.eq.${sk},id.eq.${prefixed}`)
+  )
     .then(({ error }) => {
       if (error) logFail('seats', `deleteSeat (${sk})`, error.message);
-    });
+    })
+    .catch((err: any) => logFail('seats', `deleteSeat (${sk})`, err?.message || String(err)));
 }
 
 const VALID_EVENT_COLUMNS = new Set([
@@ -618,14 +752,6 @@ export function sbMirrorEvent(data: Record<string, unknown>): void {
 
 export function sbMirrorEventUpdate(id: string, data: Record<string, unknown>): void {
   sbUpdate('events', id, cleanEventRow(data));
-}
-
-export function sbMirrorShow(data: Record<string, unknown>): void {
-  sbUpsert('shows', cleanEventRow(data));
-}
-
-export function sbMirrorShowUpdate(id: string, data: Record<string, unknown>): void {
-  sbUpdate('shows', id, cleanEventRow(data));
 }
 
 export function sbMirrorTicketType(data: Record<string, unknown>): void {

@@ -16,6 +16,7 @@ import {
 import { KPIStats, TicketType, EventItem, BookingItem, Seat } from '@/types';
 import { formatINR, formatNumber } from '@/lib/utils';
 import { computeTicketTypeSales, getTierQuota } from '@/lib/ticketSales';
+import { useAdminPopup } from '@/context/AdminPopupContext';
 
 interface ReportsViewProps {
   currentEvent: EventItem | null;
@@ -40,6 +41,7 @@ export default function ReportsView({
   bookings = [],
   seats = []
 }: ReportsViewProps) {
+  const { alert: adminAlert } = useAdminPopup();
   // Compute real tier sales and revenue dynamically from bookings and seats
   const salesMap = useMemo(() => {
     return computeTicketTypeSales(ticketTypes, bookings, seats, currentEvent?.id);
@@ -81,7 +83,14 @@ export default function ReportsView({
         </div>
 
         <button
-          onClick={() => alert('Exporting full financial audit PDF and CSV...')}
+          onClick={() => {
+            adminAlert({
+              title: 'Generating Audit Export',
+              subtitle: 'Financial Ledger & CSV',
+              message: `Compiling consolidated attendance and revenue audit for "${currentEvent?.title ?? 'All Events'}". Download will begin momentarily.`,
+              type: 'info',
+            });
+          }}
           className="flex items-center gap-2 bg-[#4f39f6] hover:bg-[#432ee0] text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-md shadow-indigo-600/30 transition-all active:scale-95 self-start sm:self-auto"
         >
           <Download className="w-4 h-4" />

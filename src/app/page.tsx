@@ -36,10 +36,12 @@ import ConfirmDeleteModal from '@/components/ConfirmDeleteModal';
 import { NavigationTab, BookingItem, EventItem, TicketType } from '@/types';
 import { useFirestore } from '@/hooks/useFirestore';
 import { deleteBooking } from '@/lib/firestore';
+import { useAdminPopup } from '@/context/AdminPopupContext';
 import { UserPlus, Plus, Building2, MapPin, Calendar, ChevronDown, LayoutGrid, Check } from 'lucide-react';
 
 export default function App() {
   const router = useRouter();
+  const { confirm: adminConfirm, alert: adminAlert } = useAdminPopup();
   const {
     events: eventsList,
     currentEvent,
@@ -137,10 +139,23 @@ export default function App() {
     if (!b) return;
     try {
       await deleteBooking({ id: b.id, ticketNumber: b.ticketNumber, eventId: b.eventId, showId: b.showId, block: b.block, seats: b.seats });
-    } catch (e) {
-      console.error('Failed to delete booking:', e);
-    } finally {
       setDeleteBookingTarget(null);
+      await adminAlert({
+        title: 'Ticket Deleted',
+        subtitle: 'Database Updated',
+        message: `Ticket ${b.ticketNumber} for ${b.customerName} has been deleted and seats released.`,
+        type: 'deleted',
+        itemTitle: `${b.customerName} (${b.ticketNumber})`,
+        itemSubtitle: `Amount: ₹${b.amount} • Seats: ${(b.seats || []).join(', ') || 'N/A'}`,
+      });
+    } catch (e: any) {
+      console.error('Failed to delete booking:', e);
+      setDeleteBookingTarget(null);
+      await adminAlert({
+        title: 'Failed to Delete Ticket',
+        message: e?.message || 'Failed to delete booking from database.',
+        type: 'error',
+      });
     }
   };
   const [bookingDetailsTarget, setBookingDetailsTarget] = useState<BookingItem | null>(null);
@@ -184,7 +199,25 @@ export default function App() {
 
   // Handlers: Add Event
   const handleAddEvent = async (newEvent: EventItem) => {
-    await addEvent(newEvent);
+    try {
+      const newId = await addEvent(newEvent);
+      await adminAlert({
+        title: 'Event Created Successfully!',
+        subtitle: 'Published Live',
+        message: `Event "${newEvent.title || newEvent.eventTitle}" is now live and saved in the database.`,
+        type: 'created',
+        itemTitle: newEvent.title || newEvent.eventTitle,
+        itemSubtitle: `Venue: ${newEvent.venue || newEvent.address || 'N/A'} • Date: ${newEvent.date || 'N/A'}`,
+        celebrate: true,
+      });
+      return newId;
+    } catch (err: any) {
+      await adminAlert({
+        title: 'Failed to Create Event',
+        message: err?.message || 'Could not save event to database.',
+        type: 'error',
+      });
+    }
   };
 
   // Handlers: Add Ticket Category
@@ -192,20 +225,77 @@ export default function App() {
 
   const handleAddTicketType = async (newType: TicketType) => {
     if (!currentEvent) return;
-    await addTicketType({
-      ...newType,
-      eventId: currentEvent.id,
-    });
+    try {
+      await addTicketType({
+        ...newType,
+        eventId: currentEvent.id,
+      });
+      await adminAlert({
+        title: 'Ticket Category Added!',
+        subtitle: 'New Tier Active',
+        message: `Category "${newType.name}" added to ${currentEvent.title || 'event'}.`,
+        type: 'created',
+        itemTitle: newType.name,
+        itemSubtitle: `Price: ₹${newType.price || 0} • Quota: ${newType.totalQuota || 0}`,
+        celebrate: true,
+      });
+    } catch (err: any) {
+      await adminAlert({
+        title: 'Failed to Add Category',
+        message: err?.message || 'Could not add ticket category.',
+        type: 'error',
+      });
+    }
   };
 
   const handleUpdateTicketType = async (typeId: string, data: Partial<TicketType>) => {
-    await updateTicketType(typeId, data);
-    setEditingTicketType(null);
+    try {
+      await updateTicketType(typeId, data);
+      setEditingTicketType(null);
+      await adminAlert({
+        title: 'Ticket Category Updated!',
+        subtitle: 'Changes Saved',
+        message: 'The ticket category details and pricing have been updated.',
+        type: 'updated',
+        itemTitle: data.name,
+      });
+    } catch (err: any) {
+      await adminAlert({
+        title: 'Update Failed',
+        message: err?.message || 'Failed to update category.',
+        type: 'error',
+      });
+    }
   };
 
   const handleDeleteTicketType = async (type: TicketType) => {
-    if (!window.confirm(`Delete ticket category "${type.name}"? This cannot be undone.`)) return;
-    await deleteTicketType(type.id);
+    const ok = await adminConfirm({
+      title: 'Delete Category?',
+      subtitle: 'Permanent Action',
+      message: `Are you sure you want to delete category "${type.name}"? This cannot be undone.`,
+      type: 'delete',
+      itemTitle: type.name,
+      itemSubtitle: `Price: ₹${type.price || 0} • Sold: ${type.sold || 0}`,
+      confirmText: 'Yes, Delete',
+    });
+    if (!ok) return;
+
+    try {
+      await deleteTicketType(type.id);
+      await adminAlert({
+        title: 'Category Deleted',
+        subtitle: 'Removed from Database',
+        message: `Ticket category "${type.name}" was successfully removed.`,
+        type: 'deleted',
+        itemTitle: type.name,
+      });
+    } catch (err: any) {
+      await adminAlert({
+        title: 'Delete Failed',
+        message: err?.message || 'Could not delete ticket category.',
+        type: 'error',
+      });
+    }
   };
 
   // Remove rows from their donor tiers when another category takes them over.
@@ -471,11 +561,32 @@ export default function App() {
               }}
               onPrintTicket={(b) => setPrintTicketTarget(b)}
               onCancelBooking={async (b) => {
+                const ok = await adminConfirm({
+                  title: 'Cancel Booking?',
+                  subtitle: 'Release Booked Seats',
+                  message: `Are you sure you want to cancel booking ${b.ticketNumber} for ${b.customerName}?`,
+                  type: 'delete',
+                  itemTitle: `${b.customerName} (${b.ticketNumber})`,
+                  itemSubtitle: `Amount: ₹${b.amount} • Seats: ${(b.seats || []).join(', ') || 'N/A'}`,
+                  confirmText: 'Yes, Cancel Booking',
+                });
+                if (!ok) return;
+
                 try {
                   await cancelBooking(b);
+                  await adminAlert({
+                    title: 'Booking Cancelled',
+                    subtitle: 'Seats Released',
+                    message: `Booking ${b.ticketNumber} has been cancelled and seats released.`,
+                    type: 'deleted',
+                  });
                 } catch (err) {
                   console.error('Cancel booking failed:', err);
-                  window.alert('Failed to cancel booking. Please try again.');
+                  await adminAlert({
+                    title: 'Cancellation Failed',
+                    message: 'Failed to cancel booking. Please try again.',
+                    type: 'error',
+                  });
                 }
               }}
             />

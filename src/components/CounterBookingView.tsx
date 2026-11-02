@@ -245,10 +245,7 @@ export default function CounterBookingView({
 
   const handleCancelBooking = (booking: BookingItem) => {
     setOpenMenuId(null);
-    const ok = window.confirm(
-      `Cancel booking ${booking.ticketNumber} for ${booking.customerName}? This will release the booked seats.`
-    );
-    if (ok) onCancelBooking(booking);
+    onCancelBooking(booking);
   };
 
   const handleExportCSV = () => {

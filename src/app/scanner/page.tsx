@@ -35,6 +35,7 @@ import {
   BatchEntryResult,
 } from '@/types';
 import * as fs from '@/lib/firestore';
+import { useAdminPopup } from '@/context/AdminPopupContext';
 
 type Screen = 'login' | 'denied' | 'dashboard' | 'scanning' | 'select-tickets';
 type ResultKind = 'success' | 'already' | 'invalid' | 'denied';
@@ -74,6 +75,7 @@ function fmtTime(iso?: string): string {
 
 export default function ScannerPortalPage() {
   const router = useRouter();
+  const { alert: adminAlert } = useAdminPopup();
 
   // Session / identity
   const [member, setMember] = useState<ScannerMember | null>(null);
@@ -1282,7 +1284,12 @@ export default function ScannerPortalPage() {
               return;
             }
             if (!eventId || !gateId) {
-              alert('Select event and gate first.');
+              adminAlert({
+                title: 'Selection Required',
+                subtitle: 'Gate / Event Missing',
+                message: 'Please select both an active Event and an assigned Gate before starting ticket scans.',
+                type: 'warning',
+              });
               return;
             }
             setOutcome(null);

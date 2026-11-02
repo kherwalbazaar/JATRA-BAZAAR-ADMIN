@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { EventItem } from '@/types';
 import { getEventExpiryInfo, getEventBannerImage } from '@/lib/utils';
+import { useAdminPopup } from '@/context/AdminPopupContext';
 
 interface EventsViewProps {
   eventsList: EventItem[];
@@ -41,9 +42,9 @@ export default function EventsView({
   onEditEvent,
   onDeleteEvent
 }: EventsViewProps) {
+  const { confirm, alert } = useAdminPopup();
   const [filter, setFilter] = useState<'all' | 'active' | 'upcoming' | 'completed'>('all');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [confirmModal, setConfirmModal] = useState<{ type: 'edit' | 'delete'; event: EventItem | null }>({ type: 'edit', event: null });
 
   const filteredEvents = eventsList.filter(evt => {
     if (filter === 'all') return true;
@@ -181,7 +182,7 @@ export default function EventsView({
                         onClick={(e) => {
                           e.stopPropagation();
                           setOpenMenuId(null);
-                          setConfirmModal({ type: 'edit', event: evt });
+                          onEditEvent(evt);
                         }}
                         className="w-full px-3 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-100 flex items-center gap-2"
                       >
@@ -189,10 +190,36 @@ export default function EventsView({
                         <span>Edit</span>
                       </button>
                       <button
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation();
                           setOpenMenuId(null);
-                          setConfirmModal({ type: 'delete', event: evt });
+                          const ok = await confirm({
+                            title: 'Delete Event?',
+                            subtitle: 'Permanent Action',
+                            message: `Are you sure you want to delete "${evt.partyName || evt.title}"? This action cannot be undone.`,
+                            type: 'delete',
+                            itemTitle: evt.partyName || evt.title,
+                            itemSubtitle: `Venue: ${evt.venue || evt.address || 'N/A'} • Date: ${evt.date || 'N/A'}`,
+                            confirmText: 'Yes, Delete Event',
+                          });
+                          if (!ok) return;
+
+                          try {
+                            await onDeleteEvent(evt.id);
+                            await alert({
+                              title: 'Event Deleted',
+                              subtitle: 'Removed from Database',
+                              message: `Event "${evt.partyName || evt.title}" was permanently removed.`,
+                              type: 'deleted',
+                            });
+                          } catch (err: any) {
+                            console.error('EventsView: Delete failed:', err);
+                            await alert({
+                              title: 'Delete Failed',
+                              message: err?.message || 'Failed to delete event. Please try again.',
+                              type: 'error',
+                            });
+                          }
                         }}
                         className="w-full px-3 py-2 text-left text-xs font-bold text-red-600 hover:bg-red-50 flex items-center gap-2"
                       >
@@ -276,65 +303,6 @@ export default function EventsView({
           );
         })}
       </div>
-      )}
-
-      {/* Confirmation Modal */}
-      {confirmModal.event && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-sm w-full overflow-hidden shadow-2xl border border-slate-100 animate-in zoom-in-95 duration-150">
-            <div className="p-6 text-center">
-              <div className={`w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center ${
-                confirmModal.type === 'delete' ? 'bg-red-100' : 'bg-indigo-100'
-              }`}>
-                {confirmModal.type === 'delete' ? (
-                  <AlertTriangle className="w-7 h-7 text-red-600" />
-                ) : (
-                  <Edit className="w-7 h-7 text-indigo-600" />
-                )}
-              </div>
-              <h3 className="text-lg font-black text-slate-900 mb-1">
-                {confirmModal.type === 'delete' ? 'Delete Event?' : 'Edit Event?'}
-              </h3>
-              <p className="text-sm text-slate-500 font-semibold">
-                {confirmModal.type === 'delete' 
-                  ? `Are you sure you want to delete "${confirmModal.event.partyName || confirmModal.event.title}"? This action cannot be undone.`
-                  : `Do you want to edit "${confirmModal.event.partyName || confirmModal.event.title}"?`}
-              </p>
-            </div>
-            <div className="px-6 pb-6 flex gap-3">
-              <button
-                onClick={() => setConfirmModal({ type: 'edit', event: null })}
-                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black rounded-xl transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  if (confirmModal.type === 'delete' && confirmModal.event) {
-                    console.log('EventsView: Deleting event with ID:', confirmModal.event.id);
-                    try {
-                      await onDeleteEvent(confirmModal.event.id);
-                      console.log('EventsView: Delete completed successfully');
-                    } catch (err) {
-                      console.error('EventsView: Delete failed with error:', err);
-                      alert('Failed to delete event. Please try again.');
-                    }
-                  } else if (confirmModal.type === 'edit' && confirmModal.event) {
-                    onEditEvent(confirmModal.event);
-                  }
-                  setConfirmModal({ type: 'edit', event: null });
-                }}
-                className={`flex-1 py-2.5 text-white text-xs font-black rounded-xl transition-colors ${
-                  confirmModal.type === 'delete' 
-                    ? 'bg-red-600 hover:bg-red-700' 
-                    : 'bg-[#4f39f6] hover:bg-[#432ee0]'
-                }`}
-              >
-                {confirmModal.type === 'delete' ? 'Yes, Delete' : 'Yes, Edit'}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );

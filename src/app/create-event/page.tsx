@@ -6,12 +6,14 @@ import { ArrowLeft, CalendarPlus } from 'lucide-react';
 import { addEvent } from '@/lib/firestore';
 import EventForm from '@/components/EventForm';
 import { EventItem } from '@/types';
+import { useAdminPopup } from '@/context/AdminPopupContext';
 
 function CreateEventContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const partyParam = searchParams.get('partyName') || '';
   const [saving, setSaving] = useState(false);
+  const popup = useAdminPopup();
 
   const goBack = () => {
     if (typeof window !== 'undefined' && window.history.length > 1) {
@@ -25,10 +27,24 @@ function CreateEventContent() {
     setSaving(true);
     try {
       await addEvent(data);
+      await popup.alert({
+        title: 'Event Created Successfully!',
+        subtitle: 'Published to Jatra Bazaar',
+        message: 'The new event and schedule have been created and are now live in the system.',
+        type: 'created',
+        celebrate: true,
+        itemTitle: data.title || data.subtitle || 'New Event',
+        itemSubtitle: data.venue || data.address || undefined,
+      });
       goBack();
     } catch (err) {
       console.error('Failed to create event:', err);
-      alert('Failed to create event. Try again.');
+      await popup.alert({
+        title: 'Failed to Create Event',
+        subtitle: 'Database Error',
+        message: err instanceof Error ? err.message : 'Failed to create event. Please try again.',
+        type: 'error',
+      });
       throw err;
     } finally {
       setSaving(false);

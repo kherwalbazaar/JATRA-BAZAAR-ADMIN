@@ -13,10 +13,12 @@ import {
   X,
   Smartphone,
   QrCode,
+  RefreshCw,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { ScannerMember, TicketEntry } from '@/types';
 import * as fs from '@/lib/firestore';
+import { useAdminPopup } from '@/context/AdminPopupContext';
 
 const approvalBadge: Record<string, string> = {
   pending: 'bg-amber-100 text-amber-800 border-amber-200',
@@ -38,6 +40,7 @@ const accountLabel: Record<string, string> = {
 };
 
 export default function ScannerMemberList() {
+  const { alert: adminAlert } = useAdminPopup();
   const [members, setMembers] = useState<ScannerMember[]>([]);
   const [entries, setEntries] = useState<TicketEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,7 +136,12 @@ export default function ScannerMemberList() {
       }
     } catch (err) {
       console.error('Scanner status change failed:', err);
-      alert('Failed to update scanner member. Try again.');
+      adminAlert({
+        title: 'Status Update Failed',
+        subtitle: 'Scanner Member Error',
+        message: err instanceof Error ? err.message : 'Failed to update scanner member status. Please try again.',
+        type: 'error',
+      });
     } finally {
       setSaving(false);
       setConfirm(null);
@@ -151,7 +159,12 @@ export default function ScannerMemberList() {
     e.preventDefault();
     if (!editing) return;
     if (!editForm.name.trim() || !editForm.mobile.trim() || !editForm.email.trim()) {
-      alert('Name, Mobile and Email are required.');
+      adminAlert({
+        title: 'Required Information Missing',
+        subtitle: 'Validation Warning',
+        message: 'Name, Mobile Number, and Email are required to update this scanner member.',
+        type: 'warning',
+      });
       return;
     }
     setSaving(true);
@@ -169,9 +182,22 @@ export default function ScannerMemberList() {
         metadata: { scannerId: editing.scannerId, name: editForm.name.trim() },
       });
       setEditing(null);
+      await adminAlert({
+        title: 'Scanner Member Updated!',
+        subtitle: 'Profile Changes Saved',
+        message: `Member profile details for "${editForm.name.trim()}" (${editing.scannerId}) have been updated successfully.`,
+        type: 'updated',
+        itemTitle: editForm.name.trim(),
+        itemSubtitle: editForm.email.trim(),
+      });
     } catch (err) {
       console.error('Update member failed:', err);
-      alert('Failed to update member. Try again.');
+      adminAlert({
+        title: 'Update Failed',
+        subtitle: 'Database Error',
+        message: err instanceof Error ? err.message : 'Failed to update member. Please try again.',
+        type: 'error',
+      });
     } finally {
       setSaving(false);
       setMenuFor(null);
@@ -182,13 +208,45 @@ export default function ScannerMemberList() {
     const n = c.member.name;
     switch (c.action) {
       case 'approve':
-        return { title: 'Approve Scanner?', body: `${n} will be able to scan audience tickets once approved and active.`, btn: 'Approve', btnCls: 'bg-emerald-600 hover:bg-emerald-700' };
+        return {
+          title: 'Approve Scanner?',
+          subtitle: 'Authorize Gate Access',
+          body: `${n} will be authorized to scan audience tickets at gates once approved and active.`,
+          btn: 'Approve Member',
+          gradient: 'bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-600',
+          btnGradient: 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-500/25',
+          Icon: CheckCircle2,
+        };
       case 'reject':
-        return { title: 'Reject Scanner?', body: `${n} will no longer be able to access the scanner.`, btn: 'Reject', btnCls: 'bg-red-600 hover:bg-red-700' };
+        return {
+          title: 'Reject Scanner?',
+          subtitle: 'Deny Scanner Access',
+          body: `${n} will be rejected and will not be able to log in or scan audience tickets.`,
+          btn: 'Reject Access',
+          gradient: 'bg-gradient-to-br from-rose-600 via-pink-600 to-red-600',
+          btnGradient: 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 shadow-rose-500/25',
+          Icon: XCircle,
+        };
       case 'deactivate':
-        return { title: 'Deactivate Scanner?', body: `${n} will no longer be able to scan audience tickets.`, btn: 'Deactivate', btnCls: 'bg-slate-700 hover:bg-slate-800' };
+        return {
+          title: 'Deactivate Scanner?',
+          subtitle: 'Temporary Suspension',
+          body: `${n} will be temporarily suspended from scanning tickets until reactivated.`,
+          btn: 'Deactivate Scanner',
+          gradient: 'bg-gradient-to-br from-amber-500 via-orange-500 to-yellow-600',
+          btnGradient: 'bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 shadow-orange-500/25',
+          Icon: PauseCircle,
+        };
       default:
-        return { title: 'Activate Scanner?', body: `${n} will be able to scan audience tickets again (if approved).`, btn: 'Activate', btnCls: 'bg-emerald-600 hover:bg-emerald-700' };
+        return {
+          title: 'Activate Scanner?',
+          subtitle: 'Restore Access',
+          body: `${n} will have their scanning account reactivated and can resume gate scanning.`,
+          btn: 'Reactivate Scanner',
+          gradient: 'bg-gradient-to-br from-teal-600 via-emerald-600 to-green-600',
+          btnGradient: 'bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 shadow-emerald-500/25',
+          Icon: PlayCircle,
+        };
     }
   };
 
@@ -557,26 +615,83 @@ export default function ScannerMemberList() {
       {/* Confirmation dialog */}
       {confirm && (() => {
         const c = confirmCopy(confirm);
+        const Icon = c.Icon;
         return (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50" onClick={() => !saving && setConfirm(null)} />
-            <div className="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm border border-slate-200">
-              <h3 className="text-sm font-black text-slate-800 mb-1.5">{c.title}</h3>
-              <p className="text-xs font-semibold text-slate-500 mb-5">{c.body}</p>
-              <div className="flex justify-end gap-2.5">
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+            <div
+              className="fixed inset-0 bg-slate-950/70 backdrop-blur-md transition-opacity animate-in fade-in duration-200"
+              onClick={() => !saving && setConfirm(null)}
+            />
+            <div className="relative w-full max-w-sm bg-white rounded-3xl shadow-[0_25px_70px_rgba(0,0,0,0.35)] overflow-hidden border border-white/20 animate-in zoom-in-95 fade-in duration-200 z-10 my-auto">
+              <div className={`relative ${c.gradient} px-6 pt-7 pb-8 text-center text-white overflow-hidden`}>
+                <div className="absolute -top-10 -left-10 w-36 h-36 rounded-full bg-white/10 blur-xs pointer-events-none" />
+                <div className="absolute -bottom-14 -right-8 w-40 h-40 rounded-full bg-white/10 blur-xs pointer-events-none" />
+                <div className="absolute top-4 right-12 w-8 h-8 rounded-full bg-white/15 pointer-events-none" />
+
                 <button
+                  type="button"
                   onClick={() => setConfirm(null)}
                   disabled={saving}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-black rounded-xl transition-colors disabled:opacity-50"
+                  className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-white/20 hover:bg-white/35 active:scale-95 text-white flex items-center justify-center transition-all duration-150 backdrop-blur-sm disabled:opacity-50"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+
+                <div className="relative inline-flex items-center justify-center w-18 h-18 rounded-3xl bg-white/20 backdrop-blur-md mb-3 shadow-xl ring-4 ring-white/20">
+                  <Icon className="w-9 h-9 text-white drop-shadow-md" />
+                </div>
+
+                <h3 className="text-xl font-black text-white tracking-tight drop-shadow-sm">
+                  {c.title}
+                </h3>
+                <p className="text-[11px] font-extrabold text-white/85 tracking-wider uppercase mt-1">
+                  {c.subtitle}
+                </p>
+              </div>
+
+              <div className="px-6 py-5 space-y-4">
+                <p className="text-sm font-semibold text-slate-600 text-center leading-relaxed">
+                  {c.body}
+                </p>
+
+                <div className="flex items-center gap-3 p-3.5 bg-gradient-to-r from-slate-50 to-slate-100/90 rounded-2xl border border-slate-200/90 shadow-xs">
+                  <div className="w-10 h-10 rounded-xl bg-white shadow-xs border border-slate-200/60 flex items-center justify-center flex-shrink-0 text-slate-700">
+                    <Users className="w-5 h-5 text-indigo-600" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-black text-slate-800 truncate">
+                      {confirm.member.name}
+                    </p>
+                    <p className="text-[11px] font-bold text-slate-500 font-mono truncate">
+                      {confirm.member.scannerId} • {confirm.member.mobile || 'No Mobile'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-6 pb-6 pt-1 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setConfirm(null)}
+                  disabled={saving}
+                  className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 active:scale-[0.98] text-slate-700 text-xs font-black rounded-2xl transition-all duration-150 disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={applyAction}
                   disabled={saving}
-                  className={`px-4 py-2 text-white text-xs font-black rounded-xl transition-colors disabled:opacity-50 ${c.btnCls}`}
+                  className={`flex-1 py-3 px-4 text-white text-xs font-black rounded-2xl shadow-md active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-1.5 disabled:opacity-60 ${c.btnGradient}`}
                 >
-                  {saving ? 'Working...' : c.btn}
+                  {saving ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Updating…</span>
+                    </>
+                  ) : (
+                    <span>{c.btn}</span>
+                  )}
                 </button>
               </div>
             </div>

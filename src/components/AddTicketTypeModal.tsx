@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, PlusCircle, Tag, Layers, CheckCircle, ChevronUp, ChevronDown, Check } from 'lucide-react';
 import { Seat, TicketType } from '@/types';
+import { useAdminPopup } from '@/context/AdminPopupContext';
 
 const BLOCK_OPTIONS = [
   'A1', 'A2', 'A3',
@@ -42,6 +43,7 @@ export default function AddTicketTypeModal({
   onReassignRows
 }: AddTicketTypeModalProps) {
   const isEdit = !!editingType;
+  const { confirm, alert } = useAdminPopup();
   const [committee, setCommittee] = useState('');
   const [name, setName] = useState('');
   const [block, setBlock] = useState('');
@@ -147,28 +149,40 @@ export default function AddTicketTypeModal({
     return { total: list.length, available: list.filter((s) => s.status === 'available').length };
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!committee.trim()) {
-      alert('Please select a committee name');
+      await alert({
+        title: 'Committee Required',
+        message: 'Please select a committee name to proceed.',
+        type: 'warning',
+      });
       return;
     }
     if (!name.trim()) {
-      alert('Please enter tier name');
+      await alert({
+        title: 'Tier Name Required',
+        message: 'Please enter a name for this ticket category.',
+        type: 'warning',
+      });
       return;
     }
     if (block && takenBlocks.has(block.toUpperCase())) {
-      alert(`Block ${block} is already used by another tier — pick a different block.`);
+      await alert({
+        title: 'Block Already Assigned',
+        message: `Block ${block} is already used by another tier — pick a different block.`,
+        type: 'warning',
+      });
       return;
     }
     // Rows owned by another tier are only allowed if they are movable (no sold seats).
     const clash = selectedRows.filter((r) => takenRows.has(r.toUpperCase()) && !movableRows.has(r.toUpperCase()));
     if (clash.length) {
-      alert(
-        `Row${clash.length > 1 ? 's' : ''} ${clash.join(', ')} already assigned to another tier and ${
-          clash.length > 1 ? 'have' : 'has'
-        } sold seats — remove ${clash.length > 1 ? 'them' : 'it'} or pick other rows.`
-      );
+      await alert({
+        title: 'Sold Seats Clash',
+        message: `Row${clash.length > 1 ? 's' : ''} ${clash.join(', ')} already assigned to another tier with sold seats — remove ${clash.length > 1 ? 'them' : 'it'} or pick other rows.`,
+        type: 'error',
+      });
       return;
     }
     // Movable rows will be removed from their donor tiers on save.
@@ -181,13 +195,19 @@ export default function AddTicketTypeModal({
     });
 
     const moveNote = rowsToReassign.length
-      ? `\n\nRows moved from other tiers (no seats sold): ${rowsToReassign.join(', ')}`
+      ? ` • Rows moved from other tiers: ${rowsToReassign.join(', ')}`
       : '';
 
     if (isEdit) {
-      const confirmed = window.confirm(
-        `Save changes to ticket category "${name.trim()}"?\n\nCommittee: ${committee.trim()}\nBlock: ${block || 'All'}\nRows: ${selectedRows.length ? selectedRows.join(', ') : 'All'}\nPrice: ₹${Number(price) || 0}\nTotal Quota: ${Number(quota) || 0}${moveNote}`
-      );
+      const confirmed = await confirm({
+        title: 'Save Category Changes?',
+        subtitle: 'Confirm Updates',
+        message: `Update category "${name.trim()}"?`,
+        type: 'update',
+        itemTitle: name.trim(),
+        itemSubtitle: `Price: ₹${Number(price) || 0} • Quota: ${Number(quota) || 0} • Block: ${block || 'All'}${moveNote}`,
+        confirmText: 'Yes, Save Changes',
+      });
       if (!confirmed) return;
     }
 

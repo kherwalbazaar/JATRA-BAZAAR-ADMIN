@@ -157,6 +157,14 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // ─── 14. Block categories (per-block selling channel) ──────
+    // Without this path the collection falls through to the
+    // catch-all below and every read fails with
+    // "Missing or insufficient permissions".
+    match /blockCategories/{categoryId} {
+      allow read, write: if true;
+    }
+
     // Anything not listed above is denied
     match /{document=**} {
       allow read, write: if false;

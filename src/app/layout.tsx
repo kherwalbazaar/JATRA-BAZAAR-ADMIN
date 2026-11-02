@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { AdminPopupProvider } from '@/context/AdminPopupContext';
 
 export const metadata: Metadata = {
   title: 'Jatra Bazaar - Admin Panel',
@@ -33,7 +34,9 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-[#f4f6fc] text-slate-800 antialiased min-h-screen">
-        {children}
+        <AdminPopupProvider>
+          {children}
+        </AdminPopupProvider>
       </body>
     </html>
   );

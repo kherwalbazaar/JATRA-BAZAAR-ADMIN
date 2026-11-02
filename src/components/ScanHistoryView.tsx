@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { TicketEntry, ScannerMember, BookingItem } from '@/types';
 import * as fs from '@/lib/firestore';
+import { useAdminPopup } from '@/context/AdminPopupContext';
 
 function localDateStr(d: Date = new Date()): string {
   const year = d.getFullYear();
@@ -69,6 +70,7 @@ function fmt(iso?: string, scanTime?: string, scanDate?: string): string {
 }
 
 export default function ScanHistoryView() {
+  const { confirm: adminConfirm, alert: adminAlert } = useAdminPopup();
   const [entries, setEntries] = useState<TicketEntry[]>([]);
   const [members, setMembers] = useState<ScannerMember[]>([]);
   const [bookings, setBookings] = useState<BookingItem[]>([]);
@@ -112,7 +114,6 @@ export default function ScanHistoryView() {
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [viewingEntry, setViewingEntry] = useState<TicketEntry | null>(null);
   const [editingEntry, setEditingEntry] = useState<TicketEntry | null>(null);
-  const [deletingEntry, setDeletingEntry] = useState<TicketEntry | null>(null);
   const [editForm, setEditForm] = useState({
     audienceName: '',
     gateId: '',
@@ -146,19 +147,41 @@ export default function ScanHistoryView() {
     }
   };
 
-  const handleDeleteEntry = async () => {
-    if (!deletingEntry) return;
+  const handleDeleteEntryItem = async (entry: TicketEntry) => {
+    const ticketLabel = entry.ticketId || entry.ticketNumber || entry.id;
+    const ok = await adminConfirm({
+      title: 'Delete Scan Record?',
+      subtitle: 'Restores Ticket Entry',
+      message: `Are you sure you want to delete the scan entry for ticket #${ticketLabel}? This will restore the ticket's valid entry status so it can be scanned again at the gate.`,
+      type: 'delete',
+      confirmText: 'Yes, Delete Record',
+      cancelText: 'Keep Record',
+      itemTitle: `Ticket #${ticketLabel}`,
+      itemSubtitle: entry.ticketType ? `${entry.ticketType} Ticket` : 'Gate Scan Record',
+    });
+    if (!ok) return;
+
     setIsSubmitting(true);
     try {
-      await fs.deleteTicketEntry(deletingEntry);
+      await fs.deleteTicketEntry(entry);
       setEntries((prev) =>
-        prev.filter((item) => (item.id || item.ticketId) !== (deletingEntry.id || deletingEntry.ticketId))
+        prev.filter((item) => (item.id || item.ticketId) !== (entry.id || entry.ticketId))
       );
-      setToast({ type: 'success', message: 'Scan entry deleted successfully.' });
-      setDeletingEntry(null);
+      await adminAlert({
+        title: 'Scan Record Deleted',
+        subtitle: 'Entry Restored',
+        message: `Ticket #${ticketLabel} scan entry has been deleted. It can now be scanned again at gates.`,
+        type: 'deleted',
+        itemTitle: `Ticket #${ticketLabel}`,
+      });
     } catch (err) {
       console.error('Failed to delete scan entry:', err);
-      setToast({ type: 'error', message: 'Failed to delete scan entry.' });
+      await adminAlert({
+        title: 'Delete Failed',
+        subtitle: 'Database Error',
+        message: err instanceof Error ? err.message : 'Failed to delete scan record. Try again.',
+        type: 'error',
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -179,11 +202,22 @@ export default function ScanHistoryView() {
       setEntries((prev) =>
         prev.map((item) => (item.id === editingEntry.id ? { ...item, ...patch } : item))
       );
-      setToast({ type: 'success', message: 'Scan record updated successfully.' });
       setEditingEntry(null);
+      await adminAlert({
+        title: 'Scan Record Updated!',
+        subtitle: 'Changes Saved',
+        message: 'The scan record details and gate assignment have been updated successfully.',
+        type: 'updated',
+        itemTitle: `Ticket #${editingEntry.ticketId || editingEntry.id}`,
+      });
     } catch (err) {
       console.error('Failed to update scan entry:', err);
-      setToast({ type: 'error', message: 'Failed to update scan record.' });
+      await adminAlert({
+        title: 'Update Failed',
+        subtitle: 'Database Error',
+        message: err instanceof Error ? err.message : 'Failed to update scan record.',
+        type: 'error',
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -647,8 +681,8 @@ export default function ScanHistoryView() {
                           <button
                             type="button"
                             onClick={() => {
-                              setDeletingEntry(e);
                               setActiveMenuId(null);
+                              handleDeleteEntryItem(e);
                             }}
                             className="w-full px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer transition-colors"
                           >
@@ -818,7 +852,7 @@ export default function ScanHistoryView() {
                 onClick={() => {
                   const cur = viewingEntry;
                   setViewingEntry(null);
-                  setDeletingEntry(cur);
+                  if (cur) handleDeleteEntryItem(cur);
                 }}
                 className="text-xs font-bold text-rose-600 hover:text-rose-800 px-3 py-2 rounded-xl hover:bg-rose-50 flex items-center gap-1.5 transition-colors cursor-pointer"
               >
@@ -954,61 +988,6 @@ export default function ScanHistoryView() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {deletingEntry && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs" onClick={() => !isSubmitting && setDeletingEntry(null)} />
-          <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-sm border border-slate-100 overflow-hidden text-slate-800 animate-in fade-in zoom-in-95 p-6 text-center space-y-4">
-            <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
-              <AlertTriangle className="w-7 h-7" />
-            </div>
-
-            <div>
-              <h3 className="text-base font-black text-slate-900">Delete Scan Record?</h3>
-              <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">
-                Are you sure you want to delete the scan entry for ticket{' '}
-                <strong className="text-slate-800 font-mono">#{deletingEntry.ticketId || deletingEntry.ticketNumber || deletingEntry.id}</strong>?
-              </p>
-            </div>
-
-            <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-3 text-left">
-              <p className="text-[11px] text-amber-900 font-semibold leading-snug">
-                Deleting this record will restore the ticket's valid entry status so it can be scanned again at the gate.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2.5 pt-1">
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={() => setDeletingEntry(null)}
-                className="flex-1 py-2.5 text-xs font-bold text-slate-600 hover:text-slate-800 rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={handleDeleteEntry}
-                className="flex-1 py-2.5 text-xs font-black text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                {isSubmitting ? (
-                  <>
-                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Deleting...</span>
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete</span>
-                  </>
-                )}
-              </button>
-            </div>
           </div>
         </div>
       )}

@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { X, UserPlus, Camera } from 'lucide-react';
 import { GateInfo } from '@/types';
 import * as fs from '@/lib/firestore';
+import { useAdminPopup } from '@/context/AdminPopupContext';
 
 interface CreateScannerUserModalProps {
   isOpen: boolean;
@@ -30,6 +31,7 @@ const emptyForm: FormState = {
 };
 
 export default function CreateScannerUserModal({ isOpen, onClose, gates = [] }: CreateScannerUserModalProps) {
+  const { alert: adminAlert } = useAdminPopup();
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -66,7 +68,15 @@ export default function CreateScannerUserModal({ isOpen, onClose, gates = [] }: 
         assignedGateId: form.assignedGateId,
         address: form.address.trim(),
       });
-      alert(`User created: ${created.scannerId} (pending approval)`);
+      await adminAlert({
+        title: 'Scanner User Created!',
+        subtitle: 'Pending Admin Approval',
+        message: `New scanner member has been registered with ID ${created.scannerId}. They will be able to scan once approved.`,
+        type: 'created',
+        celebrate: true,
+        itemTitle: form.name.trim(),
+        itemSubtitle: form.email.trim(),
+      });
       setForm(emptyForm);
       onClose();
     } catch (err) {

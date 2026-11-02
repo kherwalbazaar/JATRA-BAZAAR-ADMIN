@@ -8,6 +8,7 @@ import { db, FIRESTORE_COLLECTIONS } from '@/lib/firebase';
 import { updateEvent, deleteEvent } from '@/lib/firestore';
 import EventForm from '@/components/EventForm';
 import { EventItem } from '@/types';
+import { useAdminPopup } from '@/context/AdminPopupContext';
 
 function EditEventForm() {
   const searchParams = useSearchParams();
@@ -18,6 +19,7 @@ function EditEventForm() {
   const [deleting, setDeleting] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [eventData, setEventData] = useState<EventItem | null>(null);
+  const popup = useAdminPopup();
 
   const goBack = () => {
     if (typeof window !== 'undefined' && window.history.length > 1) {
@@ -56,24 +58,59 @@ function EditEventForm() {
     setSaving(true);
     try {
       await updateEvent(id!, data);
+      await popup.alert({
+        title: 'Event Updated Successfully!',
+        subtitle: 'Changes Saved',
+        message: 'The event details, schedule, and stage configurations were updated successfully.',
+        type: 'updated',
+        itemTitle: data.title || data.subtitle || 'Event',
+        itemSubtitle: data.venue || data.address || undefined,
+      });
       goBack();
     } catch (err) {
       console.error('Failed to update event:', err);
-      alert('Failed to save. Try again.');
+      await popup.alert({
+        title: 'Failed to Save',
+        subtitle: 'Update Error',
+        message: err instanceof Error ? err.message : 'Failed to save event changes. Please try again.',
+        type: 'error',
+      });
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!confirm('Are you sure you want to delete this event? This cannot be undone.')) return;
+    const ok = await popup.confirm({
+      title: 'Delete This Event?',
+      subtitle: 'Permanent Action',
+      message: 'Are you sure you want to delete this event? This will permanently remove the event, its ticket tiers, and bookings. This cannot be undone.',
+      type: 'delete',
+      confirmText: 'Yes, Delete Event',
+      cancelText: 'Keep Event',
+      itemTitle: eventData?.title || eventData?.subtitle || 'Event',
+      itemSubtitle: eventData?.venue || eventData?.address || undefined,
+    });
+    if (!ok) return;
+
     setDeleting(true);
     try {
       await deleteEvent(id!);
+      await popup.alert({
+        title: 'Event Deleted',
+        subtitle: 'Removed from Database',
+        message: `"${eventData?.title || 'Event'}" has been permanently deleted from the system.`,
+        type: 'deleted',
+      });
       goBack();
     } catch (err) {
       console.error('Failed to delete event:', err);
-      alert('Failed to delete. Try again.');
+      await popup.alert({
+        title: 'Failed to Delete',
+        subtitle: 'Database Error',
+        message: err instanceof Error ? err.message : 'Could not delete the event. Try again.',
+        type: 'error',
+      });
     } finally {
       setDeleting(false);
     }

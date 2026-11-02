@@ -1,15 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  collection,
-  query,
-  where,
-  orderBy,
-  onSnapshot,
-  Unsubscribe,
-} from 'firebase/firestore';
-import { db, FIRESTORE_COLLECTIONS } from '@/lib/firebase';
+import { Unsubscribe } from 'firebase/firestore';
+import * as fs from '@/lib/firestore';
 import { BookingItem } from '@/types';
 import { formatINR } from '@/lib/utils';
 import {
@@ -105,170 +98,69 @@ export default function AdminBookings({
     return () => document.removeEventListener('mousedown', handler);
   }, [menuOpenId]);
 
-  // ─── Reactive Firestore onSnapshot Listener with Lifecycle Cleanup ───
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      await fs.syncAllFromSupabase();
+    } catch (e) {
+      console.warn('Manual sync failed:', e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // ─── Reactive Stream with Supabase + Firestore Integration ───
   useEffect(() => {
     isInitialLoadRef.current = true;
     previousIdsRef.current = new Set();
     setLoading(true);
     setConnectionError(null);
 
-    let unsubscribe: Unsubscribe | null = null;
-    let fallbackUnsubscribe: Unsubscribe | null = null;
+    const unsubscribe = fs.listenBookings(
+      currentShowId || '',
+      (fetchedBookings) => {
+        setIsLiveConnected(true);
+        setConnectionError(null);
+        setLoading(false);
 
-    try {
-      const bookingsCol = collection(db, FIRESTORE_COLLECTIONS.BOOKINGS);
+        const currentIds = new Set<string>(fetchedBookings.map((b) => b.id));
 
-      // Listen to the full collection ordered by createdAt, then filter by
-      // showId/eventId in JS — legacy online bookings may only have eventId
-      // (no showId), so a Firestore-level where('showId'==) would miss them.
-      let q = query(bookingsCol, orderBy('createdAt', 'desc'));
-
-      unsubscribe = onSnapshot(
-        q,
-        (snapshot) => {
-          setIsLiveConnected(true);
-          setConnectionError(null);
-          setLoading(false);
-
-          const fetchedBookings: BookingItem[] = [];
-          const currentIds = new Set<string>();
-
-          snapshot.forEach((doc) => {
-            const data = doc.data();
-            // Client-side event filter — covers both showId and legacy eventId-only docs
-            if (currentShowId) {
-              const docShowId = data.showId || '';
-              const docEventId = data.eventId || '';
-              if (docShowId !== currentShowId && docEventId !== currentShowId) return;
+        // Detect new incoming bookings in real-time
+        if (!isInitialLoadRef.current && previousIdsRef.current.size > 0) {
+          const freshIds = new Set<string>();
+          currentIds.forEach((id) => {
+            if (!previousIdsRef.current.has(id)) {
+              freshIds.add(id);
             }
-            const item: BookingItem = {
-              id: doc.id,
-              bookingId: data.bookingId || data.ticketNumber || doc.id,
-              showId: data.showId || data.eventId || '',
-              eventId: data.eventId || data.showId || '',
-              eventName: data.eventName || '',
-              ticketNumber: data.ticketNumber || doc.id,
-              customerName: data.customerName || 'Walk-in',
-              customerPhone: data.customerPhone || '',
-              customerEmail: data.customerEmail || '',
-              ticketTypeId: data.ticketTypeId || '',
-              ticketTypeName: data.ticketTypeName || 'General',
-              quantity: Number(data.quantity) || 1,
-              unitPrice: Number(data.unitPrice) || 0,
-              ticketAmount: Number(data.ticketAmount) || Number(data.amount) || 0,
-              baseAmount: Number(data.baseAmount) || Number(data.ticketAmount) || 0,
-              convenienceFee: Number(data.convenienceFee) || 0,
-              gstOnConvenienceFee: Number(data.gstOnConvenienceFee) || 0,
-              platformCharge: Number(data.platformCharge) || 0,
-              totalFees: Number(data.totalFees) || 0,
-              amount: Number(data.amount) || 0,
-              finalCustomerAmount: Number(data.finalCustomerAmount) || Number(data.amount) || 0,
-              date: data.date || '',
-              time: data.time || '',
-              source: (data.source as any) || 'Counter',
-              paymentMethod: (data.paymentMethod as any) || 'Cash',
-              transactionId: data.transactionId || '',
-              status: (data.status as any) || 'Confirmed',
-              bookingStatus: data.bookingStatus || data.status || 'Confirmed',
-              assignedGate: data.assignedGate || '',
-              block: data.block || '',
-              seats: Array.isArray(data.seats) ? data.seats : [],
-              seatCount: Number(data.seatCount) || (Array.isArray(data.seats) ? data.seats.length : 1),
-              seatNumber: data.seatNumber || null,
-              enteredCount: Number(data.enteredCount) || 0,
-              remainingCount: Number(data.remainingCount) || 0,
-              usedTickets: Array.isArray(data.usedTickets) ? data.usedTickets : [],
-              usedSeats: Array.isArray(data.usedSeats) ? data.usedSeats : [],
-              createdAt: data.createdAt ? (typeof data.createdAt === 'object' && data.createdAt.toDate ? data.createdAt.toDate().toISOString() : String(data.createdAt)) : '',
-            };
-            fetchedBookings.push(item);
-            currentIds.add(doc.id);
           });
-
-          // Detect new incoming bookings in real-time
-          if (!isInitialLoadRef.current && previousIdsRef.current.size > 0) {
-            const freshIds = new Set<string>();
-            currentIds.forEach((id) => {
-              if (!previousIdsRef.current.has(id)) {
-                freshIds.add(id);
-              }
-            });
-            if (freshIds.size > 0) {
-              setNewlyAddedIds(freshIds);
-              // Clear flash after 4 seconds
-              setTimeout(() => {
-                setNewlyAddedIds((prev) => {
-                  const next = new Set(prev);
-                  freshIds.forEach((id) => next.delete(id));
-                  return next;
-                });
-              }, 4000);
-            }
-          }
-
-          isInitialLoadRef.current = false;
-          previousIdsRef.current = currentIds;
-
-          // Double check chronological sort
-          fetchedBookings.sort((a, b) => {
-            const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-            const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-            return timeB - timeA;
-          });
-
-          setBookings(fetchedBookings);
-        },
-        (error) => {
-          console.warn('AdminBookings: Primary index listener failed, trying fallback...', error.message);
-
-          // Graceful fallback: If index is still building or if documents use eventId
-          if (currentShowId) {
-            const fallbackQuery = query(
-              bookingsCol,
-              where('eventId', '==', currentShowId)
-            );
-            fallbackUnsubscribe = onSnapshot(
-              fallbackQuery,
-              (snap) => {
-                setIsLiveConnected(true);
-                setConnectionError(null);
-                setLoading(false);
-                const items: BookingItem[] = snap.docs.map((d) => ({
-                  id: d.id,
-                  ...d.data(),
-                } as BookingItem));
-                items.sort((a, b) => {
-                  const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-                  const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-                  return timeB - timeA;
-                });
-                setBookings(items);
-              },
-              (fallbackErr) => {
-                console.error('AdminBookings listener error:', fallbackErr);
-                setConnectionError(fallbackErr.message || 'Live connection disconnected');
-                setIsLiveConnected(false);
-                setLoading(false);
-              }
-            );
-          } else {
-            setConnectionError(error.message || 'Error subscribing to bookings');
-            setIsLiveConnected(false);
-            setLoading(false);
+          if (freshIds.size > 0) {
+            setNewlyAddedIds(freshIds);
+            setTimeout(() => {
+              setNewlyAddedIds((prev) => {
+                const next = new Set(prev);
+                freshIds.forEach((id) => next.delete(id));
+                return next;
+              });
+            }, 4000);
           }
         }
-      );
-    } catch (err: any) {
-      console.error('Failed to initialize Firestore listener:', err);
-      setConnectionError(err.message || 'Firestore initialization failed');
-      setIsLiveConnected(false);
-      setLoading(false);
-    }
 
-    // Unsubscribe cleanup handler to prevent orphan reads & memory leaks
+        isInitialLoadRef.current = false;
+        previousIdsRef.current = currentIds;
+        setBookings(fetchedBookings);
+      },
+      (error) => {
+        console.warn('AdminBookings listener notice:', error);
+        setConnectionError(error?.message || 'Live connection disconnected');
+        setIsLiveConnected(false);
+        setLoading(false);
+      }
+    );
+
     return () => {
       if (unsubscribe) unsubscribe();
-      if (fallbackUnsubscribe) fallbackUnsubscribe();
     };
   }, [currentShowId]);
 
@@ -361,6 +253,16 @@ export default function AdminBookings({
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={handleManualSync}
+            disabled={isSyncing}
+            className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-3.5 py-2 rounded-xl font-bold text-xs shadow-xs transition-colors disabled:opacity-50"
+            title="Sync bookings from Supabase"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-indigo-600' : ''}`} />
+            <span>{isSyncing ? 'Syncing…' : 'Sync'}</span>
+          </button>
+
           <button
             onClick={handleExportCSV}
             className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-3.5 py-2 rounded-xl font-bold text-xs shadow-xs transition-colors"

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { X, CalendarPlus, MapPin, Calendar, Image as ImageIcon } from 'lucide-react';
 import { EventItem, PartyItem } from '@/types';
 import { computeParties } from '@/lib/parties';
+import { useAdminPopup } from '@/context/AdminPopupContext';
 
 interface CreateEventModalProps {
   isOpen: boolean;
@@ -20,6 +21,7 @@ export default function CreateEventModal({
   onUpdateEvent,
   editingEvent
 }: CreateEventModalProps) {
+  const { alert: adminAlert } = useAdminPopup();
   const [parties, setParties] = useState<PartyItem[]>(() => computeParties());
   const [isCustomParty, setIsCustomParty] = useState(false);
   const [title, setTitle] = useState('');
@@ -108,7 +110,12 @@ export default function CreateEventModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !venue.trim() || !date.trim()) {
-      alert('Please fill event title, venue, and date');
+      adminAlert({
+        title: 'Required Details Missing',
+        subtitle: 'Validation Warning',
+        message: 'Please fill in the Event Title / Party Name, Venue, and Date before submitting.',
+        type: 'warning',
+      });
       return;
     }
 

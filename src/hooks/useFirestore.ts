@@ -203,6 +203,7 @@ export interface FirestoreState {
   }) => Promise<number>;
   seedDatabase: () => Promise<void>;
   retryConnection: () => void;
+  syncAllFromSupabase: () => Promise<{ bookingsCount: number; ticketsCount: number; seatsCount: number }>;
 }
 
 function computeKPIs(
@@ -314,10 +315,13 @@ export function useFirestore(): FirestoreState {
     }
   }, []);
 
-  // 0. Keep "Create New Event" form format stored in Firestore (settings/createEventFormat)
+  // 0. Keep "Create New Event" form format stored in Firestore & backfill any online bookings/seats from Supabase
   useEffect(() => {
     fs.saveEventFormFormat().catch((err) => {
       console.warn('Failed to sync event form format:', err);
+    });
+    fs.syncAllFromSupabase().catch((err) => {
+      console.warn('Initial Supabase sync notice:', err);
     });
   }, []);
 
@@ -1089,5 +1093,6 @@ export function useFirestore(): FirestoreState {
     trimSeatRow: handleTrimSeatRow,
     seedDatabase,
     retryConnection,
+    syncAllFromSupabase: fs.syncAllFromSupabase,
   };
 }
