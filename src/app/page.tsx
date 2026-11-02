@@ -7,6 +7,7 @@ import Header from '@/components/Header';
 import DashboardView from '@/components/DashboardView';
 import EventsView from '@/components/EventsView';
 import PartiesView from '@/components/PartiesView';
+import PartyBookingView from '@/components/PartyBookingView';
 import TicketTypesView from '@/components/TicketTypesView';
 import SeatCreateSection from '@/components/SeatCreateSection';
 import BookingsView from '@/components/BookingsView';
@@ -93,7 +94,7 @@ export default function App() {
   useEffect(() => {
     try {
       const saved = sessionStorage.getItem('jatra_active_tab');
-      const validTabs: NavigationTab[] = ['dashboard', 'events', 'parties', 'tickets-types', 'create-seat', 'diagram', 'counter-booking', 'bookings', 'active-tickets', 'cancelled-tickets', 'cancellation-history', 'refunds', 'tickets', 'scanner-members', 'scan-history', 'online-history', 'payments', 'customers', 'settings', 'logs'];
+      const validTabs: NavigationTab[] = ['dashboard', 'events', 'parties', 'tickets-types', 'create-seat', 'diagram', 'counter-booking', 'party-booking', 'bookings', 'active-tickets', 'cancelled-tickets', 'cancellation-history', 'refunds', 'tickets', 'scanner-members', 'scan-history', 'online-history', 'payments', 'customers', 'settings', 'logs'];
       if (saved && validTabs.includes(saved as NavigationTab)) setCurrentTabState(saved as NavigationTab);
     } catch {
       /* ignore */
@@ -413,6 +414,8 @@ export default function App() {
               onNavigateToEvents={() => setCurrentTab('events')}
             />
           )}
+
+          {currentTab === 'party-booking' && <PartyBookingView events={eventsList} />}
 
           {currentTab === 'tickets-types' && (
             <TicketTypesView

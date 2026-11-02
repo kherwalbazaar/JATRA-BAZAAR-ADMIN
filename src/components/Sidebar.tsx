@@ -22,7 +22,8 @@ import {
   Ban, 
   RotateCcw,
   QrCode,
-  Theater
+  Theater,
+  CalendarCheck
 } from 'lucide-react';
 import { NavigationTab } from '@/types';
 
@@ -41,6 +42,7 @@ export const NAV_LABELS: Record<string, string> = {
   'create-seat': 'Seat Management',
   diagram: 'Seating Layout',
   'counter-booking': 'Counter Sales',
+  'party-booking': 'Party Booking',
   'booking-management': 'Booking Management',
   bookings: 'All Bookings',
   'active-tickets': 'Active Tickets',
@@ -104,6 +106,7 @@ export default function Sidebar({
       title: 'Sales & Bookings',
       items: [
         { id: 'counter-booking', label: NAV_LABELS['counter-booking'], Icon: ShoppingCart },
+        { id: 'party-booking', label: NAV_LABELS['party-booking'], Icon: CalendarCheck },
         { id: 'bookings', label: NAV_LABELS['booking-management'], Icon: BookOpen, isBookingTrigger: true },
         { id: 'online-history', label: NAV_LABELS['online-history'], Icon: Globe },
       ],

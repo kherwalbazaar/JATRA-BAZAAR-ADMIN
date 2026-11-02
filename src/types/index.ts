@@ -17,6 +17,7 @@ export type NavigationTab =
   | 'online-history'
   | 'payments'
   | 'customers'
+  | 'party-booking'
   | 'settings'
   | 'logs';
 
@@ -290,6 +291,34 @@ export interface GateInfo {
   barColor: string;
   status: 'normal' | 'congested' | 'full';
   assignedTicketTypes: string[];
+}
+
+export interface PartyBookingRecord {
+  id: string;
+  party_id: string;
+  party_name: string;
+  committee_id?: string | null;
+  committee_name: string;
+  committee_address?: string | null;
+  event_name: string;
+  event_address: string;
+  contact_number?: string | null;
+  booking_date: string; // YYYY-MM-DD
+  status: 'Confirmed' | 'Cancelled';
+  remarks?: string | null;
+  created_by?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  cancelled_at?: string | null;
+}
+
+export interface PartyBookingStats {
+  totalCommittees: number;
+  totalParties: number;
+  totalBookings: number;
+  upcomingBookings: number;
+  partyBookings?: number;
+  partyUpcoming?: number;
 }
 
 export interface CounterBooth {
