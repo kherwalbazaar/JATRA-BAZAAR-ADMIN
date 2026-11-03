@@ -261,16 +261,13 @@ export default function PartyBookingView({ events }: PartyBookingViewProps) {
     committeeName: '',
     committeeAddress: '',
     eventName: '',
-    eventAddress: '',
-    contactNumber: '',
-    remarks: '',
   });
   const [formError, setFormError] = useState<string | null>(null);
   const [committeeSearch, setCommitteeSearch] = useState('');
   const [committeeDropdownOpen, setCommitteeDropdownOpen] = useState(false);
 
   const resetForm = () => {
-    setForm({ committeeName: '', committeeAddress: '', eventName: '', eventAddress: '', contactNumber: '', remarks: '' });
+    setForm({ committeeName: '', committeeAddress: '', eventName: '' });
     setCommitteeSearch('');
     setFormError(null);
     setCommitteeDropdownOpen(false);
@@ -292,11 +289,8 @@ export default function PartyBookingView({ events }: PartyBookingViewProps) {
     if (!selectedDate) return setFormError('Booking date is required.');
     if (!form.committeeName.trim()) return setFormError('Committee name is required.');
     if (!form.eventName.trim()) return setFormError('Programme / Event name is required.');
-    if (!form.eventAddress.trim()) return setFormError('Programme address / venue is required.');
-    if (form.contactNumber.trim() && form.contactNumber.replace(/\D/g, '').length < 10) {
-      return setFormError('Contact number looks invalid (min 10 digits).');
-    }
-    const { committeeName, eventName, eventAddress } = form;
+    const { committeeName, eventName } = form;
+    const eventAddress = (selectedParty.location || '').trim() || selectedParty.name;
     const bookingDate = selectedDate;
     setFormError(null);
     setSaving(true);
@@ -308,10 +302,8 @@ export default function PartyBookingView({ events }: PartyBookingViewProps) {
         committeeName: committeeName.trim(),
         committeeAddress: form.committeeAddress.trim() || undefined,
         eventName: eventName.trim(),
-        eventAddress: eventAddress.trim(),
-        contactNumber: form.contactNumber.trim() || undefined,
+        eventAddress,
         bookingDate,
-        remarks: form.remarks.trim() || undefined,
         createdBy: 'super_admin',
       });
       setModalOpen(false);
@@ -580,8 +572,8 @@ export default function PartyBookingView({ events }: PartyBookingViewProps) {
                   } ${isToday && !isSelectedDate ? 'ring-2 ring-indigo-400 ring-inset' : ''}`}
                 >
                   <span>{day}</span>
-                  {booked && <span className="text-[8px] font-black uppercase tracking-tight">Booked</span>}
-                  {!booked && !isPast && <span className="text-[8px] font-black uppercase tracking-tight opacity-70">Available</span>}
+                  {booked && <span className="text-[6px] leading-none tracking-tighter sm:text-[8px] sm:leading-tight sm:tracking-tight font-black uppercase">Booked</span>}
+                  {!booked && !isPast && <span className="text-[6px] leading-none tracking-tighter sm:text-[8px] sm:leading-tight sm:tracking-tight font-black uppercase opacity-70">Available</span>}
                 </button>
               );
             })}
@@ -814,43 +806,9 @@ export default function PartyBookingView({ events }: PartyBookingViewProps) {
                     />
                   </div>
 
-                  <div>
-                    <label className="mb-1 block text-[11px] font-extrabold uppercase tracking-widest text-slate-500">
-                      Programme Address / Venue *
-                    </label>
-                    <input
-                      value={form.eventAddress}
-                      onChange={(e) => setForm((f) => ({ ...f, eventAddress: e.target.value }))}
-                      placeholder="Venue address for the show date"
-                      className={inputCls}
-                    />
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1 block text-[11px] font-extrabold uppercase tracking-widest text-slate-500">
-                        Contact Number
-                      </label>
-                      <input
-                        value={form.contactNumber}
-                        onChange={(e) => setForm((f) => ({ ...f, contactNumber: e.target.value }))}
-                        placeholder="10-digit mobile"
-                        inputMode="tel"
-                        className={inputCls}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-[11px] font-extrabold uppercase tracking-widest text-slate-500">
-                        Remarks
-                      </label>
-                      <input
-                        value={form.remarks}
-                        onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))}
-                        placeholder="Optional note"
-                        className={inputCls}
-                      />
-                    </div>
-                  </div>
+                  <p className="text-[11px] font-medium text-slate-400">
+                    Venue is taken from the party's own address.
+                  </p>
                 </div>
               </div>
 
