@@ -6,11 +6,12 @@
 -- 1. public.party_bookings stores ONE booking record per party+date slot.
 --    Party/committee profiles stay in Firestore (settings/parties + events);
 --    only Firestore document IDs are referenced here.
--- 2. Duplicate confirmed bookings are blocked at DB level via a generated
---    unique column (cancelled rows stay in the table as history and are
---    excluded from the constraint).
--- 3. RLS: customers (anon/authenticated) are READ-ONLY on confirmed rows;
---    all writes go through service_role from the Admin Panel API routes.
+-- 2. Duplicate confirmed bookings are blocked at DB level by a partial
+--    unique index; cancelled rows sit outside it, so history is retained and
+--    the date is released for re-booking.
+-- 3. RLS: customers (anon/authenticated) are READ-ONLY; all writes go through
+--    service_role from the Admin Panel API routes. The read policy covers
+--    Cancelled rows too so realtime cancel events reach the Customer Project.
 -- 4. Realtime: table is added to supabase_realtime with FULL replica
 --    identity so both apps can live-update party calendars on INSERT/UPDATE.
 -- 5. Idempotent: safe to re-run.
@@ -36,16 +37,14 @@ CREATE TABLE IF NOT EXISTS public.party_bookings (
   created_by      text,
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
-  cancelled_at    timestamptz,
-  -- Unique slot guard: non-null only while Confirmed; a unique index ignores
-  -- NULLs, so cancelled history rows never block a re-booking of the date.
-  confirmed_slot  text GENERATED ALWAYS AS (
-    CASE WHEN status = 'Confirmed' THEN party_id || '|' || booking_date::text END
-  ) STORED
+  cancelled_at    timestamptz
 );
 
+-- One confirmed booking per party per date. Cancelling removes the row from
+-- the index, so the date becomes bookable again while the record survives.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_party_bookings_confirmed_slot
-  ON public.party_bookings (confirmed_slot);
+  ON public.party_bookings (party_id, booking_date)
+  WHERE status = 'Confirmed';
 
 CREATE INDEX IF NOT EXISTS idx_party_bookings_party_date
   ON public.party_bookings (party_id, booking_date DESC);
@@ -59,15 +58,21 @@ CREATE INDEX IF NOT EXISTS idx_party_bookings_status_date
 ALTER TABLE public.party_bookings ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Public can view confirmed party bookings" ON public.party_bookings;
+DROP POLICY IF EXISTS "Public can view party bookings" ON public.party_bookings;
 DROP POLICY IF EXISTS "Customers cannot modify party bookings" ON public.party_bookings;
 DROP POLICY IF EXISTS "Service role full access on party_bookings" ON public.party_bookings;
 
--- Customer Project renders party calendars from these rows (read-only).
-CREATE POLICY "Public can view confirmed party bookings"
+-- Customer Project reads these rows (read-only). The predicate must also match
+-- Cancelled rows: Supabase Realtime only delivers an UPDATE when the *new*
+-- record passes the reader's SELECT policy, so a status flip to 'Cancelled'
+-- would otherwise be silently dropped and the customer calendar would keep
+-- showing the date as booked. Both apps still filter to Confirmed for display
+-- (catalog loader + bookingsForParty), so cancelled rows are never rendered.
+CREATE POLICY "Public can view party bookings"
   ON public.party_bookings
   FOR SELECT
   TO public
-  USING (status = 'Confirmed');
+  USING (true);
 
 -- Everything else is rejected for anon/authenticated (no INSERT/UPDATE/DELETE
 -- policies exist), so customers cannot modify booking records.

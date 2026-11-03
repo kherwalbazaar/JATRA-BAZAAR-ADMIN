@@ -581,7 +581,7 @@ export default function PartyBookingView({ events }: PartyBookingViewProps) {
                 >
                   <span>{day}</span>
                   {booked && <span className="text-[8px] font-black uppercase tracking-tight">Booked</span>}
-                  {!booked && !isPast && <span className="text-[8px] font-black uppercase tracking-tight opacity-70">Open</span>}
+                  {!booked && !isPast && <span className="text-[8px] font-black uppercase tracking-tight opacity-70">Available</span>}
                 </button>
               );
             })}
