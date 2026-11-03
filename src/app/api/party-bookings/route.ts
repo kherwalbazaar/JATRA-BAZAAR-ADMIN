@@ -10,21 +10,11 @@ function fail(error: string, status = 400) {
   return NextResponse.json({ success: false, error }, { status });
 }
 
-function serviceKeyMissing(err: unknown): boolean {
-  return (err as Error & { missingKey?: boolean })?.missingKey === true;
-}
-
 export async function GET(request: NextRequest) {
   let supabase;
   try {
     supabase = createSupabaseAdminClient();
   } catch (err) {
-    if (serviceKeyMissing(err)) {
-      return fail(
-        'SUPABASE_SERVICE_ROLE_KEY is missing in .env.local. Add your Supabase service_role key to use Party Booking.',
-        500
-      );
-    }
     return fail((err as Error).message, 500);
   }
 
@@ -74,12 +64,6 @@ export async function POST(request: NextRequest) {
   try {
     supabase = createSupabaseAdminClient();
   } catch (err) {
-    if (serviceKeyMissing(err)) {
-      return fail(
-        'SUPABASE_SERVICE_ROLE_KEY is missing in .env.local. Add your Supabase service_role key to use Party Booking.',
-        500
-      );
-    }
     return fail((err as Error).message, 500);
   }
 
@@ -178,12 +162,6 @@ export async function PATCH(request: NextRequest) {
   try {
     supabase = createSupabaseAdminClient();
   } catch (err) {
-    if (serviceKeyMissing(err)) {
-      return fail(
-        'SUPABASE_SERVICE_ROLE_KEY is missing in .env.local. Add your Supabase service_role key to use Party Booking.',
-        500
-      );
-    }
     return fail((err as Error).message, 500);
   }
 

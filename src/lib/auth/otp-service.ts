@@ -9,8 +9,6 @@
  */
 
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 import { createClient } from '@supabase/supabase-js';
 
 export interface OtpResult {
@@ -46,48 +44,12 @@ function getSupabaseClient() {
 }
 
 /**
- * Safely resolves FAST2SMS_API_KEY from environment with local dev .env.local fallback
+ * Resolves FAST2SMS_API_KEY from the server environment. Next.js loads
+ * .env.local into process.env at boot, so no filesystem fallback is needed.
  */
 export function getFast2SmsApiKey(): string | null {
-  if (process.env.FAST2SMS_API_KEY && process.env.FAST2SMS_API_KEY.trim()) {
-    return process.env.FAST2SMS_API_KEY.trim();
-  }
-
-  // Local development fallback: dynamically read .env.local if Node process booted before key was set
-  if (process.env.NODE_ENV !== 'production') {
-    try {
-      const searchDirs = [
-        process.cwd(),
-        path.resolve(process.cwd(), '..'),
-        path.resolve(process.cwd(), '../JATRA BAZAAR'),
-        path.resolve(process.cwd(), '../JATRA BAZAAR ADMIN'),
-      ];
-
-      for (const dir of searchDirs) {
-        const candidates = [
-          path.join(dir, '.env.local'),
-          path.join(dir, '.env'),
-        ];
-        for (const envFile of candidates) {
-          if (fs.existsSync(/*turbopackIgnore: true*/ envFile)) {
-            const content = fs.readFileSync(/*turbopackIgnore: true*/ envFile, 'utf8');
-            const match = content.match(/^FAST2SMS_API_KEY\s*=\s*([^\r\n#]+)/m);
-            if (match && match[1]?.trim()) {
-              const parsed = match[1].trim().replace(/^['"]|['"]$/g, '');
-              if (parsed) {
-                process.env.FAST2SMS_API_KEY = parsed;
-                return parsed;
-              }
-            }
-          }
-        }
-      }
-    } catch {
-      /* ignore fallback errors */
-    }
-  }
-
-  return null;
+  const value = String(process.env.FAST2SMS_API_KEY ?? '').trim();
+  return value || null;
 }
 
 /**

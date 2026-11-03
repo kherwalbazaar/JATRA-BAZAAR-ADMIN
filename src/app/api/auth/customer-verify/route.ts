@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
           success: false,
           requiresServiceKey: true,
           message:
-            'SUPABASE_SERVICE_ROLE_KEY is missing in .env.local. In order to issue genuine Supabase Auth sessions for mobile OTP verification, please add your Supabase service_role key to .env.local.',
+            'SUPABASE_SERVICE_ROLE_KEY is not configured in this server environment. To issue genuine Supabase Auth sessions for mobile OTP verification, set it locally in .env.local and on Vercel under Project Settings → Environment Variables (Production enabled), then redeploy.',
         },
         { status: 500 }
       );
