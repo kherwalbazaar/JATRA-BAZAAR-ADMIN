@@ -22,6 +22,8 @@ export default function CommitteeViewSwitch() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const [panelBox, setPanelBox] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
 
   useEffect(() => {
     if (isSuperAdmin && committees === null) void loadCommittees();
@@ -40,6 +42,36 @@ export default function CommitteeViewSwitch() {
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [open]);
+
+  /*
+   * The panel is positioned against the viewport because the column it lives in
+   * scrolls, and a scroll container clips whatever spills past its left edge —
+   * which is exactly where the sidebar is on a phone. Anchoring it here keeps the
+   * whole list on screen instead of cutting off the committee names.
+   */
+  useEffect(() => {
+    if (!open) {
+      setPanelBox(null);
+      return;
+    }
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (rect) {
+      const width = Math.min(340, window.innerWidth - 16);
+      setPanelBox({
+        width,
+        left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)),
+        top: rect.bottom + 8,
+        maxHeight: Math.max(180, window.innerHeight - rect.bottom - 24),
+      });
+    }
+    const dismiss = () => setOpen(false);
+    window.addEventListener('resize', dismiss);
+    window.addEventListener('scroll', dismiss);
+    return () => {
+      window.removeEventListener('resize', dismiss);
+      window.removeEventListener('scroll', dismiss);
+    };
+  }, [open, committeeMenuSignal]);
 
   const apply = async (committeeId: string | null) => {
     setBusy(true);
@@ -88,6 +120,7 @@ export default function CommitteeViewSwitch() {
   return (
     <div className="relative" ref={menuRef}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(!open)}
         className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
@@ -102,8 +135,11 @@ export default function CommitteeViewSwitch() {
         <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {open && (
-        <div className="absolute right-0 mt-2 w-[min(94vw,340px)] bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-2.5 z-50 max-h-[420px] overflow-y-auto">
+      {open && panelBox && (
+        <div
+          style={{ position: 'fixed', top: panelBox.top, left: panelBox.left, width: panelBox.width, maxHeight: panelBox.maxHeight }}
+          className="bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-2.5 z-[120] overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-150"
+        >
           <div className="px-2.5 py-1.5 mb-2 flex items-center justify-between border-b border-slate-100">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
               Open panel as committee

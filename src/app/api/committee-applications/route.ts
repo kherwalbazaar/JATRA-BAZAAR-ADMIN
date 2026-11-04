@@ -308,35 +308,41 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
-    // approve / reactivate / permissions all write the grant matrix.
+    // approve / reactivate / permissions all rewrite the grant matrix, an empty
+    // matrix included: unticking every box has to actually remove the grants.
     const permissions = sanitisePermissions(body.permissions);
     if ((action === 'approve' || action === 'reactivate') && permissions.length === 0) {
       return fail('Assign at least one feature permission before approving.', 422);
     }
 
+    await supabase.from('committee_permissions').delete().eq('committee_id', id);
     if (permissions.length > 0) {
-      await supabase.from('committee_permissions').delete().eq('committee_id', id);
-      const rows = permissions.map((p) => ({ ...p, updated_by: actor }));
+      // The matrix only sends module + flags; the committee is the row we just
+      // looked up, never something the client declares.
+      const rows = permissions.map((p) => ({ ...p, committee_id: id, updated_by: actor }));
       const { error: grantError } = await supabase.from('committee_permissions').insert(rows);
       if (grantError) return fail(grantError.message, 500);
     }
 
-    const nextStatus = action === 'deactivate' ? 'DEACTIVATED' : 'APPROVED';
-    const { error: statusError } = await supabase
-      .from('committees')
-      .update({
-        application_status: nextStatus,
-        rejection_reason: null,
-        reviewed_at: now,
-        reviewed_by: actor,
-      })
-      .eq('id', id);
-    if (statusError) return fail(statusError.message, 500);
+    // Saving the matrix is not a decision, so only approve/reactivate move the
+    // status. A PENDING committee stays PENDING until it is approved.
+    if (action === 'approve' || action === 'reactivate') {
+      const { error: statusError } = await supabase
+        .from('committees')
+        .update({
+          application_status: 'APPROVED',
+          rejection_reason: null,
+          reviewed_at: now,
+          reviewed_by: actor,
+        })
+        .eq('id', id);
+      if (statusError) return fail(statusError.message, 500);
 
-    await supabase
-      .from('profiles')
-      .update({ is_active: true, status: 'active' })
-      .eq('id', existing.user_id);
+      await supabase
+        .from('profiles')
+        .update({ is_active: true, status: 'active' })
+        .eq('id', existing.user_id);
+    }
 
     await writeAuditLog({
       action:

@@ -252,8 +252,10 @@ export default function Sidebar({
     <aside
       className={`${
         collapsed ? 'w-[70px]' : 'w-64'
-      } relative bg-[#0c102a] text-slate-300 flex flex-col flex-shrink-0 z-30 select-none border-r border-indigo-950/70 h-screen transition-[width] duration-300 ease-in-out`}
+      } relative bg-[#0c102a] text-slate-300 flex flex-col flex-shrink-0 select-none border-r border-indigo-950/70 h-screen transition-[width] duration-300 ease-in-out`}
     >
+      {/* No z-index here on purpose: any value above the header would swallow the
+          header's popups, which spill left over this column on narrow screens. */}
       {/* Collapse / Expand Toggle */}
       <button
         type="button"

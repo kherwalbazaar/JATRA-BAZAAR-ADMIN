@@ -66,11 +66,18 @@ const FILTERS: Array<{ key: 'ALL' | Status; label: string }> = [
 
 const ASSIGNABLE = ADMIN_MODULES.filter((m) => !m.superAdminOnly);
 
-const STATUS_STYLES: Record<Status, string> = {
-  PENDING: 'bg-green-50 text-green-800 border-green-200',
-  APPROVED: 'bg-emerald-50 text-emerald-800 border-emerald-200',
-  REJECTED: 'bg-pink-50 text-pink-800 border-pink-200',
-  DEACTIVATED: 'bg-slate-100 text-slate-700 border-slate-300',
+const STATUS_LABELS: Record<Status, string> = {
+  PENDING: 'Pending',
+  APPROVED: 'Approved',
+  REJECTED: 'Rejected',
+  DEACTIVATED: 'Deactivated',
+};
+
+const STATUS_TEXT: Record<Status, string> = {
+  PENDING: 'text-green-700',
+  APPROVED: 'text-emerald-700',
+  REJECTED: 'text-pink-700',
+  DEACTIVATED: 'text-slate-500',
 };
 
 function emptyGrant(moduleKey: string): Grant {
@@ -296,14 +303,14 @@ export default function CommitteeApplicationsView() {
                   className="w-full flex items-center gap-3 px-3 sm:px-4 py-3 text-left"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-[13px] sm:text-sm font-black text-slate-900 truncate">{committee.committee_name}</p>
-                      <span className={`px-2 py-0.5 border text-[10px] font-black uppercase tracking-wider ${STATUS_STYLES[committee.application_status]}`}>
-                        {committee.application_status}
+                    <p className="text-[13px] sm:text-sm font-black text-slate-900 leading-snug">
+                      {committee.committee_name}{' '}
+                      <span className={`text-[11px] sm:text-[12px] font-black ${STATUS_TEXT[committee.application_status]}`}>
+                        ({STATUS_LABELS[committee.application_status]})
                       </span>
-                    </div>
-                    <p className="mt-0.5 text-[11px] text-slate-500 truncate">
-                      {committee.application_ref || '—'} · {committee.primary_mobile} · {committee.email}
+                    </p>
+                    <p className="mt-0.5 text-[11px] leading-snug text-slate-500 line-clamp-2">
+                      {committee.address?.trim() || 'No address recorded'}
                     </p>
                   </div>
                   <span className="hidden sm:block text-[11px] font-bold text-slate-400 whitespace-nowrap">

@@ -1,5 +1,7 @@
 import 'server-only';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { createClient } from '@/utils/supabase/server';
+import { createSupabaseAdminClient } from '@/lib/supabase-server';
 import { readViewAsCommitteeId } from '@/lib/admin-auth/view-as';
 import { allowedTabs, type CommitteeStatus } from '@/lib/admin-modules';
 
@@ -91,7 +93,7 @@ function toCommitteeProfile(row: CommitteeRow | null): CommitteeProfile | null {
 }
 
 async function loadPermissions(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: SupabaseClient<any>,
   committeeId: string
 ): Promise<Record<string, string[]>> {
   const permissions: Record<string, string[]> = {};
@@ -143,21 +145,37 @@ async function buildSession(
    * cookie only names a row; the committee and its permissions are re-read from
    * the database here, so a stale or forged value can only ever narrow this
    * session down to an approved committee's own access.
+   *
+   * Those two reads go through the service role, because RLS lets a user see
+   * only their OWN committee row and the Super Admin's JWT is not that
+   * committee's user. This branch is unreachable unless the database already
+   * agreed the caller is a Super Admin, and it can never grant more than the
+   * named committee actually has.
    */
   let viewingAs: CommitteeProfile | null = null;
   if (isSuperAdmin) {
     const targetId = await readViewAsCommitteeId();
     if (targetId && targetId !== committee?.id) {
-      const { data: targetRow } = await supabase
-        .from('committees')
-        .select(COMMITTEE_COLUMNS)
-        .eq('id', targetId)
-        .maybeSingle();
-      const target = toCommitteeProfile(targetRow as CommitteeRow | null);
-      if (target?.status === 'APPROVED') {
-        viewingAs = target;
-        committee = target;
-        permissions = await loadPermissions(supabase, target.id);
+      try {
+        const admin = createSupabaseAdminClient();
+        const { data: targetRow } = await admin
+          .from('committees')
+          .select(COMMITTEE_COLUMNS)
+          .eq('id', targetId)
+          .maybeSingle();
+        const target = toCommitteeProfile(targetRow as CommitteeRow | null);
+        if (target?.status === 'APPROVED') {
+          const grants = await loadPermissions(admin, target.id);
+          // Only committed together, so a half-failed re-read cannot leave the
+          // session pointing at a committee it never finished resolving.
+          viewingAs = target;
+          committee = target;
+          permissions = grants;
+        }
+      } catch {
+        // No service key means no re-read, so the view is refused and the
+        // session keeps its own Super Admin powers instead of guessing.
+        viewingAs = null;
       }
     }
   }

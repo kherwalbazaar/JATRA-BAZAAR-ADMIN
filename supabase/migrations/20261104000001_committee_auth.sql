@@ -13,6 +13,23 @@
 -- ============================================================
 
 -- ----------------------------------------------------------------------------
+-- 0. PREREQUISITES
+--    gen_random_uuid() and set_updated_at() are used by the tables and triggers
+--    below. Both already exist in a normal Supabase project, so re-declaring
+--    them costs nothing and keeps this file runnable on its own.
+-- ----------------------------------------------------------------------------
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql
+SET search_path = public, pg_temp;
+
+-- ----------------------------------------------------------------------------
 -- 1. COMMITTEES (registration + application lifecycle in one row)
 --    Mirrors the shape already proven for scanner_members: approval_status /
 --    account_status / reviewed-by / reviewed-at.
@@ -229,3 +246,10 @@ VALUES (
   '{"contactName":"","primaryMobile":"","whatsappNumber":"","supportEmail":"","supportMessage":""}'::jsonb
 )
 ON CONFLICT (id) DO NOTHING;
+
+-- ----------------------------------------------------------------------------
+-- 6. REVEAL THE NEW TABLES TO THE API
+--    PostgREST caches its schema, so without this the panel keeps reporting
+--    "Could not find the table 'public.committees'" for a few seconds.
+-- ----------------------------------------------------------------------------
+NOTIFY pgrst, 'reload schema';
