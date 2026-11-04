@@ -15,9 +15,11 @@ import {
   ChevronDown,
   ChevronUp,
   Inbox,
+  Plus,
 } from 'lucide-react';
 import { ADMIN_MODULES, ACTION_LABELS, type PermissionAction } from '@/lib/admin-modules';
 import { useAdminPopup } from '@/context/AdminPopupContext';
+import CreateCommitteeModal from '@/components/CreateCommitteeModal';
 
 type Status = 'PENDING' | 'APPROVED' | 'REJECTED' | 'DEACTIVATED';
 
@@ -111,6 +113,7 @@ export default function CommitteeApplicationsView() {
   const [query, setQuery] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -221,13 +224,23 @@ export default function CommitteeApplicationsView() {
             Review registrations, approve them and decide which modules each committee may open.
           </p>
         </div>
-        <button
-          onClick={load}
-          disabled={loading}
-          className="inline-flex h-9 items-center gap-2 px-3 border border-slate-300 text-[12px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-        >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Reload
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="inline-flex h-9 items-center gap-2 px-3 bg-green-900 hover:bg-green-800 text-white text-[12px] font-bold disabled:opacity-60"
+            disabled={loading}
+            title="Create an approved committee and hand over its sign-in details"
+          >
+            <Plus className="w-3.5 h-3.5" /> Create Committee
+          </button>
+          <button
+            onClick={load}
+            disabled={loading}
+            className="inline-flex h-9 items-center gap-2 px-3 border border-slate-300 text-[12px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Reload
+          </button>
+        </div>
       </div>
 
       {/* Summary */}
@@ -328,6 +341,12 @@ export default function CommitteeApplicationsView() {
           })}
         </div>
       )}
+
+      <CreateCommitteeModal
+        isOpen={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={load}
+      />
     </div>
   );
 }

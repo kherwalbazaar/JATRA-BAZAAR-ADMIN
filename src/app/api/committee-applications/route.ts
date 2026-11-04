@@ -3,11 +3,19 @@ import { createSupabaseAdminClient } from '@/lib/supabase-server';
 import { requireSuperAdmin } from '@/lib/admin-auth/authorizer';
 import { writeAuditLog } from '@/lib/admin-auth/audit';
 import { ADMIN_MODULES } from '@/lib/admin-modules';
+import {
+  buildApplicationRef,
+  generateCommitteePassword,
+  normaliseEmail,
+  normaliseMobile,
+  validateCommitteeBasics,
+  type CommitteeBasics,
+} from '@/lib/committee-registration';
 
 export const dynamic = 'force-dynamic';
 
-function fail(error: string, status = 400) {
-  return NextResponse.json({ success: false, error }, { status });
+function fail(error: string, status = 400, fields?: Record<string, string>) {
+  return NextResponse.json({ success: false, error, fields }, { status });
 }
 
 const ASSIGNABLE_MODULES = ADMIN_MODULES.filter((m) => !m.superAdminOnly).map((m) => m.key);
@@ -93,6 +101,134 @@ export async function GET(request: NextRequest) {
     }));
 
     return NextResponse.json({ success: true, committees });
+  } catch (err) {
+    return fail((err as Error).message || 'Server error', 500);
+  }
+}
+
+/**
+ * Super Admin creates a ready-to-use committee: APPROVED straight away, with a
+ * generated sign-in password returned once so it can be handed over. Like the
+ * public flow it starts with zero permission rows, because no grant means no
+ * module is visible until the permission matrix says otherwise.
+ */
+export async function POST(request: NextRequest) {
+  const auth = await requireSuperAdmin();
+  if (!auth.ok) return fail(auth.error, auth.status);
+  const actor = auth.session.userId;
+
+  const body = (await request.json().catch(() => ({}))) as CommitteeBasics;
+  const errors = validateCommitteeBasics(body);
+  if (Object.keys(errors).length > 0) {
+    return fail('Please correct the highlighted fields.', 422, errors);
+  }
+
+  const email = normaliseEmail(body.email);
+  const mobile = normaliseMobile(body.primaryMobile);
+  const committeeName = String(body.committeeName).trim();
+
+  let supabase;
+  try {
+    supabase = createSupabaseAdminClient();
+  } catch (err) {
+    return fail((err as Error).message, 500);
+  }
+
+  try {
+    // Three unique indexes guard this row, so the name is checked as well as the
+    // email and mobile the public flow looks at. Separate filters, because an
+    // `.or()` string would have to interpolate user input into the query.
+    const [emailHit, mobileHit, nameHit] = await Promise.all([
+      supabase.from('committees').select('id').ilike('email', email).maybeSingle(),
+      supabase.from('committees').select('id').eq('primary_mobile', mobile).maybeSingle(),
+      supabase.from('committees').select('id').ilike('committee_name', committeeName).maybeSingle(),
+    ]);
+    for (const res of [emailHit, mobileHit, nameHit]) {
+      if (res.error) return fail(res.error.message, 500);
+    }
+    if (emailHit.data) {
+      return fail('A committee already uses this email.', 409, { email: 'Email already used.' });
+    }
+    if (mobileHit.data) {
+      return fail('A committee already uses this mobile number.', 409, {
+        primaryMobile: 'Mobile already used.',
+      });
+    }
+    if (nameHit.data) {
+      return fail('A committee already has this name.', 409, { committeeName: 'Name already used.' });
+    }
+
+    const password = generateCommitteePassword();
+    const { data: created, error: createError } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+    });
+    if (createError || !created?.user) {
+      const message = String(createError?.message || '');
+      if (/already registered|already exists/i.test(message)) {
+        return fail('This email already has a panel account. Use a different address.', 409, {
+          email: 'Email already used.',
+        });
+      }
+      return fail(message || 'Could not create the committee account.', 500);
+    }
+
+    const now = new Date().toISOString();
+    const applicationRef = buildApplicationRef();
+    const { data: committee, error: insertError } = await supabase
+      .from('committees')
+      .insert({
+        user_id: created.user.id,
+        application_ref: applicationRef,
+        committee_name: committeeName,
+        primary_mobile: mobile,
+        address: String(body.address).trim(),
+        email,
+        event_date: String(body.eventDate).trim(),
+        application_status: 'APPROVED',
+        reviewed_at: now,
+        reviewed_by: actor,
+      })
+      .select('id, application_ref')
+      .single();
+
+    if (insertError || !committee) {
+      // No auth account may survive a half-written committee row.
+      await supabase.auth.admin.deleteUser(created.user.id).catch(() => undefined);
+      if (insertError?.code === '23505') {
+        return fail('Another committee was created with the same details a moment ago.', 409);
+      }
+      return fail(insertError?.message || 'Could not save the committee.', 500);
+    }
+
+    await supabase.from('profiles').upsert(
+      {
+        id: created.user.id,
+        mobile,
+        full_name: committeeName,
+        email,
+        role: 'committee',
+        is_active: true,
+        status: 'active',
+      },
+      { onConflict: 'id' }
+    );
+
+    await writeAuditLog({
+      action: 'super_admin.committee_created',
+      performedBy: actor,
+      targetId: committee.id,
+      metadata: { applicationRef, committeeName, email, eventDate: body.eventDate },
+    });
+
+    return NextResponse.json({
+      success: true,
+      committeeId: committee.id,
+      applicationRef,
+      email,
+      password,
+    });
   } catch (err) {
     return fail((err as Error).message || 'Server error', 500);
   }

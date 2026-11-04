@@ -23,10 +23,11 @@ export function normaliseMobile(mobile: string): string {
   return digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits;
 }
 
+/** The fields both the public form and the Super Admin form collect. */
+export type CommitteeBasics = Omit<CommitteeRegistrationInput, 'password' | 'confirmPassword'>;
+
 /** Field-by-field messages so the form can show them inline. */
-export function validateCommitteeRegistration(
-  input: CommitteeRegistrationInput
-): Record<string, string> {
+export function validateCommitteeBasics(input: CommitteeBasics): Record<string, string> {
   const errors: Record<string, string> = {};
 
   if (!input.committeeName?.trim()) errors.committeeName = 'Committee name is required.';
@@ -62,6 +63,14 @@ export function validateCommitteeRegistration(
     }
   }
 
+  return errors;
+}
+
+export function validateCommitteeRegistration(
+  input: CommitteeRegistrationInput
+): Record<string, string> {
+  const errors = validateCommitteeBasics(input);
+
   const password = input.password || '';
   const strong =
     password.length >= 8 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password);
@@ -73,6 +82,31 @@ export function validateCommitteeRegistration(
   }
 
   return errors;
+}
+
+const PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#$%&';
+const UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+const LOWER = 'abcdefghijkmnopqrstuvwxyz';
+const DIGIT = '23456789';
+
+/**
+ * Sign-in password for a committee the Super Admin creates. Obeying
+ * PASSWORD_RULE is not optional: the login form rejects anything weaker, so a
+ * generated password that broke the rule would lock the committee out.
+ */
+export function generateCommitteePassword(length = 12): string {
+  const bytes = new Uint8Array(length);
+  globalThis.crypto.getRandomValues(bytes);
+  const letters = Array.from(bytes, (b) => PASSWORD_ALPHABET[b % PASSWORD_ALPHABET.length]);
+  [UPPER, LOWER, DIGIT].forEach((set, i) => {
+    letters[i] = set[bytes[length - 1 - i] % set.length];
+  });
+  // Shuffle so the guaranteed characters are not always in front.
+  for (let i = letters.length - 1; i > 0; i--) {
+    const j = bytes[i] % (i + 1);
+    [letters[i], letters[j]] = [letters[j], letters[i]];
+  }
+  return letters.join('');
 }
 
 /** Human-readable application reference shown on the waiting page. */
