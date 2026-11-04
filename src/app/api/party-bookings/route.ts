@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseAdminClient } from '@/lib/supabase-server';
-import { isAuthorizedAdminRequest } from '@/lib/partyBookingAccess';
+import { requireModule } from '@/lib/admin-auth/authorizer';
+import { writeAuditLog } from '@/lib/admin-auth/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +12,9 @@ function fail(error: string, status = 400) {
 }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireModule('party-booking', 'view');
+  if (!auth.ok) return fail(auth.error, auth.status);
+
   let supabase;
   try {
     supabase = createSupabaseAdminClient();
@@ -25,13 +29,10 @@ export async function GET(request: NextRequest) {
   const to = String(searchParams.get('to') || '').trim();
   const includeHistory = searchParams.get('history') === '1';
 
-  // Cancelled rows are admin history — only released with the admin header.
-  const isAdmin = isAuthorizedAdminRequest(request);
+  // Cancelled rows are panel history; the caller is already authorised here.
   let status = 'Confirmed';
-  if (isAdmin) {
-    if (statusParam === 'all' || includeHistory) status = 'all';
-    else if (statusParam === 'Cancelled') status = 'Cancelled';
-  }
+  if (statusParam === 'all' || includeHistory) status = 'all';
+  else if (statusParam === 'Cancelled') status = 'Cancelled';
 
   try {
     let query = supabase
@@ -41,6 +42,12 @@ export async function GET(request: NextRequest) {
       .limit(2000);
 
     if (status !== 'all') query = query.eq('status', status);
+
+    // A committee reading this list is scoped to its own bookings; the row it
+    // belongs to is decided by the session, never by the query string.
+    if (!auth.session.isSuperAdmin && auth.session.committee) {
+      query = query.eq('committee_id', `committee-${auth.session.committee.id}`);
+    }
 
     if (partyId) query = query.eq('party_id', partyId);
     if (DATE_RE.test(from)) query = query.gte('booking_date', from);
@@ -56,9 +63,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isAuthorizedAdminRequest(request)) {
-    return fail('Unauthorized: admin key header missing.', 401);
-  }
+  const auth = await requireModule('party-booking', 'create');
+  if (!auth.ok) return fail(auth.error, auth.status);
 
   let supabase;
   try {
@@ -78,7 +84,6 @@ export async function POST(request: NextRequest) {
   const contactNumber = String(body.contactNumber || '').trim();
   const bookingDate = String(body.bookingDate || '').trim();
   const remarks = String(body.remarks || '').trim();
-  const createdBy = String(body.createdBy || 'super_admin').trim();
 
   if (!partyId) return fail('Party selection is compulsory.');
   if (!partyName) return fail('Party name is missing for the selected party.');
@@ -92,9 +97,23 @@ export async function POST(request: NextRequest) {
     return fail('Booking date is out of range.');
   }
 
+  // A committee books only as itself — the session decides this, not the body.
+  const actingCommittee = auth.session.isSuperAdmin ? null : auth.session.committee;
+  const resolvedCommitteeName = actingCommittee
+    ? actingCommittee.committeeName
+    : committeeName;
+
   const committeeId =
-    String(body.committeeId || '').trim() ||
-    `committee-${committeeName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`;
+    actingCommittee
+      ? `committee-${actingCommittee.id}`
+      : String(body.committeeId || '').trim() ||
+        `committee-${resolvedCommitteeName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`;
+
+  const createdBy = actingCommittee
+    ? `committee:${actingCommittee.applicationRef}`
+    : auth.session.isSuperAdmin
+      ? 'super_admin'
+      : auth.session.userId;
 
   try {
     // Validate the party reference against the parties directory.
@@ -124,7 +143,7 @@ export async function POST(request: NextRequest) {
         party_id: partyId,
         party_name: partyName,
         committee_id: committeeId,
-        committee_name: committeeName,
+        committee_name: resolvedCommitteeName,
         committee_address: committeeAddress || null,
         event_name: eventName,
         event_address: eventAddress,
@@ -147,6 +166,13 @@ export async function POST(request: NextRequest) {
       return fail(error.message, 500);
     }
 
+    await writeAuditLog({
+      action: 'party_booking.created',
+      performedBy: auth.session.userId,
+      targetId: String(booking.id),
+      metadata: { partyName, committeeName: resolvedCommitteeName, bookingDate, eventName, createdBy },
+    });
+
     return NextResponse.json({ success: true, booking });
   } catch (err) {
     return fail((err as Error).message || 'Server error', 500);
@@ -154,9 +180,10 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  if (!isAuthorizedAdminRequest(request)) {
-    return fail('Unauthorized: admin key header missing.', 401);
-  }
+  // Cancelling is the approve-level right, so a plain viewer cannot erase a
+  // confirmed slot.
+  const auth = await requireModule('party-booking', 'approve');
+  if (!auth.ok) return fail(auth.error, auth.status);
 
   let supabase;
   try {
@@ -173,7 +200,7 @@ export async function PATCH(request: NextRequest) {
   if (action !== 'cancel') return fail(`Unsupported action "${action}".`);
 
   try {
-    const { data: booking, error } = await supabase
+    let cancelQuery = supabase
       .from('party_bookings')
       .update({
         status: 'Cancelled',
@@ -181,12 +208,28 @@ export async function PATCH(request: NextRequest) {
         updated_at: new Date().toISOString(),
       })
       .eq('id', id)
-      .eq('status', 'Confirmed')
-      .select('*')
-      .maybeSingle();
+      .eq('status', 'Confirmed');
+
+    // A committee may cancel only a slot it booked itself.
+    if (!auth.session.isSuperAdmin && auth.session.committee) {
+      cancelQuery = cancelQuery.eq('committee_id', `committee-${auth.session.committee.id}`);
+    }
+
+    const { data: booking, error } = await cancelQuery.select('*').maybeSingle();
 
     if (error) return fail(error.message, 500);
     if (!booking) return fail('Booking not found or already cancelled.', 404);
+
+    await writeAuditLog({
+      action: 'party_booking.cancelled',
+      performedBy: auth.session.userId,
+      targetId: id,
+      metadata: {
+        partyName: booking.party_name,
+        committeeName: booking.committee_name,
+        bookingDate: booking.booking_date,
+      },
+    });
 
     return NextResponse.json({ success: true, booking });
   } catch (err) {

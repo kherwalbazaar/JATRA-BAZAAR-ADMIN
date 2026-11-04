@@ -1,6 +1,5 @@
 import { PartyBookingRecord } from '@/types';
 import { sb } from './supabase-db';
-import { PARTY_BOOKING_ADMIN_HEADER, PARTY_BOOKING_ADMIN_HEADER_VALUE } from './partyBookingAccess';
 
 /**
  * Live updates for party_bookings. Any INSERT/UPDATE anywhere re-triggers a
@@ -71,7 +70,7 @@ export async function fetchPartyBookings(params: {
   if (params.history) qs.set('history', '1');
   const res = await fetch(`/api/party-bookings?${qs.toString()}`, {
     cache: 'no-store',
-    headers: { [PARTY_BOOKING_ADMIN_HEADER]: PARTY_BOOKING_ADMIN_HEADER_VALUE },
+    credentials: 'same-origin',
   });
   if (!res.ok) throw new Error(await parseError(res));
   const body = await res.json();
@@ -83,10 +82,8 @@ export async function createPartyBooking(
 ): Promise<PartyBookingRecord> {
   const res = await fetch('/api/party-bookings', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      [PARTY_BOOKING_ADMIN_HEADER]: PARTY_BOOKING_ADMIN_HEADER_VALUE,
-    },
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
   if (!res.ok) throw new Error(await parseError(res));
@@ -97,10 +94,8 @@ export async function createPartyBooking(
 export async function cancelPartyBooking(id: string): Promise<PartyBookingRecord> {
   const res = await fetch('/api/party-bookings', {
     method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      [PARTY_BOOKING_ADMIN_HEADER]: PARTY_BOOKING_ADMIN_HEADER_VALUE,
-    },
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id, action: 'cancel' }),
   });
   if (!res.ok) throw new Error(await parseError(res));

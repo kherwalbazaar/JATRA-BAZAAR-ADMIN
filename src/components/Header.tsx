@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useAdminSession } from '@/context/AdminSessionContext';
 import { 
   Calendar, 
   ChevronDown, 
@@ -53,6 +54,7 @@ export default function Header({
   lastUpdated,
   onRefresh
 }: HeaderProps) {
+  const { session, isSuperAdmin, signOut } = useAdminSession();
   const [eventDropdownOpen, setEventDropdownOpen] = useState(false);
   const [eventFilterQuery, setEventFilterQuery] = useState('');
   const [eventTab, setEventTab] = useState<'upcoming' | 'all' | 'past'>('upcoming');
@@ -566,18 +568,20 @@ export default function Header({
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#12193b] absolute bottom-0 right-0"></span>
             </div>
             <div className="leading-tight text-left hidden sm:block">
-              <span className="text-xs font-black text-white block flex items-center gap-1">
-                Admin <ChevronDown className="w-2.5 h-2.5 text-slate-300" />
+              <span className="text-xs font-black text-white block flex items-center gap-1 max-w-[130px] truncate">
+                {session?.user?.name || 'Admin'} <ChevronDown className="w-2.5 h-2.5 text-slate-300 flex-shrink-0" />
               </span>
-              <span className="text-[10px] text-slate-400 font-bold">Super Admin</span>
+              <span className="text-[10px] text-slate-400 font-bold">
+                {isSuperAdmin ? 'Super Admin' : session?.committee?.committeeName || 'Committee'}
+              </span>
             </div>
           </button>
 
           {profileDropdownOpen && (
             <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-xl border border-slate-100 p-2 z-50 animate-in fade-in slide-in-from-top-2">
               <div className="px-3 py-2 border-b border-slate-100">
-                <p className="text-xs font-black text-slate-900">Admin Console</p>
-                <p className="text-[10px] text-slate-400">admin@jatrabazaar.in</p>
+                <p className="text-xs font-black text-slate-900">{isSuperAdmin ? 'Admin Console' : 'Committee Console'}</p>
+                <p className="text-[10px] text-slate-400 truncate">{session?.user?.email || 'Signed in'}</p>
               </div>
               <div className="py-1 text-xs font-semibold text-slate-700">
                 <button className="w-full px-3 py-2 rounded-xl hover:bg-slate-50 flex items-center gap-2 text-left">
@@ -588,7 +592,10 @@ export default function Header({
                   <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
                   <span>Audience Booking Portal</span>
                 </button>
-                <button className="w-full px-3 py-2 rounded-xl hover:bg-rose-50 text-rose-600 flex items-center gap-2 text-left">
+                <button
+                  onClick={signOut}
+                  className="w-full px-3 py-2 rounded-xl hover:bg-rose-50 text-rose-600 flex items-center gap-2 text-left"
+                >
                   <LogOut className="w-3.5 h-3.5" />
                   <span>Sign Out</span>
                 </button>

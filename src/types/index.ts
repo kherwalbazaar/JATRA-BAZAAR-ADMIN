@@ -18,6 +18,7 @@ export type NavigationTab =
   | 'payments'
   | 'customers'
   | 'party-booking'
+  | 'committee-applications'
   | 'settings'
   | 'logs';
 

@@ -35,12 +35,16 @@ import EditBookingModal from '@/components/EditBookingModal';
 import ConfirmDeleteModal from '@/components/ConfirmDeleteModal';
 
 import { NavigationTab, BookingItem, EventItem, TicketType } from '@/types';
+import CommitteeApplicationsView from '@/components/CommitteeApplicationsView';
+import { moduleForTab } from '@/lib/admin-modules';
+import { useAdminSession } from '@/context/AdminSessionContext';
 import { useFirestore } from '@/hooks/useFirestore';
 import { deleteBooking } from '@/lib/firestore';
 import { useAdminPopup } from '@/context/AdminPopupContext';
 import { UserPlus, Plus, Building2, MapPin, Calendar, ChevronDown, LayoutGrid, Check } from 'lucide-react';
 
-export default function App() {
+function AdminDashboard({ allowedTabs }: { allowedTabs: Set<NavigationTab> }) {
+  const { session } = useAdminSession();
   const router = useRouter();
   const { confirm: adminConfirm, alert: adminAlert } = useAdminPopup();
   const {
@@ -318,6 +322,9 @@ export default function App() {
         onTabChange={setCurrentTab}
         collapsed={sidebarCollapsed}
         onToggleCollapse={toggleSidebar}
+        allowedTabs={allowedTabs}
+        accountLabel={session?.committee?.committeeName || session?.user?.name}
+        accountSubLabel={session?.role === 'super_admin' ? 'Super Admin' : 'Committee Access'}
       />
 
       {/* 2. Main Content Area */}
@@ -373,6 +380,16 @@ export default function App() {
         />
 
         {/* View Routing */}
+        {!allowedTabs.has(currentTab) ? (
+          <div className="flex-1 grid place-items-center p-8 text-center">
+            <div>
+              <p className="text-sm font-black text-slate-900">Not part of your assigned modules</p>
+              <p className="mt-1.5 text-[12px] text-slate-500 max-w-sm">
+                Ask a Super Admin to grant {NAV_LABELS[currentTab] || currentTab}, then reload this page.
+              </p>
+            </div>
+          </div>
+        ) : (
         <div className={`flex-1 flex flex-col ${currentTab === 'dashboard' ? 'bg-white' : ''}`}>
           {currentTab === 'dashboard' && (
             <DashboardView
@@ -416,6 +433,8 @@ export default function App() {
           )}
 
           {currentTab === 'party-booking' && <PartyBookingView events={eventsList} />}
+
+          {currentTab === 'committee-applications' && <CommitteeApplicationsView />}
 
           {currentTab === 'tickets-types' && (
             <TicketTypesView
@@ -703,6 +722,7 @@ export default function App() {
             <SettingsView currentEvent={currentEvent} />
           )}
         </div>
+        )}
       </div>
 
       {/* Global Interactive Modals */}
@@ -796,4 +816,48 @@ export default function App() {
       />
     </div>
   );
+}
+
+/**
+ * Renders the dashboard only for a session the server considers entitled to it.
+ * The proxy already demands a signed-in cookie and every API call re-checks the
+ * grant, so this decides what a signed-in-but-not-approved committee sees.
+ */
+export default function AdminGate() {
+  const { loading, session, refresh } = useAdminSession();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (loading) return;
+    if (!session) {
+      router.replace('/login');
+      return;
+    }
+    if (!session.canEnterDashboard) {
+      router.replace('/committee-status');
+    }
+  }, [loading, session, router]);
+
+  // Permission changes apply on the next request; re-reading the session on tab
+  // focus means a Super Admin widening (or cutting) access needs no re-login.
+  useEffect(() => {
+    const onFocus = () => refresh();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refresh]);
+
+  if (loading || !session || !session.canEnterDashboard) {
+    return (
+      <div className="min-h-screen grid place-items-center bg-[#f4f6fc]">
+        <div className="text-center">
+          <div className="w-8 h-8 mx-auto rounded-full border-2 border-indigo-200 border-t-indigo-600 animate-spin" />
+          <p className="mt-3 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+            {loading ? 'Verifying access' : 'Redirecting'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return <AdminDashboard allowedTabs={new Set(session.allowedTabs)} />;
 }

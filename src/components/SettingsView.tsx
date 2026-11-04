@@ -14,6 +14,7 @@ import {
   HardDrive
 } from 'lucide-react';
 import { EventItem } from '@/types';
+import AdminContactSettings from '@/components/AdminContactSettings';
 
 interface SettingsViewProps {
   currentEvent: EventItem | null;
@@ -114,6 +115,8 @@ export default function SettingsView({ currentEvent }: SettingsViewProps) {
           />
         </div>
       </div>
+
+      <AdminContactSettings />
 
       {/* Save Button */}
       <button

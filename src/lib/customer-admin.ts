@@ -21,6 +21,14 @@ export async function fetchAdminCustomers(): Promise<CustomerRecord[]> {
       .select('id, mobile, full_name, email, profile_photo, role, status, is_active, last_login_at, created_at, updated_at')
       .order('created_at', { ascending: false });
 
+    // Committee and Super Admin logins are panel accounts, not festival
+    // attendees — the customer list must stay a list of customers.
+    const panelAccounts = new Set(
+      ((profiles || []) as { id: string; role?: string }[])
+        .filter((p) => ['committee', 'super_admin', 'admin'].includes(String(p.role || '')))
+        .map((p) => String(p.id))
+    );
+
     if (profileErr && profileErr.code !== 'PGRST205') {
       console.warn('Error fetching profiles:', profileErr.message);
     }
@@ -71,6 +79,7 @@ export async function fetchAdminCustomers(): Promise<CustomerRecord[]> {
     // Add registered profiles
     if (Array.isArray(profiles)) {
       profiles.forEach((p) => {
+        if (panelAccounts.has(String(p.id))) return;
         const cleanMobile = String(p.mobile || '').replace(/\D/g, '').slice(-10);
         const stats = bookingStatsByPhone.get(cleanMobile);
 

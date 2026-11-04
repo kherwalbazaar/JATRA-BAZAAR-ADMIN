@@ -22,6 +22,7 @@ import {
 import { EventItem, PartyBookingRecord, PartyItem } from '@/types';
 import { computeParties, syncRemoteParties } from '@/lib/parties';
 import { useAdminPopup } from '@/context/AdminPopupContext';
+import { useAdminSession } from '@/context/AdminSessionContext';
 import {
   cancelPartyBooking,
   committeeIdFor,
@@ -58,6 +59,7 @@ interface CommitteeOption {
 }
 
 export default function PartyBookingView({ events }: PartyBookingViewProps) {
+  const { session, isSuperAdmin } = useAdminSession();
   const { confirm: adminConfirm, alert: adminAlert } = useAdminPopup();
 
   // ── Parties ────────────────────────────────────────────────────
@@ -78,6 +80,12 @@ export default function PartyBookingView({ events }: PartyBookingViewProps) {
   );
 
   // ── Committee directory (from live events, plus free text allowed) ─
+  // A committee always books as itself; the server enforces the same rule.
+  useEffect(() => {
+    const own = session?.committee?.committeeName;
+    if (own) setForm((f) => (f.committeeName === own ? f : { ...f, committeeName: own }));
+  }, [session?.committee?.committeeName]);
+
   const committeeOptions = useMemo<CommitteeOption[]>(() => {
     const map = new Map<string, CommitteeOption>();
     events.forEach((e) => {
@@ -304,7 +312,6 @@ export default function PartyBookingView({ events }: PartyBookingViewProps) {
         eventName: eventName.trim(),
         eventAddress,
         bookingDate,
-        createdBy: 'super_admin',
       });
       setModalOpen(false);
       resetForm();
@@ -742,24 +749,26 @@ export default function PartyBookingView({ events }: PartyBookingViewProps) {
 
                   <div className="relative">
                     <label className="mb-1 block text-[11px] font-extrabold uppercase tracking-widest text-slate-500">
-                      Committee Name *
+                      {isSuperAdmin ? 'Committee Name *' : 'Booking Committee'}
                     </label>
                     <div className="relative">
                       <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
                       <input
                         value={form.committeeName}
+                        readOnly={!isSuperAdmin}
                         onChange={(e) => {
+                          if (!isSuperAdmin) return;
                           setForm((f) => ({ ...f, committeeName: e.target.value }));
                           setCommitteeSearch(e.target.value);
                           setCommitteeDropdownOpen(true);
                         }}
-                        onFocus={() => setCommitteeDropdownOpen(true)}
+                        onFocus={() => isSuperAdmin && setCommitteeDropdownOpen(true)}
                         onBlur={() => setTimeout(() => setCommitteeDropdownOpen(false), 150)}
-                        placeholder="Search committees from past events…"
-                        className={`${inputCls} pl-8`}
+                        placeholder={isSuperAdmin ? 'Search committees from past events…' : session?.committee?.committeeName || 'Your committee'}
+                        className={`${inputCls} ${isSuperAdmin ? 'pl-8' : ''}`}
                       />
                     </div>
-                    {committeeDropdownOpen && filteredCommittees.length > 0 && (
+                    {isSuperAdmin && committeeDropdownOpen && filteredCommittees.length > 0 && (
                       <div className="absolute z-20 mt-1 max-h-44 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
                         {filteredCommittees.map((c) => (
                           <button
@@ -777,7 +786,7 @@ export default function PartyBookingView({ events }: PartyBookingViewProps) {
                         ))}
                       </div>
                     )}
-                    {committeeOptions.length === 0 && (
+                    {isSuperAdmin && committeeOptions.length === 0 && (
                       <p className="mt-1 text-[11px] font-medium text-slate-400">No committees found in events yet — type any committee name.</p>
                     )}
                   </div>

@@ -32,6 +32,15 @@ interface SidebarProps {
   onTabChange: (tab: NavigationTab) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
+  /**
+   * Tabs this session may open. Omitted (or null) means everything, which is
+   * how Super Admin renders. Hiding a menu here is presentation only — the
+   * server re-checks the same grant on every request.
+   */
+  allowedTabs?: Set<NavigationTab> | null;
+  /** Shown under the brand block so a committee knows which account it is in. */
+  accountLabel?: string;
+  accountSubLabel?: string;
 }
 
 export const NAV_LABELS: Record<string, string> = {
@@ -43,6 +52,7 @@ export const NAV_LABELS: Record<string, string> = {
   diagram: 'Seating Layout',
   'counter-booking': 'Counter Sales',
   'party-booking': 'Party Booking',
+  'committee-applications': 'Committee Applications',
   'booking-management': 'Booking Management',
   bookings: 'All Bookings',
   'active-tickets': 'Active Tickets',
@@ -83,8 +93,13 @@ export default function Sidebar({
   currentTab,
   onTabChange,
   collapsed,
-  onToggleCollapse
+  onToggleCollapse,
+  allowedTabs = null,
+  accountLabel,
+  accountSubLabel
 }: SidebarProps) {
+  const canOpen = (tab: NavigationTab) => !allowedTabs || allowedTabs.has(tab);
+
   const sections: NavSection[] = [
     {
       title: 'Core',
@@ -92,6 +107,7 @@ export default function Sidebar({
         { id: 'dashboard', label: NAV_LABELS.dashboard, Icon: LayoutDashboard },
         { id: 'events', label: NAV_LABELS.events, Icon: CalendarDays },
         { id: 'parties', label: NAV_LABELS.parties, Icon: Theater },
+        { id: 'committee-applications', label: NAV_LABELS['committee-applications'], Icon: ClipboardList },
       ],
     },
     {
@@ -145,6 +161,13 @@ export default function Sidebar({
     { id: 'cancellation-history', label: NAV_LABELS['cancellation-history'], Icon: History },
     { id: 'refunds', label: NAV_LABELS.refunds, Icon: RotateCcw },
   ];
+
+  const visibleSections = sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => canOpen(item.id)),
+    }))
+    .filter((section) => section.items.length > 0);
 
   const bookingActive = BOOKING_TABS.includes(currentTab);
   const [bookingsOpenState, setBookingsOpenState] = React.useState<boolean | null>(null);
@@ -270,10 +293,15 @@ export default function Sidebar({
                 </h1>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <p className="text-[10px] text-indigo-300/80 font-bold uppercase tracking-wider">
-                    Admin Portal
+                  <p className="text-[10px] text-indigo-300/80 font-bold uppercase tracking-wider truncate">
+                    {accountSubLabel || 'Admin Portal'}
                   </p>
                 </div>
+                {accountLabel && (
+                  <p className="mt-1 text-[11px] font-bold text-white/80 truncate" title={accountLabel}>
+                    {accountLabel}
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -285,7 +313,7 @@ export default function Sidebar({
             collapsed ? 'px-2 py-3' : 'px-3 py-3'
           } space-y-4 text-xs font-semibold scrollbar-thin scrollbar-thumb-indigo-950/60`}
         >
-          {sections.map((section, idx) => (
+          {visibleSections.map((section, idx) => (
             <div key={section.title} className="space-y-1">
               {!collapsed ? (
                 <div className="px-3 pt-2 pb-1 text-[10px] font-extrabold uppercase tracking-widest text-indigo-300/40 select-none">
