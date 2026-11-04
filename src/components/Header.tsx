@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useAdminSession } from '@/context/AdminSessionContext';
+import CommitteeViewSwitch from '@/components/CommitteeViewSwitch';
 import { 
   Calendar, 
   ChevronDown, 
@@ -11,9 +12,8 @@ import {
   CheckCircle2, 
   Ticket, 
   AlertCircle,
-  ExternalLink,
+  LogIn,
   LogOut,
-  Sliders,
   RefreshCw,
   Check,
   Clock
@@ -54,12 +54,14 @@ export default function Header({
   lastUpdated,
   onRefresh
 }: HeaderProps) {
-  const { session, isSuperAdmin, signOut } = useAdminSession();
+  const { session, isSuperAdmin, signOut, setViewAs, loadCommittees, openCommitteeMenu } = useAdminSession();
   const [eventDropdownOpen, setEventDropdownOpen] = useState(false);
   const [eventFilterQuery, setEventFilterQuery] = useState('');
   const [eventTab, setEventTab] = useState<'upcoming' | 'all' | 'past'>('upcoming');
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [committeeBusy, setCommitteeBusy] = useState(false);
+  const [committeeHint, setCommitteeHint] = useState('');
 
   const eventMenuRef = useRef<HTMLDivElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
@@ -170,6 +172,25 @@ export default function Header({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // A Super Admin never signs in twice: the server already trusts this session,
+  // so entering a committee view is a cookie change, not a new login.
+  const enterCommitteeView = async () => {
+    setCommitteeBusy(true);
+    setCommitteeHint('');
+    const options = await loadCommittees();
+    if (!options.length) {
+      setCommitteeHint('No approved committee yet.');
+    } else if (options.length === 1) {
+      const result = await setViewAs(options[0].id);
+      if (!result.ok) setCommitteeHint(result.error);
+      else setProfileDropdownOpen(false);
+    } else {
+      openCommitteeMenu();
+      setProfileDropdownOpen(false);
+    }
+    setCommitteeBusy(false);
+  };
+
   return (
     <header className={`px-6 py-4 border-b border-white/10 flex items-center justify-between sticky top-0 z-20 shadow-md relative transition-colors duration-200 ${
       isBlinking ? 'animate-header-blink' : 'bg-[#12193b]'
@@ -231,6 +252,9 @@ export default function Header({
             <span className="text-[10px] underline ml-0.5">Sync</span>
           </button>
         )}
+
+        {/* Committee view switch (Super Admin only, needs approved committees) */}
+        <CommitteeViewSwitch />
 
         {/* Header Events Selection Dropdown */}
         <div className="relative" ref={eventMenuRef}>
@@ -560,7 +584,10 @@ export default function Header({
         {/* Admin Profile Pill */}
         <div className="relative" ref={profileMenuRef}>
           <button
-            onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
+            onClick={() => {
+              setProfileDropdownOpen(!profileDropdownOpen);
+              setCommitteeHint('');
+            }}
             className="flex items-center gap-2.5 pl-2 border-l border-white/10 hover:opacity-80 transition-opacity"
           >
             <div className="w-9 h-9 rounded-full bg-white/10 text-white flex items-center justify-center text-sm ring-2 ring-indigo-400/40 relative">
@@ -580,18 +607,23 @@ export default function Header({
           {profileDropdownOpen && (
             <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-xl border border-slate-100 p-2 z-50 animate-in fade-in slide-in-from-top-2">
               <div className="px-3 py-2 border-b border-slate-100">
-                <p className="text-xs font-black text-slate-900">{isSuperAdmin ? 'Admin Console' : 'Committee Console'}</p>
+                <p className="text-xs font-black text-slate-900">{isSuperAdmin ? 'Super Admin' : 'Committee Console'}</p>
                 <p className="text-[10px] text-slate-400 truncate">{session?.user?.email || 'Signed in'}</p>
               </div>
               <div className="py-1 text-xs font-semibold text-slate-700">
-                <button className="w-full px-3 py-2 rounded-xl hover:bg-slate-50 flex items-center gap-2 text-left">
-                  <Sliders className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Admin Settings</span>
-                </button>
-                <button className="w-full px-3 py-2 rounded-xl hover:bg-slate-50 flex items-center gap-2 text-left">
-                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Audience Booking Portal</span>
-                </button>
+                {isSuperAdmin && !session?.viewingAs && (
+                  <button
+                    onClick={enterCommitteeView}
+                    disabled={committeeBusy}
+                    className="w-full px-3 py-2 rounded-xl hover:bg-slate-50 flex items-center gap-2 text-left disabled:opacity-60"
+                  >
+                    <LogIn className="w-3.5 h-3.5 text-slate-400" />
+                    <span>{committeeBusy ? 'Opening...' : 'Committee Login'}</span>
+                  </button>
+                )}
+                {committeeHint && (
+                  <p className="px-3 py-1.5 text-[10px] font-bold text-rose-600">{committeeHint}</p>
+                )}
                 <button
                   onClick={signOut}
                   className="w-full px-3 py-2 rounded-xl hover:bg-rose-50 text-rose-600 flex items-center gap-2 text-left"

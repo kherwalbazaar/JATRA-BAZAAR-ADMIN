@@ -27,6 +27,8 @@ export async function GET() {
       email: session.email,
       name: session.displayName,
     },
+    fullAccess: session.fullAccess,
+    viewingAs: session.viewingAs,
     permissions: session.permissions,
     allowedTabs: session.allowedTabs,
     committee: session.committee,

@@ -26,8 +26,14 @@ export async function requireSession(): Promise<SessionOutcome> {
 export async function requireSuperAdmin(): Promise<SessionOutcome> {
   const result = await requireSession();
   if (!result.ok) return result;
-  if (!result.session.isSuperAdmin) {
-    return { ok: false, status: 403, error: 'Super Admin access is required for this action.' };
+  if (!result.session.fullAccess) {
+    return {
+      ok: false,
+      status: 403,
+      error: result.session.isSuperAdmin
+        ? 'Leave the committee view to use Super Admin features.'
+        : 'Super Admin access is required for this action.',
+    };
   }
   return result;
 }
@@ -47,7 +53,7 @@ export async function requireModule(
   if (!module) {
     return { ok: false, status: 400, error: `Unknown module "${moduleKey}".` };
   }
-  if (module.superAdminOnly && !result.session.isSuperAdmin) {
+  if (module.superAdminOnly && !result.session.fullAccess) {
     return { ok: false, status: 403, error: `Access to ${module.label} is restricted to Super Admin.` };
   }
   if (hasPermission(result.session, moduleKey, action)) {
@@ -65,6 +71,8 @@ export function hasPermission(
   moduleKey: string,
   action: 'view' | 'create' | 'edit' | 'delete' | 'approve' = 'view'
 ): boolean {
-  if (session.isSuperAdmin) return true;
+  // While browsing as a committee, a Super Admin is held to that committee's
+  // grants, so the simulation cannot be escaped by calling an API directly.
+  if (session.fullAccess) return true;
   return (session.permissions[moduleKey] || []).includes(action);
 }

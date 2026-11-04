@@ -41,10 +41,10 @@ import { useAdminSession } from '@/context/AdminSessionContext';
 import { useFirestore } from '@/hooks/useFirestore';
 import { deleteBooking } from '@/lib/firestore';
 import { useAdminPopup } from '@/context/AdminPopupContext';
-import { UserPlus, Plus, Building2, MapPin, Calendar, ChevronDown, LayoutGrid, Check } from 'lucide-react';
+import { UserPlus, Plus, Building2, MapPin, Calendar, ChevronDown, LayoutGrid, Check, ShieldCheck } from 'lucide-react';
 
 function AdminDashboard({ allowedTabs }: { allowedTabs: Set<NavigationTab> }) {
-  const { session } = useAdminSession();
+  const { session, setViewAs } = useAdminSession();
   const router = useRouter();
   const { confirm: adminConfirm, alert: adminAlert } = useAdminPopup();
   const {
@@ -94,6 +94,16 @@ function AdminDashboard({ allowedTabs }: { allowedTabs: Set<NavigationTab> }) {
       /* ignore */
     }
   };
+
+  // Switching into or out of a committee view changes which tabs are open, so
+  // land on Dashboard instead of leaving the panel on a now-closed section.
+  const lastViewAsRef = useRef<string | null>(null);
+  useEffect(() => {
+    const viewId = session?.viewingAs?.id || null;
+    if (lastViewAsRef.current === viewId) return;
+    lastViewAsRef.current = viewId;
+    if (!allowedTabs.has(currentTab) && allowedTabs.has('dashboard')) setCurrentTab('dashboard');
+  }, [allowedTabs, currentTab, session?.viewingAs?.id]);
 
   useEffect(() => {
     try {
@@ -324,7 +334,13 @@ function AdminDashboard({ allowedTabs }: { allowedTabs: Set<NavigationTab> }) {
         onToggleCollapse={toggleSidebar}
         allowedTabs={allowedTabs}
         accountLabel={session?.committee?.committeeName || session?.user?.name}
-        accountSubLabel={session?.role === 'super_admin' ? 'Super Admin' : 'Committee Access'}
+        accountSubLabel={
+          session?.viewingAs
+            ? 'Committee view'
+            : session?.role === 'super_admin'
+              ? 'Super Admin'
+              : 'Committee Access'
+        }
       />
 
       {/* 2. Main Content Area */}
@@ -378,6 +394,25 @@ function AdminDashboard({ allowedTabs }: { allowedTabs: Set<NavigationTab> }) {
           lastUpdated={lastUpdated}
           onRefresh={retryConnection}
         />
+
+        {session?.viewingAs && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-6 py-2 bg-amber-400 border-b border-amber-500/50">
+            <ShieldCheck className="w-4 h-4 text-[#0c102a] flex-shrink-0" />
+            <span className="text-[11px] font-black uppercase tracking-wider text-[#0c102a]">
+              Viewing as {session.viewingAs.committeeName}
+            </span>
+            <span className="text-[11px] font-bold text-[#0c102a]/70">
+              Menus and actions follow this committee&apos;s grants. Nothing about your account changed.
+            </span>
+            <button
+              type="button"
+              onClick={() => setViewAs(null)}
+              className="ml-auto text-[11px] font-black uppercase tracking-wider text-[#0c102a] bg-white/70 hover:bg-white px-2.5 py-1 rounded-lg transition-colors"
+            >
+              Exit committee view
+            </button>
+          </div>
+        )}
 
         {/* View Routing */}
         {!allowedTabs.has(currentTab) ? (

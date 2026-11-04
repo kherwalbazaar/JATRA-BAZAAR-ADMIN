@@ -7,7 +7,7 @@ import { createClient } from '@/utils/supabase/proxy';
  * themselves; proxy only knows "signed in or not".
  */
 const PROTECTED_PAGES = ['/', '/create-event', '/edit-event', '/event-details', '/admin'];
-const PROTECTED_APIS = ['/api/party-bookings', '/api/committee-applications'];
+const PROTECTED_APIS = ['/api/party-bookings', '/api/committee-applications', '/api/admin/view-as'];
 
 const PUBLIC_API = [
   '/api/auth/admin-login',

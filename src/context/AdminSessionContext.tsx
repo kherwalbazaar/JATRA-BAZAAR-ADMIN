@@ -11,23 +11,34 @@ export interface PanelUser {
   name: string;
 }
 
+export interface CommitteeOption {
+  id: string;
+  name: string;
+  applicationRef: string;
+}
+
+export interface CommitteeSummary {
+  id: string;
+  applicationRef: string;
+  committeeName: string;
+  status: CommitteeStatus;
+  rejectionReason: string | null;
+  submittedAt: string;
+  reviewedAt: string | null;
+  lastLoginAt: string | null;
+}
+
 export interface PanelSession {
   signedIn: boolean;
   canEnterDashboard: boolean;
   role: 'super_admin' | 'committee';
   user: PanelUser;
+  /** Super Admin powers; false while browsing as a committee. */
+  fullAccess: boolean;
+  viewingAs: CommitteeSummary | null;
   permissions: Record<string, string[]>;
   allowedTabs: NavigationTab[];
-  committee: {
-    id: string;
-    applicationRef: string;
-    committeeName: string;
-    status: CommitteeStatus;
-    rejectionReason: string | null;
-    submittedAt: string;
-    reviewedAt: string | null;
-    lastLoginAt: string | null;
-  } | null;
+  committee: CommitteeSummary | null;
 }
 
 interface SessionContextValue {
@@ -35,7 +46,14 @@ interface SessionContextValue {
   session: PanelSession | null;
   isSuperAdmin: boolean;
   refresh: () => Promise<PanelSession | null>;
+  setViewAs: (committeeId: string | null) => Promise<{ ok: boolean; error: string }>;
   signOut: () => Promise<void>;
+  /** Approved committees a Super Admin may enter; null until loaded. */
+  committeeOptions: CommitteeOption[] | null;
+  loadCommittees: () => Promise<CommitteeOption[]>;
+  /** Bumped to ask the header switcher to open its list from elsewhere. */
+  committeeMenuSignal: number;
+  openCommitteeMenu: () => void;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -43,6 +61,8 @@ const SessionContext = createContext<SessionContextValue | null>(null);
 export function AdminSessionProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<PanelSession | null>(null);
+  const [committeeOptions, setCommitteeOptions] = useState<CommitteeOption[] | null>(null);
+  const [committeeMenuSignal, setCommitteeMenuSignal] = useState(0);
   const pathname = usePathname();
 
   const fetchSession = useCallback(async (): Promise<PanelSession | null> => {
@@ -66,6 +86,43 @@ export function AdminSessionProvider({ children }: { children: React.ReactNode }
     }
   }, [fetchSession]);
 
+  const setViewAs = useCallback(
+    async (committeeId: string | null) => {
+      try {
+        const res = await fetch('/api/admin/view-as', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ committeeId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.success) {
+          return { ok: false, error: data?.error || 'Could not change the committee view.' };
+        }
+        await refresh();
+        return { ok: true, error: '' };
+      } catch {
+        return { ok: false, error: 'Network problem. Try again.' };
+      }
+    },
+    [refresh]
+  );
+
+  const loadCommittees = useCallback(async (): Promise<CommitteeOption[]> => {
+    try {
+      const res = await fetch('/api/admin/view-as', { credentials: 'same-origin', cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      const list: CommitteeOption[] = data?.success ? data.committees || [] : [];
+      setCommitteeOptions(list);
+      return list;
+    } catch {
+      setCommitteeOptions([]);
+      return [];
+    }
+  }, []);
+
+  const openCommitteeMenu = useCallback(() => setCommitteeMenuSignal((count) => count + 1), []);
+
   const signOut = useCallback(async () => {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
     setSession(null);
@@ -86,9 +143,14 @@ export function AdminSessionProvider({ children }: { children: React.ReactNode }
       session,
       isSuperAdmin: session?.role === 'super_admin',
       refresh,
+      setViewAs,
       signOut,
+      committeeOptions,
+      loadCommittees,
+      committeeMenuSignal,
+      openCommitteeMenu,
     }),
-    [loading, session, refresh, signOut]
+    [loading, session, refresh, setViewAs, signOut, committeeOptions, loadCommittees, committeeMenuSignal, openCommitteeMenu]
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
